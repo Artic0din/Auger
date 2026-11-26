@@ -2117,6 +2117,11 @@ svg.library-empty-icon { width: auto; }
 .watch-party-body { margin: 0; font-size: 26px; line-height: 32px; color: var(--silo-secondary); }
 .watch-party-actions { flex: none; display: flex; flex-direction: column; gap: 28px; width: 640px; }
 .watch-party-section { display: flex; flex-direction: column; align-items: flex-start; gap: 16px; }
+.watch-party-rejoin-group { display: flex; flex-direction: column; align-items: flex-start; gap: 8px; max-width: 100%; }
+.watch-party-ui .watch-party-rejoin { max-width: 100%; border: 1px solid rgba(255,255,255,.28); overflow: hidden; text-overflow: ellipsis; }
+.watch-party-rejoin-note { margin: 0; font-size: 21px; line-height: 26px; color: var(--silo-secondary); }
+.watch-party-starting { position: relative; z-index: 1; display: flex; align-items: center; justify-content: center; width: 1920px; height: 1080px; outline: none; }
+.watch-party-starting .marquee-spinner { width: 56px; height: 56px; border-width: 5px; }
 .watch-party-banner { box-sizing: border-box; display: flex; align-items: baseline; gap: 10px; width: 100%; padding: 16px 20px; border-radius: 12px; border: 1px solid var(--silo-hairline); background: rgba(255,255,255,.08); font-size: 21px; line-height: 26px; color: var(--silo-text); }
 .watch-party-banner-dot { flex: none; width: 12px; height: 12px; border-radius: 50%; background: var(--silo-secondary); }
 .watch-party-banner-warning { border-color: rgba(245,197,99,.3); background: rgba(245,197,99,.12); color: #f5c563; }
@@ -2276,7 +2281,16 @@ button.watch-party-seat-invite { box-sizing: content-box; padding: 0; margin: 0;
 .watch-party-search-count { margin: 0; font-size: 22px; color: var(--silo-secondary); }
 .watch-party-search-grid.browse-grid { grid-template-columns: repeat(6, 220px); column-gap: 40px; row-gap: 60px; width: auto; padding: 12px 0 48px; }
 .watch-party-empty-title { margin: 0; font-size: 28px; font-weight: 600; color: var(--silo-text); }
-.watch-party-choice { position: absolute; left: 0; top: 0; z-index: 1; box-sizing: border-box; display: flex; flex-direction: column; align-items: flex-start; gap: 36.4px; width: 1920px; height: 1080px; padding: 96px 88px; }
+.browse[data-view="watchParty:choice"] { padding: 0; }
+.browse[data-view="watchParty:choice"] .watch-party-backdrop { position: fixed; }
+.watch-party-choice { position: relative; z-index: 1; box-sizing: border-box; display: flex; flex-direction: column; align-items: flex-start; gap: 36.4px; width: 1920px; min-height: 1080px; padding: 96px 88px; }
+.watch-party-choice-actions { display: flex; flex-direction: column; align-items: flex-start; gap: 20px; }
+.watch-party-who-seen { display: flex; flex-direction: column; gap: 10px; width: 760px; max-width: 100%; border-radius: 14px; outline: none; }
+.watch-party-who-seen:focus { box-shadow: 0 0 0 3px rgba(255,255,255,.35); padding: 12px 16px; margin: -12px -16px; }
+.watch-party-who-seen-checking { margin: 0; font-size: 20px; color: var(--silo-secondary); }
+.watch-party-who-seen-row { display: flex; align-items: baseline; justify-content: space-between; gap: 24px; font-size: 26px; line-height: 32px; }
+.watch-party-who-seen-name { color: var(--silo-text); }
+.watch-party-who-seen-state { color: var(--silo-secondary); }
 .watch-party-choice-head { display: flex; align-items: flex-end; gap: 26px; }
 .watch-party-choice-poster { flex: none; width: 260px; height: 390px; overflow: hidden; border-radius: 8px; background: #222; box-shadow: 0 10px 16px rgba(0,0,0,.6); }
 .watch-party-choice-poster .browse-art-image { display: block; width: 100%; height: 100%; object-fit: cover; }
@@ -2284,17 +2298,23 @@ button.watch-party-seat-invite { box-sizing: content-box; padding: 0; margin: 0;
 .watch-party-choice-title { display: -webkit-box; -webkit-box-orient: vertical; -webkit-line-clamp: 3; overflow: hidden; margin: 0; max-width: 1200px; font-size: 79px; font-weight: 700; letter-spacing: -1px; line-height: 84px; color: var(--silo-text); }
 .watch-party-choice-facts { margin: 0; font-size: 26px; color: var(--silo-secondary); }
 .watch-party-choice-overview { display: -webkit-box; -webkit-box-orient: vertical; -webkit-line-clamp: 6; overflow: hidden; margin: 0; max-width: 1100px; font-size: 26px; line-height: 34px; color: var(--silo-secondary); }
-.watch-party-episodes { position: absolute; left: 0; top: 0; z-index: 1; box-sizing: border-box; display: flex; flex-direction: column; align-items: flex-start; justify-content: flex-end; width: 1920px; height: 1080px; padding: 48px 88px 40px; background: rgba(0,0,0,.28); }
-.watch-party-episodes-head { display: flex; align-items: center; justify-content: space-between; align-self: stretch; margin-bottom: auto; }
-.watch-party-episodes-title { margin: 0 0 24px; font-size: 64px; font-weight: 700; letter-spacing: -1px; color: var(--silo-text); }
+.watch-party-episodes { position: absolute; left: 0; top: 0; z-index: 1; box-sizing: border-box; display: flex; flex-direction: column; align-items: flex-start; width: 1920px; height: 1080px; padding: 48px 88px 40px; background: rgba(0,0,0,.28); }
+.watch-party-episodes-hero { display: flex; flex-direction: column; gap: 10px; max-width: 1000px; margin-top: auto; margin-bottom: 36px; }
+.watch-party-episodes-title { margin: 0; font-size: 64px; font-weight: 700; letter-spacing: -1px; color: var(--silo-text); }
+.watch-party-episodes-line { margin: 0; font-size: 26px; font-weight: 500; line-height: 34px; color: var(--silo-secondary); }
+.watch-party-episodes-overview { display: -webkit-box; -webkit-box-orient: vertical; -webkit-line-clamp: 3; overflow: hidden; height: 101.4px; margin: 0; font-size: 26px; line-height: 33.8px; color: var(--silo-secondary); }
 .watch-party-season-tabs { margin-bottom: 24px; }
 .watch-party-season-tab { box-sizing: border-box; height: 64px; margin: 0; margin-inline-end: 16px; padding: 0 28px; border: 0; border-radius: 32px; background: rgba(255,255,255,.1); font-size: 24px; font-weight: 600; color: #fff; }
 .watch-party-season-tab[aria-pressed="true"] { background: rgba(255,255,255,.28); }
 .watch-party-season-tab:focus { background: #fff; color: #000; }
-.watch-party-episode-rail { align-self: stretch; padding-bottom: 24px; }
-.watch-party-episode { display: inline-flex; vertical-align: top; flex: none; flex-direction: column; align-items: flex-start; gap: 6px; box-sizing: border-box; width: 400px; margin: 0; margin-inline-end: 36px; padding: 0; border: 0; background: none; text-align: start; color: #fff; }
-.watch-party-episode-number { display: flex; align-items: center; justify-content: center; box-sizing: border-box; width: 400px; height: 225px; border-radius: 12px; background: rgba(255,255,255,.1); font-size: 64px; font-weight: 700; color: var(--silo-secondary); }
-.watch-party-episode:focus .watch-party-episode-number { background: #fff; color: #000; }
+.watch-party-episodes-slot { align-self: stretch; height: 357px; }
+.watch-party-episodes-empty { display: flex; flex-direction: column; align-items: flex-start; gap: 12px; }
+.watch-party-episode-rail { align-self: stretch; margin: 0 -88px; padding: 14px 88px 24px; }
+.watch-party-episode { display: inline-flex; vertical-align: top; flex: none; flex-direction: column; align-items: flex-start; gap: 8px; box-sizing: border-box; width: 400px; margin: 0; margin-inline-end: 36px; padding: 0; border: 0; background: none; text-align: start; color: #fff; outline: none; }
+.watch-party-episode-still { position: relative; display: block; box-sizing: border-box; width: 400px; height: 225px; overflow: hidden; border-radius: 12px; background: rgba(255,255,255,.1); transition: transform .15s ease-out; }
+.watch-party-episode-still .browse-art-image { display: block; width: 100%; height: 100%; object-fit: cover; }
+.watch-party-episode:focus { background: none; color: #fff; }
+.watch-party-episode:focus .watch-party-episode-still { transform: scale(1.04); outline: 5px solid var(--silo-text); outline-offset: 6px; }
 .watch-party-episode-title { max-width: 400px; overflow: hidden; font-size: 24px; font-weight: 600; text-overflow: ellipsis; white-space: nowrap; }
 .watch-party-episode-meta { font-size: 20px; color: var(--silo-secondary); }
 /* Apple EmptyStateView on Home: a 44 pt symbol at 0.3 opacity, 28 pt semibold title and 22 pt secondary body, 12 pt apart, centred on the page. */

@@ -1,12 +1,15 @@
 import { percentText } from "../i18n/format.ts";
+import { integerText } from "../i18n/numbers.ts";
 import { translate, translateTv } from "../i18n/translate.ts";
 import { el } from "../ui/screen.ts";
 import { heading } from "./headings.ts";
 import type { SubtitleAppearance } from "../contracts/v2/subtitles.ts";
 import type { TrackView } from "./controller.ts";
 import type { SyncTimingView } from "./subtitleSync.ts";
-import { chevronForwardIcon, closeIcon, magnifyingGlassIcon, uturnBackwardIcon, waveformIcon } from "./playerIcons.ts";
-import { appearanceSummary, BACKGROUND_COLORS, choiceLabel, choiceOptions, delayLabel, delayOptions, FONT_COLORS, FONT_FAMILIES, FONT_SIZES, type LabeledChoice, opacityOptions, POSITIONS, providerLabel, resultDetail, STYLES } from "./subtitleAppearance.ts";
+import { arrowDownCircleOutlineIcon, chevronBackwardIcon, chevronForwardIcon, closeIcon, globeIcon, magnifyingGlassIcon, spinnerIcon, starFillIcon, uturnBackwardIcon, warningTriangleOutlineIcon, waveformIcon } from "./playerIcons.ts";
+import { appearanceSummary, BACKGROUND_COLORS, choiceLabel, choiceOptions, delayLabel, delayOptions, FONT_COLORS, FONT_FAMILIES, FONT_SIZES, type LabeledChoice, languageLabel, opacityOptions, POSITIONS, providerLabel, resultDetail, scoreTier, STYLES, type LanguageChoice } from "./subtitleAppearance.ts";
+import { renderSubtitleDialog } from "./subtitleDialog.ts";
+import type { SubtitleSearchView } from "./subtitleSearch.ts";
 
 /** The Subtitles pane's state. A picker floats over the pane it opened from, including Video's PICTURE and PLAYBACK rows. */
 export type SubtitlePane =
@@ -188,33 +191,164 @@ export function appearanceDetail(appearance: SubtitleAppearance, field: string):
     }
 }
 
-/** The Search pane, which replaces both columns. Appearance floats via `overlayAppearance`. */
-export function fillSubtitleTools(list: HTMLElement, tracks: TrackView, _pane: SubtitlePane): void {
-    const tools = tracks.subtitleTools;
-    if (tools === undefined) return;
-    const search = tools.search;
-    if (search.phase !== "closed") {
-        list.append(el("h2", "player-menu-heading", "SEARCH"));
-        list.append(choice("subtitle-search-back", search.phase === "languages" ? translate("common.back") : translate("subtitleSearch.chooseAnother"), false));
-        if (search.phase === "searching") {
-            list.append(el("p", "player-menu-note", search.status));
-            list.append(choice("subtitle-search-cancel", translate("common.cancel"), false));
-        } else if (search.phase === "failed") {
-            if (search.message !== "") list.append(el("p", "player-menu-note", search.message));
-            if (search.canRetry) list.append(choice("subtitle-search-retry", "Try Again", false));
-        } else if (search.phase === "languages") {
-            if (!search.offered && search.unavailableReason !== "") list.append(el("p", "player-menu-note", search.unavailableReason));
-            for (const item of [...search.suggested, ...search.other]) list.append(choice(`subtitle-language:${item.code}`, item.label, item.code === search.language, item.hint === undefined ? undefined : translate(item.hint)));
-        } else {
-            for (const warning of search.warnings) list.append(el("p", "player-menu-note", warning));
-            if (search.message !== "") list.append(el("p", "player-menu-note", search.message));
-            for (const result of search.results) {
-                const title = result.releaseName !== "" ? result.releaseName : providerLabel(result.provider);
-                list.append(choice(`subtitle-result:${result.key}`, title, result.key === search.downloadingKey, [providerLabel(result.provider), result.format.toUpperCase(), resultDetail(result)].filter(part => part !== "").join(" · ")));
-            }
-        }
-        return;
+function searchLanguageName(search: SubtitleSearchView): string {
+    if (search.language === undefined) return translate("player.tracks.subtitles");
+    return [...search.suggested, ...search.other].find(item => item.code === search.language)?.label ?? languageLabel(search.language);
+}
+
+function searchLanguageRow(item: LanguageChoice, current: boolean): HTMLButtonElement {
+    const button = el("button", current ? "player-choice player-choice-current player-ai-row player-search-language-row" : "player-choice player-ai-row player-search-language-row");
+    button.type = "button";
+    button.setAttribute("data-focus", `subtitle-language:${item.code}`);
+    button.setAttribute("aria-pressed", String(current));
+    const glyph = el("span", "player-setting-glyph");
+    glyph.innerHTML = item.hint === "subtitleSearch.preferred" ? starFillIcon() : globeIcon();
+    glyph.setAttribute("aria-hidden", "true");
+    const copy = el("span", "player-choice-copy");
+    copy.append(el("span", "player-setting-label", item.label));
+    if (item.hint !== undefined) copy.append(el("span", "player-choice-detail", translate(item.hint)));
+    const chevron = el("span", "player-setting-chevron");
+    chevron.innerHTML = chevronForwardIcon();
+    button.append(glyph, copy, chevron);
+    return button;
+}
+
+function searchResultRow(result: SubtitleSearchView["results"][number], downloading: boolean): HTMLButtonElement {
+    const button = el("button", downloading ? "player-choice player-choice-current player-search-result-row" : "player-choice player-search-result-row");
+    button.type = "button";
+    button.setAttribute("data-focus", `subtitle-result:${result.key}`);
+    button.setAttribute("aria-pressed", String(downloading));
+    const scoreCol = el("span", "player-search-score-col");
+    const tier = scoreTier(result.score);
+    const badge = el("span", `player-search-score-badge player-search-score-${tier}`, integerText(Math.round(result.score)));
+    badge.setAttribute("data-score-tier", tier);
+    scoreCol.append(badge, el("span", "player-search-match-label", translate("subtitleSearch.matchLabel")));
+    const copy = el("span", "player-choice-copy player-search-result-copy");
+    const title = result.releaseName !== "" ? result.releaseName : translate("subtitleSearch.untitled");
+    copy.append(el("span", "player-search-result-title", title));
+    const detail = resultDetail(result);
+    if (detail !== "") copy.append(el("span", "player-choice-detail player-search-result-detail", detail));
+    if (downloading) {
+        const spinner = el("span", "player-search-result-spinner");
+        spinner.innerHTML = spinnerIcon();
+        spinner.setAttribute("aria-hidden", "true");
+        button.append(scoreCol, copy, spinner);
+    } else {
+        const providerCol = el("span", "player-search-provider-col");
+        providerCol.append(el("span", "player-search-provider-name", providerLabel(result.provider)));
+        const format = el("span", "player-search-format");
+        const formatIcon = el("span", "player-search-format-icon");
+        formatIcon.innerHTML = arrowDownCircleOutlineIcon();
+        formatIcon.setAttribute("aria-hidden", "true");
+        format.append(formatIcon, el("span", "player-search-format-text", result.format.toUpperCase()));
+        providerCol.append(format);
+        button.append(scoreCol, copy, providerCol);
     }
+    return button;
+}
+
+function searchChooseAnotherRow(): HTMLButtonElement {
+    const button = el("button", "player-choice player-ai-row player-search-back-row");
+    button.type = "button";
+    button.setAttribute("data-focus", "subtitle-search-back");
+    const glyph = el("span", "player-setting-glyph player-search-back-icon");
+    glyph.innerHTML = chevronBackwardIcon();
+    glyph.setAttribute("aria-hidden", "true");
+    button.append(glyph, el("span", "player-setting-label", translate("subtitleSearch.chooseAnother")));
+    return button;
+}
+
+function searchWarningRow(message: string): HTMLElement {
+    const row = el("p", "player-search-warning");
+    const icon = el("span", "player-search-warning-icon");
+    icon.innerHTML = warningTriangleOutlineIcon();
+    icon.setAttribute("aria-hidden", "true");
+    row.append(icon, el("span", "player-search-warning-text", message));
+    return row;
+}
+
+/**
+ * `SubtitleSearchMenu`'s tvOS dialog (`TVSubtitleDialog.swift`, `SubtitleSearchMenu.swift:315-585`, silo-apple 3289bedb):
+ * shared 1280x800 modal dialog over a dimmed full-player backdrop with title, phase subtitle, hairline dividers, grouped
+ * language rows / scored result rows / searching & failure panels, and non-focusable back/status footer.
+ */
+export function renderSearchDialog(host: HTMLElement, tracks: TrackView, onBackdropDismiss: () => void): void {
+    const search = tracks.subtitleTools?.search;
+    if (search === undefined || search.phase === "closed") return;
+    const subtitle = search.phase === "languages"
+        ? translate("subtitleSearch.explainer")
+        : search.phase === "searching"
+            ? search.language !== undefined ? translate("subtitleSearch.searchingIn", { language: searchLanguageName(search) }) : translate("subtitleSearch.searchingInYourLanguage")
+            : search.phase === "failed"
+                ? translate("subtitleSearch.failedTitle")
+                : translate("subtitleSearch.resultCount", { language: searchLanguageName(search), count: search.results.length });
+    const backHint = search.downloadingKey !== undefined
+        ? translate("subtitleSearch.waitForDownload")
+        : search.phase === "languages" ? translate("player.tracks.backToSubtitles") : translate("subtitleSearch.backToLanguages");
+    const statusHint = search.downloadingKey !== undefined
+        ? translate("subtitleSearch.adding")
+        : search.phase === "results" && search.results.length > 0 ? translate("subtitleSearch.selectHint") : "";
+
+    renderSubtitleDialog(host, {
+        title: translate("subtitleSearch.title"),
+        subtitle,
+        backHint,
+        statusHint,
+        className: "player-search-menu",
+        onBackdropDismiss: () => { if (search.downloadingKey === undefined) onBackdropDismiss(); },
+        body: (body) => {
+            if (search.phase === "searching") {
+                const center = el("div", "player-subtitle-dialog-center");
+                const head = el("div", "player-search-searching-head");
+                const spinner = el("span", "player-search-searching-spinner");
+                spinner.innerHTML = spinnerIcon();
+                spinner.setAttribute("aria-hidden", "true");
+                head.append(spinner, el("span", "player-search-searching-title", translate("subtitleSearch.searching")));
+                const note = el("p", "player-search-searching-note", translate("subtitleSearch.searchingNote"));
+                const actions = el("div", "player-subtitle-dialog-actions");
+                actions.append(choice("subtitle-search-cancel", translate("common.cancel"), false));
+                center.append(head, note, actions);
+                body.append(center);
+            } else if (search.phase === "failed") {
+                const center = el("div", "player-subtitle-dialog-center");
+                if (search.message !== "") {
+                    const fail = el("p", "player-search-failure");
+                    const icon = el("span", "player-search-failure-icon");
+                    icon.innerHTML = warningTriangleOutlineIcon();
+                    icon.setAttribute("aria-hidden", "true");
+                    fail.append(icon, el("span", "player-search-failure-text", search.message));
+                    center.append(fail);
+                }
+                const actions = el("div", "player-subtitle-dialog-actions");
+                if (search.canRetry) actions.append(choice("subtitle-search-retry", translate("subtitleSearch.tryAgain"), false));
+                actions.append(choice("subtitle-search-back", translate("common.back"), false));
+                center.append(actions);
+                body.append(center);
+            } else if (search.phase === "languages") {
+                if (!search.offered && search.unavailableReason !== "") body.append(el("p", "player-menu-note", search.unavailableReason));
+                if (search.suggested.length > 0) {
+                    body.append(el("h2", "player-menu-heading", heading("subtitleSearch.preferredHeader")));
+                    for (const item of search.suggested) body.append(searchLanguageRow(item, item.code === search.language));
+                }
+                if (search.other.length > 0 || search.suggested.length === 0) {
+                    body.append(el("h2", "player-menu-heading", heading(search.suggested.length === 0 ? "subtitleSearch.languageHeader" : "subtitleSearch.allLanguagesHeader")));
+                    for (const item of search.other) body.append(searchLanguageRow(item, item.code === search.language));
+                }
+            } else {
+                for (const warning of search.warnings) body.append(searchWarningRow(warning));
+                if (search.results.length === 0) {
+                    const emptyText = search.language !== undefined
+                        ? translate("subtitleSearch.noResults", { language: searchLanguageName(search) })
+                        : translate("subtitleSearch.noResultsAnyLanguage");
+                    body.append(el("p", "player-search-empty", emptyText));
+                    body.append(searchChooseAnotherRow());
+                } else {
+                    if (search.message !== "") body.append(el("p", "player-menu-note", search.message));
+                    for (const result of search.results) body.append(searchResultRow(result, result.key === search.downloadingKey));
+                }
+            }
+        },
+    });
 }
 
 /** The running job: ProgressView beside its whole percentage, with the phase under it. Neither takes focus. */

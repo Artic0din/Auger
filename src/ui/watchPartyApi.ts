@@ -8,7 +8,7 @@ import { watchTogetherOperations } from "../api/watchTogetherOperations.ts";
 import type { CatalogPage, Episode, HomeSection, ItemDetail, Season } from "../contracts/v2/catalog.ts";
 import type { PlaybackCapabilities } from "../contracts/v2/playback.ts";
 import {
-    type CreatableSelectionMode, type GuestControlPolicy, type NewSuggestion, type Picker, type RoomAccess, type RoomSelection, type SuggestionPage,
+    type CreatableSelectionMode, type GuestControlPolicy, type MemberState, type NewSuggestion, type Picker, type RoomAccess, type RoomSelection, type SuggestionPage,
     roomSocketHandshake, type WatchTogetherCapabilities, watchTogetherSocketSupported,
 } from "../contracts/v2/watchTogether.ts";
 import type { NativeSession } from "../session/session.ts";
@@ -45,6 +45,7 @@ export interface WatchPartyApi extends RoomSocketApi {
     /** The room as it now stands, read with the room token, to reconcile after a change whose answer was lost. */
     room(roomId: string, token: string, signal: AbortSignal): Promise<RoomAccess>;
     picker(roomId: string, token: string, signal: AbortSignal): Promise<Picker>;
+    memberState?(roomId: string, token: string, contentIds: readonly string[], signal: AbortSignal): Promise<MemberState>;
     suggestions(roomId: string, token: string, cursor: string | undefined, signal: AbortSignal): Promise<SuggestionPage>;
     addSuggestion(roomId: string, token: string, suggestion: NewSuggestion, signal: AbortSignal): Promise<string>;
     deleteSuggestion?(roomId: string, token: string, suggestionId: string, signal: AbortSignal): Promise<void>;
@@ -75,6 +76,7 @@ export function watchPartyApi(session: Pick<NativeSession, "call" | "http">): Wa
         setGuestControlPolicy: (roomId, policy, signal) => call(watchTogetherOperations.setGuestControlPolicy(roomId, policy), signal),
         room: (roomId, token, signal) => call(watchTogetherOperations.room(roomId, token), signal),
         picker: (roomId, token, signal) => call(watchTogetherOperations.picker(roomId, token), signal),
+        memberState: (roomId, token, contentIds, signal) => call(watchTogetherOperations.memberState(roomId, token, contentIds), signal),
         suggestions: (roomId, token, cursor, signal) => call(watchTogetherOperations.suggestions(roomId, token, cursor), signal),
         addSuggestion: (roomId, token, suggestion, signal) => call(watchTogetherOperations.addSuggestion(roomId, token, suggestion), signal),
         deleteSuggestion: (roomId, token, suggestionId, signal) => call(watchTogetherOperations.deleteSuggestion(roomId, token, suggestionId), signal),

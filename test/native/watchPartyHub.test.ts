@@ -267,3 +267,63 @@ test("stopping the hub aborts the request in flight and ignores its answer", asy
     assert.equal(hub.state.error, undefined);
     assert.equal(hub.state.room, undefined);
 });
+
+test("rejoinRecent remembers the room after Leave and clears it on a terminal 404/409 refusal (#783)", async () => {
+    let failNext = false;
+    const { api, calls } = fakeApi({
+        joinByCode: async (code) => {
+            calls.join.push(code);
+            if (failNext) throw new ApiError({ kind: "problem", problem: { id: "room_not_found", title: "Gone", status: 404, detail: "That party has ended.", instance: "", errors: [] }, retryAfterSeconds: undefined });
+            return access(code);
+        },
+    });
+    const hub = new WatchPartyHub(api, () => undefined, { ...offline(), supported: true });
+    await hub.create("host_pick");
+    assert.equal(hub.state.recentRoom?.code, "K7M2QX");
+    hub.leave();
+    assert.equal(hub.state.room, undefined);
+    assert.equal(hub.state.recentRoom?.code, "K7M2QX", "Leave keeps the recent room for one-tap Rejoin");
+    assert.equal(hub.state.wasReplaced, false);
+    await hub.rejoinRecent();
+    assert.deepEqual(calls.join, ["K7M2QX"]);
+    assert.equal((hub.state.room as RoomAccess["room"] | undefined)?.code, "K7M2QX");
+    hub.leave();
+    failNext = true;
+    await hub.rejoinRecent();
+    assert.equal(hub.state.recentRoom, undefined, "a terminal 404 clears the dead recent room");
+    assert.equal(noticeText(hub.state.error ?? ""), "That party has ended.");
+});
+
+test("createWithChoice holds startingPreview while creating and clears it once done (#783)", async () => {
+    let release!: () => void;
+    const held = new Promise<void>(resolve => { release = resolve; });
+    const { api } = fakeApi({
+        capabilities: async () => roomCapabilities({ staged_selection: true }),
+        createRoom: async () => { await held; return access(); },
+        stageSelection: async () => access(),
+    });
+    const hub = new WatchPartyHub(api, () => undefined, { ...offline(), supported: true });
+    const choice = {
+        contentId: "movie-1", type: "movie" as const, title: "Arrival", subtitle: () => undefined,
+        overview: "", facts: () => [],
+        posterUrl: "/posters/arrival.jpg", backdropUrl: "/backdrops/arrival.jpg",
+        lobby: { contentId: "movie-1", title: () => "Arrival", subtitle: () => undefined, facts: () => [], chips: [], overview: "", backdropUrl: "/backdrops/arrival.jpg", posterUrl: "/posters/arrival.jpg" },
+    };
+    const pending = hub.createWithChoice(choice);
+    assert.equal(hub.state.busy, true);
+    assert.equal(hub.state.startingPreview?.contentId, "movie-1");
+    release();
+    await pending;
+    assert.equal(hub.state.startingPreview, undefined);
+    assert.equal(hub.state.recentRoom?.selectedTitle, "Arrival");
+
+    // A refused stage must not overwrite recentRoom.selectedTitle with the rejected title.
+    const refused = fakeApi({
+        capabilities: async () => roomCapabilities({ staged_selection: true }),
+        stageSelection: async () => { throw new ApiError({ kind: "problem", problem: { id: "conflict", title: "Conflict", status: 409, detail: "Cannot stage now.", instance: "", errors: [] }, retryAfterSeconds: undefined }); },
+    });
+    const hub2 = new WatchPartyHub(refused.api, () => undefined, { ...offline(), supported: true });
+    await hub2.create("host_pick");
+    assert.equal(await hub2.stage(choice), false);
+    assert.equal(hub2.state.recentRoom?.selectedTitle, undefined);
+});

@@ -261,6 +261,23 @@ test("a series the group is part-way through goes straight to its next episode, 
         await view(tv, "watchParty:choice").waitFor();
         assert.equal(await tv.page.locator(".watch-party-choice-title").textContent(), "Harbor Lights");
         assert.equal(await tv.page.locator(".watch-party-choice-facts").textContent(), "S1 · E2 · Harbor Lights chapter 1.2");
+        // Choice page shows "See all episodes" and "Who's seen it" member watch states (#783).
+        assert.equal(await button(tv, "browse-series").textContent(), "See all episodes");
+        await tv.page.locator(".watch-party-who-seen-row").first().waitFor();
+        assert.deepEqual(await texts(tv, ".watch-party-who-seen-name"), ["Owner", "Sam"]);
+        assert.deepEqual(await texts(tv, ".watch-party-who-seen-state"), ["Watched", "Not watched · Watchlist"]);
+        // D-pad Down reaches the reading zone for "Who's seen it" so large parties can scroll member history.
+        await tv.remote(40);
+        assert.equal(await tv.focused(), "browse-series");
+        await tv.remote(40);
+        assert.equal(await tv.focused(), "who-seen");
+        await tv.remote(38);
+        assert.equal(await tv.focused(), "browse-series");
+        await button(tv, "browse-series").click();
+        await view(tv, "watchParty:episodes").waitFor();
+        assert.equal(await tv.page.locator(".watch-party-episodes-title").textContent(), "Harbor Lights");
+        await tv.remote(10009);
+        await view(tv, "watchParty:choice").waitFor();
         await button(tv, "confirm").click();
         await view(tv, "watchParty:lobby").waitFor();
         assert.deepEqual(fake.roomChanges.map(change => change.body), [{ content_id: "episode:s1e12" }]);
@@ -287,7 +304,10 @@ test("a series with no next-up opens its seasons and episodes, and an episode is
         assert.ok((rail[1]?.[0] ?? 0) > (rail[0]?.[0] ?? 0));
         assert.equal(await tv.page.locator(".watch-party-season-tabs").evaluate(node => [node.classList.contains("browse-row"), getComputedStyle(node).overflowX]).then(value => value.join()), "true,hidden", "season tabs use the shared horizontal row, so focus reveals them");
         await button(tv, "season:2").click();
-        await tv.eventually(async () => (await texts(tv, ".watch-party-episode-number"))[0] === "E1" && (await tv.page.locator('.watch-party-season-tab[aria-pressed="true"]').textContent()) === "Season 2", "season 2 episodes");
+        await tv.eventually(async () => (await tv.page.locator(".watch-party-episode-still").count()) > 0 && (await tv.page.locator('.watch-party-season-tab[aria-pressed="true"]').textContent()) === "Season 2", "season 2 episodes with 16:9 still cards");
+        const stillBox = await tv.page.locator(".watch-party-episode-still").first().boundingBox();
+        assert.deepEqual([Math.round(stillBox?.width ?? 0), Math.round(stillBox?.height ?? 0)], [400, 225], "episode cards use 400x225 16:9 stills");
+        assert.equal(await button(tv, "episodes-close").count(), 0, "tvOS episode picker omits the text Close button");
         await tv.page.locator(".watch-party-episode").first().click();
         await view(tv, "watchParty:choice").waitFor();
         assert.match(await tv.page.locator(".watch-party-choice-facts").textContent() ?? "", /^S2 · E1 · /);
@@ -416,13 +436,13 @@ test("Leave party as the host is Apple's leaveRoom: no confirmation, this TV lea
         await button(tv, "options").click();
         await button(tv, "leave").click();
         await view(tv, "watchParty:hub").waitFor();
-        assert.equal(await tv.focused(), "create");
+        assert.equal(await tv.focused(), "rejoin");
         await tv.eventually(async () => fake.sockets[0]?.closed === true, "room socket closed");
         assert.deepEqual(fake.closedRooms, [], "the server holds the party while its host is away; End party ends it");
     } finally { await tv.page.context().close(); }
 });
 
-test("a season with no episodes says so in Apple's words, and Try Again reads it once more", async () => {
+test("a season with no episodes uses tvOS empty copy and Reload episodes (#783)", async () => {
     const { tv, fake } = await inLobby("host", fake => { fake.episodesReply = { status: 200, body: { items: [] } }; });
     try {
         await button(tv, "choose").click();
@@ -430,30 +450,27 @@ test("a season with no episodes says so in Apple's words, and Try Again reads it
         await button(tv, "series:s2").click();
         await view(tv, "watchParty:episodes").waitFor();
         await tv.page.locator(".watch-party-empty-title").waitFor();
-        assert.equal(await tv.page.locator(".watch-party-empty-title").textContent(), "No episodes");
-        assert.equal(await tv.page.locator(".watch-party-episodes .watch-party-lead").textContent(), "Nothing in this season is available to play.");
-        assert.equal(await button(tv, "episodes-retry").textContent(), "Try Again", "offered with no error too");
+        assert.equal(await tv.page.locator(".watch-party-empty-title").textContent(), "No episodes in this season");
+        assert.equal(await button(tv, "episodes-retry").textContent(), "Reload episodes", "offered with no error too");
         fake.episodesReply = undefined;
         await button(tv, "episodes-retry").click();
         await tv.page.locator(".watch-party-episode").first().waitFor();
     } finally { await tv.page.context().close(); }
 });
 
-test("a failed episodes read puts the reason under No episodes, with Try Again", async () => {
+test("a failed episodes read puts the warning banner under No episodes in this season, with Reload episodes (#783)", async () => {
     const { tv } = await inLobby("host", fake => { fake.episodesReply = problem(503, "unavailable", "Down for maintenance."); });
     try {
         await button(tv, "choose").click();
         await view(tv, "watchParty:picker:shelves").waitFor();
         await button(tv, "series:s2").click();
         await tv.page.locator(".watch-party-empty-title").waitFor();
-        assert.equal(await tv.page.locator(".watch-party-empty-title").textContent(), "No episodes");
-        assert.equal(await tv.page.locator(".watch-party-episodes .watch-party-lead").textContent(), "Down for maintenance.");
-        assert.equal(await tv.focused(), "episodes-close", "focus stays on the strip, where it opened");
-        await tv.remote(40);
-        assert.equal(await tv.focused(), "season:1", "the season tabs sit between Close and Try Again");
+        assert.equal(await tv.page.locator(".watch-party-empty-title").textContent(), "No episodes in this season");
+        assert.equal(await tv.page.locator(".watch-party-episodes .watch-party-banner").textContent(), "Down for maintenance.");
+        assert.equal(await tv.focused(), "season:1", "focus stays on the active season tab");
         await tv.remote(40);
         assert.equal(await tv.focused(), "episodes-retry");
-        assert.equal(await button(tv, "episodes-retry").textContent(), "Try Again");
+        assert.equal(await button(tv, "episodes-retry").textContent(), "Reload episodes");
     } finally { await tv.page.context().close(); }
 });
 
@@ -526,7 +543,7 @@ test("a guest sees the host's room with no host controls: waiting copy, no actio
         await button(tv, "leave").click();
         await view(tv, "watchParty:hub").waitFor();
         assert.deepEqual(fake.closedRooms, [], "a guest has no HTTP leave");
-        assert.equal(await tv.focused(), "create");
+        assert.equal(await tv.focused(), "rejoin");
     } finally { await tv.page.context().close(); }
 });
 
@@ -615,22 +632,30 @@ test("a guest sees the host's pick and policy arrive live, without reading anyth
     } finally { await tv.page.context().close(); }
 });
 
-test("the host ending the party reaches a guest live: back to the entry with This party has ended.", async () => {
+test("the host ending the party reaches a guest live: back to the entry with This party has ended and no Rejoin row", async () => {
     const { tv, fake } = await inLobby("guest");
     try {
         fake.push({ type: "room_closed", reason: "ended" });
         await view(tv, "watchParty:hub").waitFor();
         assert.equal(await tv.page.locator(".watch-party-banner").textContent(), "This party has ended.");
+        assert.equal(await tv.page.locator('[data-focus="rejoin"]').count(), 0, "an ended room offers no Rejoin row");
+        assert.equal(await tv.focused(), "create");
         await tv.eventually(async () => fake.sockets[0]?.closed === true, "socket closed");
     } finally { await tv.page.context().close(); }
 });
 
-test("joining on another device takes over: this TV returns to the entry with Apple's take-over message", async () => {
+test("joining on another device takes over: this TV returns to the entry with Continue here, take-over note, and Rejoin focus (#783)", async () => {
     const { tv, fake } = await inLobby("guest");
     try {
         fake.push({ type: "connection_replaced", reason: "replaced" });
         await view(tv, "watchParty:hub").waitFor();
         assert.equal(await tv.page.locator(".watch-party-banner").textContent(), "This profile joined the party on another device. Rejoin here to take over playback.");
+        assert.equal(await tv.focused(), "rejoin");
+        assert.equal(await button(tv, "rejoin").textContent(), "Continue here");
+        assert.equal(await tv.page.locator(".watch-party-rejoin-note").textContent(), "Rejoining here disconnects this profile's other device from the party.");
+        await button(tv, "rejoin").click();
+        await view(tv, "watchParty:lobby").waitFor();
+        assert.deepEqual(fake.joined, ["K7M2QX", "K7M2QX"]);
     } finally { await tv.page.context().close(); }
 });
 
@@ -782,7 +807,7 @@ test("an empty vote room asks the question, offers Suggest a title, and the pick
         assert.equal(await tv.page.locator(".watch-party-picker-name").textContent(), "Suggest a title");
         await button(tv, "movie:m0004").click();
         await view(tv, "watchParty:choice").waitFor();
-        assert.equal(await tv.page.locator(".watch-party-choice .watch-party-eyebrow").textContent(), "Suggest to the party");
+        assert.equal(await tv.page.locator(".watch-party-choice .watch-party-eyebrow").first().textContent(), "Suggest to the party");
         assert.equal(await button(tv, "confirm").textContent(), "Add suggestion");
         await button(tv, "confirm").click();
         await view(tv, "watchParty:lobby").waitFor();
@@ -824,6 +849,7 @@ test("the ballot shows each tally and the leader; Select votes and takes it back
         await tv.page.keyboard.press("Enter");
         await tv.eventually(async () => JSON.stringify(await tallies(tv)) === JSON.stringify(["1", "1"]), "my vote counted");
         await tv.eventually(async () => (await tv.page.locator('[data-focus="suggestion:heat"] .watch-party-candidate-tick').count()) === 1, "my tick");
+        await tv.eventually(async () => (await button(tv, "suggestion:heat").getAttribute("aria-disabled")) === "false", "my vote settled");
         assert.equal(fake.ballotChanges.at(-1)?.call, "POST /suggestions/heat/vote");
         assert.equal(fake.ballotChanges.at(-1)?.roomToken, "room-proof-one");
         assert.equal(await button(tv, "suggestion:heat").getAttribute("aria-label"), "Remove vote for Heat");
