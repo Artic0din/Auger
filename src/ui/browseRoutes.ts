@@ -54,7 +54,7 @@ export type RouteData =
     | { readonly kind: "library"; readonly library: UserLibrary; pages: Pages; discovery?: DiscoveryState }
     | { readonly kind: "libraryResults"; readonly library: UserLibrary; readonly title: string; readonly source: LibrarySource; pages: Pages }
     | { readonly kind: "search"; readonly search: SearchModule }
-    | { readonly kind: "audiobook"; readonly id: string; readonly title: string; readonly seed?: DetailSeed; data: Audiobook | undefined; /** The chapter picker covers the page. */ picker?: boolean }
+    | { readonly kind: "audiobook"; readonly id: string; readonly title: string; readonly seed?: DetailSeed; data: { book: Audiobook; details?: DetailsState } | undefined; /** The chapter picker covers the page. */ picker?: boolean; /** The full description screen covers the page. */ description?: boolean }
     | { readonly kind: "boxSet"; readonly id: string; readonly libraryId: string; readonly title: string; data: CatalogBoxSetDetail | undefined }
     | { readonly kind: "item"; readonly id: string; readonly title: string; readonly seriesContext?: SeriesContext; readonly seed?: DetailSeed; readonly fromRelated?: boolean; error?: ErrorState; data: { detail: ItemDetail; seasons: Season[]; details?: DetailsState; boxSet?: BoxSetRowState } | undefined }
     | { readonly kind: "person"; readonly id: string; readonly title: string; readonly person: PersonModule }
@@ -118,6 +118,7 @@ export interface RouteHandlers {
     readonly personalFilter: (route: Extract<Route, { kind: "personal" }>, filter: PersonalFilter) => void;
     readonly audiobooksEnabled?: (() => boolean) | undefined;
     readonly audiobookPicker: (route: Extract<Route, { kind: "audiobook" }>, open: boolean) => void;
+    readonly audiobookDescription: (route: Extract<Route, { kind: "audiobook" }>, open: boolean) => void;
     readonly morePersonal: (route: Extract<Route, { kind: "personal" }>) => void;
     readonly signIn: (() => void) | undefined;
     readonly context: ViewContext;
@@ -202,7 +203,15 @@ export function routeView(current: Route, handlers: RouteHandlers): View {
             break;
         case "audiobook":
             if (current.data !== undefined) {
-                return withNote(audiobookView(current.data, { context, pickerOpen: current.picker === true, setPicker: open => handlers.audiobookPicker(current, open), back: pop }), current.failure);
+                return withDetailsAlert(withNote(audiobookView(current.data.book, {
+                    context,
+                    details: current.data.details,
+                    pickerOpen: current.picker === true,
+                    setPicker: open => handlers.audiobookPicker(current, open),
+                    descriptionOpen: current.description === true,
+                    setDescription: open => handlers.audiobookDescription(current, open),
+                    back: pop,
+                }), current.failure), current.data.details);
             }
             break;
         case "boxSet":
