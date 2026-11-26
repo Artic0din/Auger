@@ -38,7 +38,7 @@ Each `Zone` has:
   A focused item that becomes disabled keeps focus.
   Settings rows use it, except while a save is in flight.
 - Optional `onLeft`: replaces Left entirely for that zone (used for panels that close on Left).
-- Optional `reading`: a single reading stop taller than the page (audiobook About).
+- Optional `reading`: a single reading stop taller than the page (when a zone is scrolled line by line).
   Entering it shows its leading edge; Up and Down scroll the page 360 px at a time until that edge is visible, and only then leave the zone.
 
 A key press resolves in this order (`FocusHost.onKey`, `moveWithin`):

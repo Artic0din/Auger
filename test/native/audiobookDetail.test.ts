@@ -1,7 +1,7 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
 import type { Audiobook, AudiobookDetail } from "../../src/contracts/v2/audiobooks.ts";
-import { audiobookPage, cleanTitle, formatHMS, formatRuntime, peopleSummary, seriesLine, volumeIn } from "../../src/ui/audiobookDetail.ts";
+import { audiobookPage, cleanTitle, DESCRIPTION_PASSAGE_TARGET, descriptionPassages, formatHMS, formatRuntime, peopleSummary, seriesLine, volumeIn } from "../../src/ui/audiobookDetail.ts";
 
 // Expectations follow silo-apple AudiobookDetailFormattingTests.swift, TVAudiobookViewModel.swift and TVAudiobookChaptersView.swift.
 
@@ -167,18 +167,49 @@ test("a chapterless part is named by its file, as Apple TV names it, else by its
 });
 
 test("about, narrations and rails appear only when the book has them", () => {
-    assert.equal(audiobookPage(book()).sections.hasContent, false);
+    assert.equal(audiobookPage(book({ duration: 0, parts: [], chapters: [] })).sections.hasContent, false);
+    assert.equal(audiobookPage(book()).sections.hasContent, true);
     const detail: AudiobookDetail = {
         authors: [person("A"), person("B"), person("C"), person("D"), person("E")], narrators: [person("N")], publisher: "Tor", totalDurationSeconds: undefined,
-        series: { name: "Saga", entries: [{ id: "audiobook:b1", title: "One", year: 2001, seriesIndex: 1, posterUrl: undefined }] },
+        series: { name: "Saga", entries: [{ id: "audiobook:b1", title: "Saga 1 - One", year: 2001, seriesIndex: 1, posterUrl: undefined }] },
         otherNarrations: [{ id: "audiobook:alt", title: "Dune", year: 2020, narrators: ["X", "Y"] }, { id: "audiobook:alt2", title: "Dune (Audible)", year: undefined, narrators: [] }],
         alsoByAuthor: [{ id: "audiobook:c", title: "Other", year: undefined, seriesIndex: undefined, posterUrl: undefined }], similar: [],
     };
-    const sections = audiobookPage(book({ overview: "Spice.", year: 1965, detail })).sections;
+    const twoParts = [{ fileId: "1", duration: 5400, offset: 0 }, { fileId: "2", duration: 5400, offset: 5400 }];
+    const sections = audiobookPage(book({ overview: "Spice.", year: 1965, releaseDate: "1965-08-01", audioFormat: { codec: "aac", container: "m4b" }, parts: twoParts, detail })).sections;
     assert.equal(sections.hasContent, true);
     assert.equal(sections.about, "Spice.");
-    assert.equal(sections.credits, "Written by A, B, C & 2 more · Narrated by N · Tor · 1965");
+    assert.deepEqual(sections.facts, [
+        { label: "Authors", value: "A, B, C & 2 more" },
+        { label: "Narrator", value: "N" },
+        { label: "Publisher", value: "Tor" },
+        { label: "Released", value: "August 1, 1965" },
+        { label: "Length", value: "3h" },
+        { label: "Format", value: "AAC · M4B · 2 parts" },
+    ]);
     assert.deepEqual(sections.narrations.map(row => [row.id, row.label, row.year]), [["audiobook:alt", "X, Y", 2020], ["audiobook:alt2", "Dune (Audible)", undefined]]);
-    assert.deepEqual(sections.rails.map(rail => [rail.title, rail.items.map(item => [item.id, item.caption])]), [["Saga", [["audiobook:b1", "Book 1"]]], ["More by Author", [["audiobook:c", undefined]]]]);
+    assert.deepEqual(sections.rails.map(rail => [rail.title, rail.items.map(item => [item.id, item.title, item.year, item.caption])]), [
+        ["Saga", [["audiobook:b1", "One", 2001, "Book 1"]]],
+        ["More by Author", [["audiobook:c", "Other", undefined, undefined]]],
+    ]);
     assert.equal(audiobookPage(book({ detail: { ...NO_DETAIL, otherNarrations: detail.otherNarrations } })).sections.hasContent, true);
+    const yearFallback = audiobookPage(book({ year: 1965, audioFormat: { codec: "mp3" }, detail: { ...NO_DETAIL, authors: [person("Frank, Brian")] } })).sections.facts;
+    assert.deepEqual(yearFallback, [
+        { label: "Authors", value: "Frank & Brian" },
+        { label: "Released", value: "1965" },
+        { label: "Length", value: "3h" },
+        { label: "Format", value: "MP3" },
+    ]);
+});
+
+test("descriptionPassages splits paragraphs and bounds chunks near 420 characters", () => {
+    const longPara = Array.from({ length: 10 }, (_, index) => `Sentence ${index + 1} explores the halls and statues of the endless house in deliberate detail.`).join(" ");
+    const overlongToken = "x".repeat(DESCRIPTION_PASSAGE_TARGET + 40);
+    const passages = descriptionPassages(`${longPara}\n\n${overlongToken}`);
+    assert.ok(passages.length >= 4);
+    assert.equal(passages[0]?.startsParagraph, true);
+    assert.equal(passages[1]?.startsParagraph, false);
+    const secondParaStart = passages.find(p => p.text.includes("xxx"));
+    assert.equal(secondParaStart?.startsParagraph, true);
+    for (const passage of passages) assert.ok(passage.text.length <= DESCRIPTION_PASSAGE_TARGET, `chunk too long: ${passage.text.length}`);
 });

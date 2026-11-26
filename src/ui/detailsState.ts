@@ -4,6 +4,7 @@ import { shufflePick } from "../player/nextShuffle.ts";
 import type { RequestSpec } from "../api/http.ts";
 import { detailOperations, RELATED_LIMIT, type PersonalAction } from "../api/detailOperations.ts";
 import { operations } from "../api/operations.ts";
+import type { Audiobook } from "../contracts/v2/audiobooks.ts";
 import type { Card, ItemDetail, LocalExtra } from "../contracts/v2/catalog.ts";
 import { playChoices, type PlayRequest } from "./browseModel.ts";
 import type { Clock } from "../api/clock.ts";
@@ -40,6 +41,32 @@ function heldAlert(kind: PersonalAction): DetailsAlert {
 /** TVSeriesDetailView's season watched alert (detail.watchedError). */
 function seasonWatchedFailed(): DetailsAlert {
     return { id: "details-season-watched-failed", title: translate("detail.watchedError.title"), message: translate("detail.watchedError.body") };
+}
+
+export function audiobookItemDetail(book: Audiobook): ItemDetail {
+    return {
+        id: book.id,
+        type: "audiobook",
+        title: book.title,
+        overview: book.overview,
+        tagline: undefined,
+        year: book.year,
+        runtimeMinutes: book.duration > 0 ? Math.round(book.duration / 60) : undefined,
+        contentRating: undefined,
+        genres: book.genres,
+        posterUrl: book.posterUrl,
+        backdropUrl: undefined,
+        durationSeconds: book.duration > 0 ? book.duration : undefined,
+        seriesId: undefined,
+        seriesTitle: undefined,
+        seasonNumber: undefined,
+        episodeNumber: undefined,
+        playContentId: undefined,
+        played: book.played,
+        videos: [],
+        versions: [],
+        watch: { played: book.played, positionSeconds: book.position, lastFileId: undefined },
+    };
 }
 /** ShuffleLauncher.failureMessage under the shuffle.failedTitle alert. */
 function shuffleFailure(error: unknown): DetailsAlert {
@@ -148,6 +175,8 @@ export class DetailsState {
     personalFailed = false;
     /** A Not interested mark or clear the server accepted: the host updates the cards it retains and drops a newly marked title from the rows that suggest it (HomeViewModel.removeNotInterested). */
     onNotInterested: ((id: string, marked: boolean) => void) | undefined;
+    /** Called when an audiobook watched refresh fetches the latest book state. */
+    onAudiobookRefreshed: ((book: Audiobook) => void) | undefined;
     /** Shared with the other owners of this browse session; an owner of its own keeps a private one. */
     notInterestedStore = new NotInterestedStore();
     private stopNotInterested: (() => void) | undefined;
@@ -223,7 +252,7 @@ export class DetailsState {
             this.detail = refreshed;
             this.subtitleIntent();
         });
-        if (detail.played !== undefined && ["movie", "episode", "series", "season"].includes(detail.type)) this.values.set("watched", detail.played);
+        if (detail.played !== undefined && ["movie", "episode", "series", "season", "audiobook"].includes(detail.type)) this.values.set("watched", detail.played);
     }
 
     get pending(): boolean { return [...this.changes.values()].some(change => change.pending) || [...this.seasonStates.values()].some(state => state.pending); }
@@ -277,8 +306,9 @@ export class DetailsState {
         if (changedTarget || this.nextEpisodeFailed || retrySupporting) this.loadNextEpisode();
         this.warmSeriesEpisodes();
         this.descriptions?.consider();
-        if (this.controller === undefined || !this.full) return;
+        if (this.controller === undefined) return;
         if (this.personalFailed || retrySupporting) this.loadPersonal();
+        if (!this.full) return;
         if (this.relatedFailed || retrySupporting) this.loadRelated();
         if (retrySupporting) this.loadSupportingPreferences();
     }
@@ -906,18 +936,27 @@ export class DetailsState {
     loadPersonal(): void {
         const controller = this.controller;
         if (controller === undefined) return;
-        if (!["movie", "series", "episode"].includes(this.detail.type)) {
+        if (!["movie", "series", "episode", "audiobook"].includes(this.detail.type)) {
             this.personalSupported = false;
             this.changed();
             return;
         }
         this.personalFailed = false;
         this.changed();
+        const isAudiobook = this.detail.type === "audiobook";
         const generation = { watchlist: this.personalGeneration.get("watchlist"), favorites: this.personalGeneration.get("favorites") };
         const read = async (): Promise<void> => {
             const supported = await this.read(detailOperations.personalCapability(), controller);
             if (!this.current(controller)) return;
             if (!supported) { this.personalSupported = false; return; }
+            if (isAudiobook) {
+                const favorites = await this.read(detailOperations.membership("favorites", this.detail.id), controller);
+                if (!this.current(controller)) return;
+                if (favorites.id !== this.detail.id) throw new Error("Membership item mismatch");
+                if (this.personalGeneration.get("favorites") === generation.favorites) this.values.set("favorites", favorites.member);
+                this.personalSupported = true;
+                return;
+            }
             const [watchlist, favorites] = await Promise.all([
                 this.read(detailOperations.membership("watchlist", this.detail.id), controller),
                 this.read(detailOperations.membership("favorites", this.detail.id), controller),
@@ -936,7 +975,7 @@ export class DetailsState {
                 this.personalSupported = false;
                 // 501 is not a 403/404, and one refused membership can sit beside a newer capability answer.
                 this.responses.delete(detailOperations.personalCapability().path);
-                this.responses.delete(detailOperations.membership("watchlist", this.detail.id).path);
+                if (!isAudiobook) this.responses.delete(detailOperations.membership("watchlist", this.detail.id).path);
                 this.responses.delete(detailOperations.membership("favorites", this.detail.id).path);
             } else this.personalFailed = true;
             this.changed();
@@ -986,6 +1025,20 @@ export class DetailsState {
 
     private async refresh(kind: PersonalAction, controller: AbortController, requested = false, writeAccepted = false): Promise<boolean> {
         if (kind === "watched") {
+            if (this.detail.type === "audiobook") {
+                const book = await this.read(operations.getAudiobook(this.detail.id), controller, false);
+                if (book.id !== this.detail.id) throw new Error("Watch state missing");
+                if (!this.current(controller)) return book.played;
+                const detail = audiobookItemDetail(book);
+                await this.watchedChanged(detail, controller.signal);
+                if (this.current(controller)) {
+                    this.detail = detail;
+                    this.onAudiobookRefreshed?.(book);
+                    this.values.set(kind, book.played);
+                    this.watchedRevision++;
+                }
+                return book.played;
+            }
             const detail = await this.read(this.item(this.detail.id), controller, false);
             if (detail.id !== this.detail.id || detail.played === undefined) throw new Error("Watch state missing");
             if (!this.current(controller)) return detail.played;

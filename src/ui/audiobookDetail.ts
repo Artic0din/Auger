@@ -1,12 +1,13 @@
 // The audiobook detail's decisions, after silo-apple TVAudiobookViewModel, TVAudiobookDetailSections,
-// TVAudiobookChaptersView and AudiobookDetailFormatting, kept free of the DOM so Node can test them.
+// TVAudiobookChaptersView, TVAudiobookDescriptionView and AudiobookDetailFormatting, kept free of the DOM so Node can test them.
 
 import { currentChapterIndex, isFinished, resumePosition, type Audiobook, type AudiobookChapter, type AudiobookRelatedItem } from "../contracts/v2/audiobooks.ts";
+import { detailDate } from "./episodeCaption.ts";
 import { isolated } from "../i18n/direction.ts";
 import { durationText } from "../i18n/duration.ts";
 import { localizeNumerals, percentText } from "../i18n/format.ts";
 import { integerText } from "../i18n/numbers.ts";
-import { translate } from "../i18n/translate.ts";
+import { textLanguage, translate } from "../i18n/translate.ts";
 
 // --- AudiobookDetailFormatting ---
 
@@ -54,7 +55,7 @@ export function volumeIn(rawTitle: string): { index: number | undefined; total: 
 export function seriesLine(name: string | undefined, index: number | undefined, total: number | undefined): string | undefined {
     const trimmed = name?.trim();
     if (trimmed === undefined || trimmed === "") return undefined;
-    if (index === undefined || index <= 0) return trimmed;
+    if (index === undefined || index <= 0) return isolated(trimmed);
     const series = isolated(trimmed);
     if (total !== undefined && total >= index && total > 1) return translate("detail.audiobook.seriesLineOf", { series, number: integerText(index), total: integerText(total) });
     return translate("detail.audiobook.seriesLine", { series, number: integerText(index) });
@@ -119,7 +120,9 @@ export interface PickerRow {
     readonly progress: number | undefined;
 }
 
-export interface RailItem { readonly id: string; readonly title: string; readonly posterUrl: string | undefined; readonly caption: string | undefined }
+export interface RailItem { readonly id: string; readonly title: string; readonly year: number | undefined; readonly posterUrl: string | undefined; readonly caption: string | undefined }
+
+export interface AudiobookFact { readonly label: string; readonly value: string }
 
 export interface AudiobookPage {
     readonly title: string;
@@ -135,14 +138,113 @@ export interface AudiobookPage {
     readonly sections: {
         readonly hasContent: boolean;
         readonly about: string | undefined;
-        readonly credits: string | undefined;
+        readonly facts: readonly AudiobookFact[];
         readonly narrations: readonly { readonly id: string; readonly label: string; readonly year: number | undefined }[];
         readonly rails: readonly { readonly title: string; readonly items: readonly RailItem[] }[];
     };
 }
 
-function railItem(item: AudiobookRelatedItem): RailItem {
-    return { id: item.id, title: item.title, posterUrl: item.posterUrl, caption: item.seriesIndex === undefined ? undefined : translate("detail.audiobook.bookNumber", { number: integerText(item.seriesIndex) }) };
+function railItem(item: AudiobookRelatedItem, seriesName?: string): RailItem {
+    return {
+        id: item.id,
+        title: seriesName !== undefined && seriesName !== "" ? cleanTitle(item.title, seriesName) : item.title,
+        year: item.year,
+        posterUrl: item.posterUrl,
+        caption: item.seriesIndex === undefined ? undefined : translate("detail.audiobook.bookNumber", { number: integerText(item.seriesIndex) }),
+    };
+}
+
+function personCount(names: readonly string[]): number {
+    return names.flatMap(name => name.split(",")).filter(name => name.trim() !== "").length;
+}
+
+/** DetailFacts.audiobookFacts (PhoneDetailFactsSection.swift:147-202). */
+function audiobookFacts(book: Audiobook): AudiobookFact[] {
+    const facts: AudiobookFact[] = [];
+    const authors = book.detail.authors.map(person => person.name);
+    const authorNames = peopleSummary(authors, 3);
+    if (authorNames !== undefined) facts.push({ label: translate("detail.facts.author", { count: personCount(authors) }), value: authorNames });
+    const narrators = book.detail.narrators.map(person => person.name);
+    const narratorNames = peopleSummary(narrators, 3);
+    if (narratorNames !== undefined) facts.push({ label: translate("detail.facts.narrator", { count: personCount(narrators) }), value: narratorNames });
+    const publisher = book.detail.publisher?.trim();
+    if (publisher !== undefined && publisher !== "") facts.push({ label: translate("detail.facts.publisher"), value: publisher });
+    const dateMatch = /^(\d{4})-(\d{2})-(\d{2})/.exec(book.releaseDate?.trim() ?? "");
+    if (dateMatch !== null) facts.push({ label: translate("detail.released"), value: detailDate(`${dateMatch[1]}-${dateMatch[2]}-${dateMatch[3]}`) });
+    else if (book.year !== undefined && book.year > 0) facts.push({ label: translate("detail.released"), value: integerText(book.year) });
+    const length = formatRuntime(book.duration);
+    if (length !== "") facts.push({ label: translate("detail.facts.length"), value: length });
+    if (book.parts.length > 0) {
+        const format = [
+            book.audioFormat?.codec?.trim().toUpperCase(),
+            book.audioFormat?.container?.trim().toUpperCase(),
+            book.parts.length > 1 ? translate("detail.audiobook.partCount", { count: book.parts.length, count_text: integerText(book.parts.length) }) : undefined,
+        ].filter((token): token is string => token !== undefined && token !== "");
+        if (format.length > 0) facts.push({ label: translate("detail.facts.format"), value: format.join(" · ") });
+    }
+    return facts;
+}
+
+// --- TVAudiobookDescriptionView.DescriptionPassage ---
+
+export const DESCRIPTION_PASSAGE_TARGET = 420;
+
+export interface DescriptionPassage {
+    readonly id: number;
+    readonly text: string;
+    readonly startsParagraph: boolean;
+}
+
+function wordRuns(sentence: string): string[] {
+    const pieces: string[] = [];
+    for (const raw of sentence.split(" ")) {
+        const word = `${raw} `;
+        const chars = Array.from(word);
+        if (chars.length <= DESCRIPTION_PASSAGE_TARGET) {
+            pieces.push(word);
+        } else {
+            for (let start = 0; start < chars.length; start += DESCRIPTION_PASSAGE_TARGET) {
+                pieces.push(chars.slice(start, start + DESCRIPTION_PASSAGE_TARGET).join(""));
+            }
+        }
+    }
+    return pieces;
+}
+
+function passageChunks(paragraph: string): string[] {
+    if (paragraph.length <= DESCRIPTION_PASSAGE_TARGET) return [paragraph];
+    let sentences: string[];
+    if (typeof Intl !== "undefined" && typeof Intl.Segmenter === "function") {
+        const segmenter = new Intl.Segmenter(textLanguage(), { granularity: "sentence" });
+        sentences = Array.from(segmenter.segment(paragraph), entry => entry.segment);
+    } else {
+        sentences = paragraph.match(/[^.!?]+(?:[.!?]+|\s|$)/g) ?? [paragraph];
+    }
+    if (sentences.length === 0) sentences = [paragraph];
+    const pieces = sentences.flatMap(sentence => sentence.length > DESCRIPTION_PASSAGE_TARGET ? wordRuns(sentence) : [sentence]);
+    const chunks: string[] = [];
+    let current = "";
+    for (const piece of pieces) {
+        if (current !== "" && current.length + piece.length > DESCRIPTION_PASSAGE_TARGET) {
+            chunks.push(current.trim());
+            current = "";
+        }
+        current += piece;
+    }
+    if (current.trim() !== "") chunks.push(current.trim());
+    return chunks;
+}
+
+/** Splits a full description into paragraphs and <= 420-character passages for focusable scrolling. */
+export function descriptionPassages(text: string): DescriptionPassage[] {
+    const passages: DescriptionPassage[] = [];
+    const paragraphs = text.split(/\r?\n/).map(line => line.trim()).filter(line => line !== "");
+    for (const paragraph of paragraphs) {
+        passageChunks(paragraph).forEach((chunk, index) => {
+            passages.push({ id: passages.length, text: chunk, startsParagraph: index === 0 });
+        });
+    }
+    return passages;
 }
 
 export function audiobookPage(book: Audiobook): AudiobookPage {
@@ -206,17 +308,15 @@ export function audiobookPage(book: Audiobook): AudiobookPage {
         if (runtime !== "") subline.push(runtime);
     }
 
-    const credits: string[] = [];
-    const writtenBy = peopleSummary(detail.authors.map(person => person.name), 3);
-    const narratedBy = peopleSummary(detail.narrators.map(person => person.name), 3);
-    if (writtenBy !== undefined) credits.push(`Written by ${writtenBy}`);
-    if (narratedBy !== undefined) credits.push(`Narrated by ${narratedBy}`);
-    if (detail.publisher !== undefined && detail.publisher !== "") credits.push(detail.publisher);
-    if (book.year !== undefined) credits.push(integerText(book.year));
+    const trimmedOverview = book.overview?.trim();
+    const about = trimmedOverview === undefined || trimmedOverview === "" ? undefined : trimmedOverview;
+    const facts = audiobookFacts(book);
     const rails: { title: string; items: RailItem[] }[] = [];
-    if (detail.series !== undefined && detail.series.entries.length > 0) rails.push({ title: detail.series.name ?? translate("detail.audiobook.series"), items: detail.series.entries.map(railItem) });
-    if (detail.alsoByAuthor.length > 0) rails.push({ title: translate("detail.audiobook.moreByAuthor"), items: detail.alsoByAuthor.map(railItem) });
-    if (detail.similar.length > 0) rails.push({ title: translate("detail.audiobook.related"), items: detail.similar.map(railItem) });
+    if (detail.series !== undefined && detail.series.entries.length > 0) {
+        rails.push({ title: detail.series.name ?? translate("detail.audiobook.series"), items: detail.series.entries.map(entry => railItem(entry, detail.series?.name)) });
+    }
+    if (detail.alsoByAuthor.length > 0) rails.push({ title: translate("detail.audiobook.moreByAuthor"), items: detail.alsoByAuthor.map(entry => railItem(entry)) });
+    if (detail.similar.length > 0) rails.push({ title: translate("detail.audiobook.related"), items: detail.similar.map(entry => railItem(entry)) });
     const narrations = detail.otherNarrations.map(narration => ({ id: narration.id, label: narration.narrators.length === 0 ? narration.title : narration.narrators.join(", "), year: narration.year }));
 
     return {
@@ -230,9 +330,9 @@ export function audiobookPage(book: Audiobook): AudiobookPage {
         showsChapters: chapters.length > 0 || book.parts.length > 1,
         picker: { rows, defaultRowId: rows.find(row => row.isCurrent)?.id ?? rows[0]?.id, subline: subline.join(" · ") },
         sections: {
-            hasContent: (book.overview !== undefined && book.overview !== "") || narrations.length > 0 || rails.length > 0,
-            about: book.overview === undefined || book.overview === "" ? undefined : book.overview,
-            credits: credits.length === 0 ? undefined : credits.join(" · "),
+            hasContent: about !== undefined || facts.length > 0 || narrations.length > 0 || rails.length > 0,
+            about,
+            facts,
             narrations, rails,
         },
     };
