@@ -127,6 +127,15 @@ test("Choose a title opens the picker with Apple's shelves, icon-only chrome, an
         await tv.page.locator('[data-focus="picker-search-input"]').fill("Movie 0004");
         await tv.page.locator('[data-focus="picker-search-input"]').press("Enter");
         await tv.page.locator(".watch-party-search-grid .browse-card").first().waitFor();
+        const completedEnterPrevented = await tv.page.locator('[data-focus="picker-search-input"]').evaluate(node => {
+            const event = new KeyboardEvent("keydown", { key: "Enter", keyCode: 13, bubbles: true, cancelable: true });
+            node.dispatchEvent(event);
+            return event.defaultPrevented;
+        });
+        assert.equal(completedEnterPrevented, false, "Enter on a completed search field still leaves default action intact to reopen the TV keyboard");
+        assert.equal(await tv.focused(), "picker-search-input", "Enter on a completed search field keeps focus on the input for editing");
+        await tv.remote(65376);
+        assert.equal(await tv.focused(), "movie:m0004", "IME Done on a completed search field moves focus to the first result");
         await tv.page.locator('.watch-party-search-grid [data-focus="movie:m0004"]').click();
         await view(tv, "watchParty:choice").waitFor();
         await tv.remote(10009);

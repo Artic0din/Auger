@@ -164,15 +164,20 @@ export function searchView({ hub, baseUrl }: PickerContext, searchInput: HTMLInp
         const done = event.keyCode === IME_DONE;
         if (!done && event.key !== "Enter") return;
         const trimmed = searchInput.value.trim();
-        // Leave Enter unhandled on an empty field so the Samsung TV remote can open the on-screen keyboard (matching browse.ts).
-        if (!done && trimmed === "") return;
-        event.preventDefault();
-        event.stopPropagation();
-        if (firstCard !== undefined && trimmed !== "" && trimmed === search.completedQuery && search.hasSearched && !search.searching) {
-            firstCard.element.focus();
+        if (done) {
+            event.preventDefault();
+            event.stopPropagation();
+            if (firstCard !== undefined && trimmed !== "" && trimmed === search.completedQuery && search.hasSearched && !search.searching) {
+                firstCard.element.focus();
+                return;
+            }
+            if (trimmed !== "") void hub.searchNow(searchInput.value);
             return;
         }
-        if (trimmed !== "") void hub.searchNow(searchInput.value);
+        // Leave Enter unhandled by preventDefault so the Samsung TV remote can always open the on-screen keyboard
+        // to enter or edit a query (matching browse.ts); on a desktop keyboard, Enter still triggers an immediate
+        // search when the text changed.
+        if (trimmed !== "" && trimmed !== search.completedQuery) void hub.searchNow(searchInput.value);
     };
 
     const focus = { zone: "picker-search-field", key: field.key };
