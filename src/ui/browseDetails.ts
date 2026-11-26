@@ -559,12 +559,24 @@ export function itemView(detail: ItemDetail, seasons: readonly Season[], context
     const first = focusable[0] ?? seasonItems[0];
     // TVDetailActions.entryAction (TVDetailActions.swift:720-727): Watchlist stands in while episodes load;
     // once Play gets a title, FocusHost.settlePrimaryFocus claims it once unless the viewer moved or selected.
-    const loadingWatchlist = detail.type === "series" && (
+    const waitingForEntryEpisode = detail.type === "series" && (
         state?.series?.loading === true && state.series.episodes === undefined
         || waitingForPlaybackTarget
-    ) ? focusable.find(item => item.key === "watchlist") : undefined;
+    );
+    const loadingWatchlist = waitingForEntryEpisode ? focusable.find(item => item.key === "watchlist") : undefined;
+    const loading = waitingForEntryEpisode && loadingWatchlist === undefined
+        ? content.find(node => node.classList.contains("details-hero"))
+        : undefined;
+    if (loading !== undefined) {
+        loading.tabIndex = -1;
+        loading.dataset.focus = "loading";
+        loading.setAttribute("aria-busy", "true");
+        loading.setAttribute("aria-label", translate("detail.episodes.loading"));
+        zones[0] = zones[0] === undefined ? { id: "actions", layout: "row", items: [{ key: "loading", element: loading }] } : { ...zones[0], items: [{ key: "loading", element: loading }, ...zones[0].items] };
+    }
     const focus = loadingWatchlist !== undefined
         ? { zone: "actions", key: loadingWatchlist.key }
+        : loading !== undefined ? { zone: "actions", key: "loading" }
         : first === undefined ? undefined : { zone: focusable[0] === undefined ? "seasons" : "actions", key: first.key };
     const view: View = { name: `item:${detail.id}`, content, zones, focus, back };
     if (state?.panel === "audio") {

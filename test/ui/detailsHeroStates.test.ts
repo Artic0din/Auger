@@ -483,3 +483,18 @@ detailTest("the synopsis and meta line match the Apple TV capture of The Rookie"
     for (const [index, right] of [1085.6, 1128.8, 1005.9].entries()) assert.ok(Math.abs(shown.lines[index]!.right - right) <= 1, JSON.stringify(shown.lines));
     assert.ok(Math.abs(shown.metaEnd - 775) <= 1, String(shown.metaEnd));
 });
+
+detailTest("series details without Watchlist keeps non-Play loading focus while episodes load, then focuses Play", async tv => {
+    const catalog = tv.fake.catalog; assert.ok(catalog instanceof FakeDetails);
+    catalog.capability = false;
+    const episodes = tv.fake.hold("/catalog/series/series%3As1/seasons/1/episodes", true);
+    try {
+        await tv.page.locator(SERIES).first().click();
+        await tv.page.locator('[data-view="item:series:s1"] .details-hero[data-focus="loading"]').waitFor();
+        await tv.eventually(async () => await tv.page.locator('[data-focus="next-episode"]').getAttribute("aria-disabled") === "false", "episode target resolves while episodes stay held");
+        assert.equal(await tv.focused(), "loading", "non-Play loading owner holds focus while episodes load even without Watchlist");
+        assert.equal(await tv.page.locator('[data-focus="watchlist"]').count(), 0);
+        episodes.release();
+        await tv.eventually(async () => await tv.focused() === "next-episode", "Play claims focus once episodes arrive");
+    } finally { episodes.release(); }
+});
