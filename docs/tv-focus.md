@@ -177,7 +177,7 @@ Other layers:
 - Library genre views and personal lists pass `pop` to `Skyline.decorate` as `routeBack`, which wins over the bar logic when no menu is open.
 - A modal view in browse mode replaces `back` with its own dismiss handler.
 - A `ScreenHost` screen with `back: undefined` lets Back reach the app's handler, so sign-in's first screen opens the Exit dialog.
-- A no-op handler (`back: () => undefined` while a probe runs in `signIn.ts`) swallows Back deliberately.
+- A no-op handler (`back: () => undefined` while password sign-in submits or on the session-only notice in `signIn.ts`) swallows Back deliberately; a running server connect cancels on Back.
 - The Exit dialog defaults to Cancel; Back cancels, Select released on Exit calls `options.exit` (`tizen.application` exit in `src/platform.ts`).
 
 ## Samsung Remote Specifics

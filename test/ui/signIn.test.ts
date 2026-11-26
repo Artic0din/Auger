@@ -100,40 +100,9 @@ tvTest("the address screen explains an unusable address without contacting anyth
     await shows(tv, "Enter the server address without /api at the end.");
     await connectTo(tv, "");
     await shows(tv, "Please enter a server host.");
-    assert.equal(await tv.page.locator('[data-focus="forget"]').count(), 0, "nothing to forget for an address that can't be parsed");
+    assert.equal(await tv.page.locator('[data-focus="forget"]').count(), 0);
     assert.deepEqual(tv.fake.requests, []);
 });
-
-for (const invalidPort of [false, true]) {
-    tvTest(`offline saved sign-in removal uses Advanced options${invalidPort ? " and rejects an invalid port" : ""}`, async tv => {
-        await connectTo(tv, `${PLAIN}:8090`);
-        await signIn(tv);
-        assert.equal(await tv.page.evaluate(() => window.harness.keyManager?.items.size), 1);
-        await tv.page.evaluate(() => {
-            window.harness.storage.removeItem("silo.native.server");
-            window.harness.mount();
-        });
-        tv.offline = true;
-        await tv.page.fill("#signin-address", "silo.example.test");
-        await tv.page.getByRole("button", { name: "Advanced options", exact: true }).click();
-        await tv.page.locator('[data-focus="scheme-http"]').click();
-        await tv.page.fill("#signin-port", "8090");
-        await tv.page.getByRole("button", { name: "Connect", exact: true }).click();
-        await connectFails(tv, "Could not reach a Silo server at that address.");
-        if (invalidPort) {
-            await tv.page.fill("#signin-port", "70000");
-        }
-        await tv.page.getByRole("button", { name: "Remove saved sign-in", exact: true }).click();
-        if (invalidPort) {
-            await tv.page.evaluate(() => new Promise<void>(resolve => requestAnimationFrame(() => resolve())));
-            assert.equal(await tv.page.getByText("Port must be a number between 1 and 65535.", { exact: true }).count(), 1);
-            assert.equal(await tv.page.evaluate(() => window.harness.keyManager?.items.size), 1, "an invalid target never removes a credential");
-        } else {
-            await shows(tv, "Removed this server's saved sign-in from this TV.");
-            assert.equal(await tv.page.evaluate(() => window.harness.keyManager?.items.size), 0, "the HTTP port's credential was removed");
-        }
-    }, { origin: `${PLAIN}:8090` });
-}
 
 
 tvTest("a typed http:// address connects over plain HTTP without asking, as on the Apple TV app", async (tv) => {
@@ -198,7 +167,7 @@ tvTest("Back on the cleartext question sends nothing and returns to the address"
     assert.deepEqual(tv.fake.requests, []);
 }, { origin: PLAIN });
 
-tvTest("an unreachable server can be retried, and its saved sign-in removed while offline", async (tv) => {
+tvTest("an unreachable server can be retried, and manual entry renders no Remove saved sign-in control", async (tv) => {
     await connectTo(tv);
     await signIn(tv);
     assert.equal(await tv.page.evaluate(() => window.harness.keyManager?.items.size), 1);
@@ -211,20 +180,17 @@ tvTest("an unreachable server can be retried, and its saved sign-in removed whil
     await connectTo(tv, "https://silo.example.test");
     await connectFails(tv, "Could not reach a Silo server at that address.");
     assert.equal(await tv.focused(), "connect");
+    assert.equal(await tv.page.locator('[data-focus="forget"]').count(), 0);
+    assert.equal(await tv.page.getByText("Remove saved sign-in").count(), 0);
     await tv.page.keyboard.press("ArrowRight");
-    assert.equal(await tv.focused(), "forget", "the TV's own Remove saved sign-in sits beside Connect");
-    await tv.page.keyboard.press("Enter");
-    await shows(tv, "Removed this server's saved sign-in from this TV.");
-    assert.equal(await tv.page.evaluate(() => window.harness.keyManager?.items.size), 0);
-    assert.equal(await tv.focused(), "connect");
+    assert.equal(await tv.focused(), "connect", "no extra forget button follows Connect");
     const blocked = tv.blocked;
     await tv.page.keyboard.press("Enter");
     await connectFails(tv, "Could not reach a Silo server at that address.");
     assert.ok(tv.blocked > blocked, "Connect tried again");
     tv.offline = false;
     await tv.page.keyboard.press("Enter");
-    await codeScreen(tv);
-    assert.equal(await handoffs(tv), 1, "the removed account cannot restore");
+    await tv.eventually(async () => (await handoffs(tv)) === 2, "retried connect restores saved sign-in");
 });
 
 tvTest("unsupported, misrouted and failing servers are named, and a retry connects", async (tv) => {
@@ -412,24 +378,60 @@ tvTest("Check again resumes a saved account when setup becomes ready", async tv 
     assert.equal(tv.fake.devices.size, devices, "restored account does not start another device login");
 });
 
-tvTest("connecting keeps the address screen with Connecting… on Connect, and Back waits for it, as on the Apple TV app", async (tv) => {
-    const hold = tv.fake.hold("/system/info");
-    await connectTo(tv);
-    await tv.page.locator('[data-screen="connecting"]').waitFor();
-    assert.equal(await tv.focused(), "connect");
-    const connect = tv.page.locator('[data-focus="connect"]');
-    assert.equal(await connect.innerText(), "Connecting…");
-    assert.equal(await connect.getAttribute("aria-busy"), "true");
-    assert.equal(await connect.locator(".marquee-spinner").count(), 1, "the button shows its spinner");
-    assert.equal(await tv.page.inputValue("#signin-address"), "silo.example.test", "the address stays on screen");
-    await tv.remote(BACK);
-    assert.equal(await tv.page.evaluate(() => window.harness.lastKeyPrevented), true, "Back is held while connecting");
-    assert.equal(await tv.screen(), "connecting");
-    await tv.page.keyboard.press("ArrowUp");
-    assert.equal(await tv.focused(), "connect", "nothing else takes focus while connecting");
-    hold.release();
-    await codeScreen(tv);
-});
+for (const trigger of ["back", "cancel"] as const) {
+    tvTest(`connecting keeps Cancel focusable, and ${trigger === "back" ? "Back" : "Cancel"} stops a slow probe cleanly`, async (tv) => {
+        const holdOk = tv.fake.hold("/system/info", true);
+        await connectTo(tv);
+        await tv.page.locator('[data-screen="connecting"]').waitFor();
+        await tv.eventually(async () => tv.fake.heldReplies === 1, "first probe held");
+        assert.equal(await tv.focused(), "connect");
+        const connect = tv.page.locator('[data-focus="connect"]');
+        assert.equal(await connect.innerText(), "Connecting…");
+        assert.equal(await connect.getAttribute("aria-busy"), "true");
+        assert.equal(await connect.locator(".marquee-spinner").count(), 1, "the button shows its spinner");
+        const cancel = tv.page.locator('[data-focus="cancel"]');
+        assert.equal(await cancel.innerText(), "Cancel");
+        assert.equal(await cancel.getAttribute("disabled"), null);
+        assert.equal(await tv.page.inputValue("#signin-address"), "silo.example.test", "the address stays on screen");
+        await tv.page.keyboard.press("ArrowUp");
+        assert.equal(await tv.focused(), "connect", "other controls stay unreachable while connecting");
+        await tv.page.keyboard.press("ArrowRight");
+        assert.equal(await tv.focused(), "cancel", "Cancel stays reachable beside Connect");
+
+        if (trigger === "back") await tv.remote(BACK);
+        else await tv.page.keyboard.press("Enter");
+
+        await tv.page.locator('[data-screen="entry"]').waitFor();
+        assert.equal(await tv.focused(), "connect");
+        assert.equal(await tv.page.locator("#signin-address").getAttribute("readonly"), null);
+        assert.equal(await tv.page.inputValue("#signin-address"), "silo.example.test");
+        assert.equal(await tv.page.locator(".marquee-error").count(), 0);
+
+        holdOk.release();
+        await tv.jump(0);
+        await tv.eventually(async () => tv.pendingReplies === 0, "released 200 probe settled");
+        assert.equal(await tv.screen(), "entry", "a released 200 probe never leaves entry after cancel");
+        assert.equal(await tv.page.locator(".marquee-error").count(), 0);
+        assert.equal(await tv.page.evaluate(() => window.harness.storage.getItem("silo.native.server")), null);
+        assert.equal(tv.fake.paths().some((path) => path === "POST /auth/device/start"), false);
+
+        // Repeat with a failing delayed probe (500): cancellation suppresses any late error as well.
+        tv.fake.script("/system/info", { status: 500 });
+        const holdErr = tv.fake.hold("/system/info", true);
+        await tv.page.keyboard.press("Enter");
+        await tv.page.locator('[data-screen="connecting"]').waitFor();
+        await tv.eventually(async () => tv.fake.heldReplies === 1, "error probe held");
+        if (trigger === "back") await tv.remote(BACK);
+        else await tv.page.locator('[data-focus="cancel"]').click();
+        await tv.page.locator('[data-screen="entry"]').waitFor();
+        holdErr.release();
+        await tv.jump(1000);
+        await tv.eventually(async () => tv.pendingReplies === 0, "released 500 probe settled");
+        assert.equal(await tv.screen(), "entry");
+        assert.equal(await tv.page.locator(".marquee-error").count(), 0);
+        assert.equal(tv.fake.paths().some((path) => path === "POST /auth/device/start"), false);
+    });
+}
 
 tvTest("the code screen shows the grouped code, its address and a QR code of the approval link", async (tv) => {
     await connectTo(tv);
