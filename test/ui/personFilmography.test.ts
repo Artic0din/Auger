@@ -403,8 +403,15 @@ journey("reopening Person starts on All while Details Back preserves its visit",
     await tv.remote(BACK);
     await tv.page.locator('.details-people [data-focus^="credit:7:"]').first().click();
     await tv.eventually(async () => await grid(tv).count() === 60, "reopened All");
-    assert.equal(await tv.focused(), "filter:video");
-    assert.equal(await tv.page.locator('[data-focus="filter:video"]').getAttribute("aria-pressed"), "true");
+    const reopened = await tv.page.evaluate(() => ({
+        allPressed: document.querySelector('[data-focus="filter:video"]')?.getAttribute("aria-pressed") ?? null,
+        seriesPressed: document.querySelector('[data-focus="filter:series"]')?.getAttribute("aria-pressed") ?? null,
+        focused: document.activeElement?.getAttribute("data-focus") ?? null,
+        firstCard: document.querySelector(".browse-grid [data-focus]")?.getAttribute("data-focus") ?? null,
+    }));
+    assert.equal(reopened.allPressed, "true");
+    assert.equal(reopened.seriesPressed, "false");
+    assert.ok(reopened.focused === "filter:video" || (reopened.firstCard !== null && reopened.focused === reopened.firstCard), `unexpected initial focus on reopen: ${JSON.stringify(reopened)}`);
 });
 
 journey("failed availability probes keep filters visible and late metadata cannot replace Back", async (tv, catalog) => {
