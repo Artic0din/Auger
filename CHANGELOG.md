@@ -6,6 +6,12 @@ All notable changes to this project are documented in this file.
 
 <!-- changelog:releases -->
 
+## [0.14.14] - 2026-11-26
+
+### Fixes
+
+- **Requests**: Size Requests text as Apple does ([#953](https://github.com/Artic0din/Auger-Tizen/pull/953), [`d0f37414`](https://github.com/Artic0din/Auger-Tizen/commit/d0f37414))
+
 ## [0.14.13] - 2026-11-26
 
 ### Fixes
