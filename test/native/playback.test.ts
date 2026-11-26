@@ -5868,8 +5868,8 @@ test("Stats reads CURRENT_BANDWIDTH through FakeAVPlay, omits invalid values, an
     r.avplay.streamingProperties = { CURRENT_BANDWIDTH: "15393984" };
     r.avplay.finishSeek();
     await r.h.clock.advance(0);
-    r.avplay.listener?.onbufferingcomplete();
     assert.equal(throughput(), "15.4 Mbps");
+    r.avplay.listener?.onbufferingcomplete();
 
     for (const invalid of ["0", "", "nan", "-500"]) {
         r.avplay.streamingProperties = { CURRENT_BANDWIDTH: invalid };
