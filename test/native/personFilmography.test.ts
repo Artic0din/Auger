@@ -5,7 +5,11 @@ import { decodeCatalogQueryPage } from "../../src/contracts/v2/discovery.ts";
 import { WireError } from "../../src/contracts/v2/wire.ts";
 import { detailOperations } from "../../src/api/detailOperations.ts";
 import { operations } from "../../src/api/operations.ts";
-import { personQuery } from "../../src/ui/personFilmography.ts";
+import { personQuery, filmographyCountLabel } from "../../src/ui/personFilmography.ts";
+import { SHIPPED_LANGUAGES, setAppLanguage } from "../../src/i18n/language.ts";
+import { registerSourceCatalogs } from "./support/catalogs.ts";
+
+registerSourceCatalogs();
 import { decodePerson } from "../../src/contracts/v2/details.ts";
 import { FakeDetails } from "./support/fakeDetails.ts";
 import { connected, signIn } from "./support/harness.ts";
@@ -108,4 +112,21 @@ test("person POST obeys real session PIN proof, read retry, and authority cancel
     h.fake.changePin(kid.id, "1357");
     await assert.rejects(h.core.session.call({ ...operations.queryCatalogItems(personQuery("7", "video")), profileScoped: true }), (error: unknown) => error instanceof ApiError && error.problemId === "profile_verification_required");
     assert.equal(h.core.session.activeProfile, undefined, "revoked PIN ends browse authority");
+});
+
+test("filmographyCountLabel follows exact totals, lower-bound loaded counts, and locale grouping (#769)", () => {
+    const item = { id: "movie:1", type: "movie" as const, title: "Film", posterUrl: undefined, year: 2024, seriesId: undefined, seriesTitle: undefined, seasonNumber: undefined, episodeNumber: undefined };
+    assert.equal(filmographyCountLabel({ items: [], nextCursor: undefined, total: 0, totalExact: true }), "0 titles");
+    assert.equal(filmographyCountLabel({ items: [item], nextCursor: undefined, total: 1, totalExact: true }), "1 title");
+    assert.equal(filmographyCountLabel({ items: [item], nextCursor: "c2", total: 1234, totalExact: true }), "1,234 titles");
+    assert.equal(filmographyCountLabel({ items: [item, item], nextCursor: "c2", total: 37, totalExact: false }), "2+ titles");
+    assert.equal(filmographyCountLabel({ items: [item, item], nextCursor: undefined, total: 37, totalExact: false }), "2 titles");
+    assert.equal(filmographyCountLabel({ items: [], nextCursor: undefined, total: 37, totalExact: false }), undefined);
+    setAppLanguage("de", SHIPPED_LANGUAGES, ["en-AU"]);
+    try {
+        assert.equal(filmographyCountLabel({ items: [item], nextCursor: "c2", total: 1234, totalExact: true }), "1.234 Titel");
+        assert.equal(filmographyCountLabel({ items: [item, item], nextCursor: "c2", total: 37, totalExact: false }), "2+ Titel");
+    } finally {
+        setAppLanguage(null);
+    }
 });

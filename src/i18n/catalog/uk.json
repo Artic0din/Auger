@@ -482,6 +482,7 @@
  "library.startsWithLetter": "Назви на {letter}",
  "library.startsWithSymbol": "Назви, що починаються з цифри або символу",
  "library.titleCount": "{count, plural, one {{count_text} назва} few {{count_text} назви} many {{count_text} назв} other {{count_text} назви}}",
+ "library.titleCountMore": "{count, plural, one {{count_text}+ назв} few {{count_text}+ назв} many {{count_text}+ назв} other {{count_text}+ назв}}",
  "marker.skipCredits": "Пропустити титри",
  "marker.skipRecap": "Пропустити огляд",
  "menu.addProfile": "Додати профіль",

@@ -482,6 +482,7 @@
  "library.startsWithLetter": "Titlar som börjar på {letter}",
  "library.startsWithSymbol": "Titlar som börjar med en siffra eller symbol",
  "library.titleCount": "{count, plural, one {{count_text} titel} other {{count_text} titlar}}",
+ "library.titleCountMore": "{count, plural, one {{count_text}+ titlar} other {{count_text}+ titlar}}",
  "marker.skipCredits": "Hoppa över eftertexter",
  "marker.skipRecap": "Hoppa över sammanfattning",
  "menu.addProfile": "Lägg till profil",

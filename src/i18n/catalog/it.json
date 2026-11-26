@@ -482,6 +482,7 @@
  "library.startsWithLetter": "Titoli che iniziano con {letter}",
  "library.startsWithSymbol": "Titoli che iniziano con un numero o un simbolo",
  "library.titleCount": "{count, plural, one {{count_text} titolo} many {{count_text} di titoli} other {{count_text} titoli}}",
+ "library.titleCountMore": "{count, plural, one {{count_text}+ titoli} many {{count_text}+ di titoli} other {{count_text}+ titoli}}",
  "marker.skipCredits": "Salta titoli di coda",
  "marker.skipRecap": "Salta riassunto",
  "menu.addProfile": "Aggiungi profilo",

@@ -482,6 +482,7 @@
  "library.startsWithLetter": "{letter}で始まるタイトル",
  "library.startsWithSymbol": "数字または記号で始まるタイトル",
  "library.titleCount": "{count, plural, other {{count_text}タイトル}}",
+ "library.titleCountMore": "{count, plural, other {{count_text}+タイトル}}",
  "marker.skipCredits": "クレジットをスキップ",
  "marker.skipRecap": "あらすじをスキップ",
  "menu.addProfile": "プロフィールを追加",

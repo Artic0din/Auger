@@ -413,13 +413,17 @@ journey("failed availability probes keep filters visible and late metadata canno
     catalog.route = (method, path, profile, body) => body?.limit === 1 ? problem(403, "permission_denied", "Synthetic probe failure") : read(method, path, profile, body);
     const held = tv.fake.hold("/catalog/people/7", true);
     await tv.page.locator('.details-people [data-focus^="credit:7:"]').first().click();
-    await tv.eventually(async () => await grid(tv).count() === 60, "credits before metadata");
-    assert.equal(await tv.page.locator('[data-focus^="filter:"]').count(), 3);
+    await tv.eventually(async () => await tv.focused() === "loading", "blank person loading page owns focus");
+    assert.equal(await tv.page.locator(".details-person-hero").count(), 0);
+    assert.equal(await tv.page.locator('[data-focus^="filter:"]').count(), 0);
     await tv.remote(BACK);
     held.release();
     await tv.jump(300);
     assert.match(await tv.focused() ?? "", /^credit:7:/);
     assert.equal(await tv.page.locator(".details-person-hero").count(), 0);
+    await tv.page.locator('.details-people [data-focus^="credit:7:"]').first().click();
+    await tv.eventually(async () => await grid(tv).count() === 60, "credits after metadata");
+    assert.equal(await tv.page.locator('[data-focus^="filter:"]').count(), 3);
 });
 
 journey("availability comes from server probes, not the loaded first page", async (tv, catalog) => {
@@ -463,22 +467,39 @@ journey("selecting Series while availability probes are still out keeps that chi
     assert.equal(await tv.page.locator('[data-focus="filter:series"]').count(), 1);
 });
 
-journey("credits and hero shell remain usable while metadata is pending", async tv => {
+journey("blank loading page owns focus until person arrives; incomplete hero stays usable while refresh polls", async (tv, catalog) => {
     await tv.remote(BACK);
     const held = tv.fake.hold("/catalog/people/7", true);
-    await tv.page.locator('.details-people [data-focus^="credit:7:"]').first().click();
-    await tv.eventually(async () => await grid(tv).count() === 60, "independent credits");
-    assert.equal(await tv.page.locator(".details-person-hero").count(), 1);
-    await tv.page.getByText("Loading metadata", { exact: true }).waitFor();
-    assert.equal(await grid(tv).count(), 60);
-    await next(tv, 2);
-    assert.equal(await tv.page.locator(".details-person-hero").count(), 1);
-    await tv.page.getByText("Loading metadata", { exact: true }).waitFor();
-    await tv.page.locator('[data-focus="filter:series"]').click();
-    await tv.eventually(async () => await grid(tv).count() === 3, "filter during pending metadata");
-    assert.equal(metadataReads(tv), 2, "one completed visit plus one pending visit, not one per page or filter");
-    held.release();
-    await tv.eventually(async () => await tv.page.getByText("Loading metadata", { exact: true }).count() === 0, "metadata settled");
+    const read = catalog.route.bind(catalog);
+    let incomplete = true;
+    catalog.route = (method, path, profile, body) => {
+        if (method === "GET" && path === "/catalog/people/7") {
+            return { status: 200, body: { id: "7", name: "River Vale", birth_date: "1980-04-12", ...(incomplete ? {} : { bio: "Updated bio", photo_url: "/art/river.svg" }) } };
+        }
+        if (method === "POST" && path === "/catalog/people/7/refresh") {
+            return { status: 202, body: { status: "queued", person_id: "7" } };
+        }
+        return read(method, path, profile, body);
+    };
+    try {
+        await tv.page.locator('.details-people [data-focus^="credit:7:"]').first().click();
+        await tv.eventually(async () => await tv.focused() === "loading", "blank loading page holds focus before person arrives");
+        assert.equal(await tv.page.locator(".details-person-hero").count(), 0);
+        assert.equal(await tv.page.locator('[data-focus^="filter:"]').count(), 0);
+        assert.equal(await grid(tv).count(), 0);
+        held.release();
+        await tv.eventually(async () => await tv.page.locator(".details-person-hero").count() === 1 && await grid(tv).count() === 60, "hero and credits appear once person resolves");
+        await tv.page.getByText("Loading metadata", { exact: true }).waitFor();
+        assert.equal(await tv.page.locator(".person-metadata-loading .marquee-spinner").count(), 1);
+        await next(tv, 2);
+        assert.equal(await tv.page.locator(".details-person-hero").count(), 1);
+        await tv.page.getByText("Loading metadata", { exact: true }).waitFor();
+        await tv.page.locator('[data-focus="filter:series"]').click();
+        await tv.eventually(async () => await grid(tv).count() === 3, "filter during pending metadata refresh");
+        incomplete = false;
+        await tv.jump(3000);
+        await tv.eventually(async () => await tv.page.getByText("Loading metadata", { exact: true }).count() === 0, "metadata settled");
+    } finally { held.release(); }
 });
 
 test("catalog Series cards use the shared configured status ribbons", async () => {
@@ -734,24 +755,23 @@ journey("Details Back resumes the unfinished metadata refresh without re-reading
 });
 
 // loadInitial re-runs while person == nil, so Back reads the person again but not the filmography.
-journey("Details Back reads the person again when Details interrupted the first read", async tv => {
+journey("Details Back reads the person again when Back interrupted the initial loading page", async tv => {
     await tv.remote(BACK);
     // Held by exact path: Details' own artwork and title reads cannot use it up.
     const held = tv.fake.hold("/catalog/people/7");
     await tv.page.locator('.details-people [data-focus^="credit:7:"]').first().click();
-    await tv.eventually(async () => await grid(tv).count() === 60, "credits before metadata");
-    await tv.page.getByText("Loading metadata", { exact: true }).waitFor();
+    await tv.eventually(async () => await tv.focused() === "loading" && queries(tv).length >= 1, "blank loading page while person read is held");
+    assert.equal(await tv.page.locator(".details-person-hero").count(), 0);
     assert.equal(metadataReads(tv), 2, "the held person read is the only one out");
-    await grid(tv).first().click();
-    await tv.page.locator(".details-hero").waitFor();
     const count = queries(tv).length;
-    for (let attempt = 0; attempt < 3 && await tv.page.locator(".details-person-hero").count() === 0; attempt++) await tv.remote(BACK);
+    await tv.remote(BACK);
+    await tv.page.locator(".details-hero").waitFor();
+    held.release();
+    await tv.page.locator('.details-people [data-focus^="credit:7:"]').first().click();
     await tv.page.locator(".details-person-hero").waitFor();
     await tv.eventually(async () => metadataReads(tv) === 3 && await tv.page.getByText("Loading metadata", { exact: true }).count() === 0, "person read again and hero filled");
-    held.release();
-    await tv.jump(300);
     assert.equal(metadataReads(tv), 3, "exactly one more person read");
-    assert.equal(queries(tv).length, count, "Back reads no filmography page");
+    assert.equal(queries(tv).length, count + 1, "re-entering starts its fresh route filmography read");
     assert.equal(await grid(tv).count(), 60);
 });
 
@@ -936,8 +956,9 @@ for (const status of [404, 500]) journey(`person metadata ${status} shows Apple'
         const held = tv.fake.hold("/catalog/people/7", true);
         await tv.page.keyboard.press("Enter");
         await tv.jump(0);
-        assert.equal(await tv.page.locator(".details-failure").count(), 0, "the old error stays up while the person reloads");
-        assert.equal(await tv.page.locator(".details-person-hero").count(), 1);
+        assert.equal(await tv.page.locator(".details-failure").count(), 0, "Try Again clears the error before reloading");
+        assert.equal(await tv.page.locator(".details-person-hero").count(), 0);
+        assert.equal(await tv.focused(), "loading");
         held.release();
         await tv.page.getByText("River Vale", { exact: true }).first().waitFor();
         await tv.remote(BACK);
@@ -968,15 +989,47 @@ journey("filmography filter controls occupy their own space above the grid", asy
     assert.equal(queries(tv).length, reads + 1, "scrolling into the final eight rows loads one additional page");
 });
 
-journey("Person count labels preserve exact, approximate, singular and empty totals", async (tv, catalog) => {
-    for (const [total, exact, label] of [[1, true, "1 title"], [37, false, "About 37 titles"], [0, true, "0 titles"]] as const) {
-        catalog.personReplies.push({ status: 200, body: { items: [], total, total_exact: exact, window_cursor: "synthetic", page: { has_more: false } } });
+journey("Person count labels preserve exact, lower-bound, grouped, singular and empty totals", async (tv, catalog) => {
+    const read = catalog.route.bind(catalog);
+    catalog.route = (method, path, profile, body) => body?.cursor === "c2" ? problem(500, "internal_error", "Transient") : read(method, path, profile, body);
+    const sampleA = { content_id: "movie:m0001", type: "movie", title: "Sample A", year: 2024 };
+    const sampleB = { content_id: "movie:m0002", type: "movie", title: "Sample B", year: 2024 };
+    const cases = [
+        { body: { items: [], total: 1, total_exact: true, window_cursor: "synthetic", page: { has_more: false } }, label: "1 title" },
+        { body: { items: [], total: 1234, total_exact: true, window_cursor: "synthetic", page: { has_more: false } }, label: "1,234 titles" },
+        { body: { items: [sampleA, sampleB], total: 37, total_exact: false, window_cursor: "synthetic", page: { has_more: true, next_cursor: "c2" } }, label: "2+ titles" },
+        { body: { items: [sampleA, sampleB], total: 37, total_exact: false, window_cursor: "synthetic", page: { has_more: false } }, label: "2 titles" },
+        { body: { items: [], total: 0, total_exact: true, window_cursor: "synthetic", page: { has_more: false } }, label: "0 titles" },
+        { body: { items: [], total: 37, total_exact: false, window_cursor: "synthetic", page: { has_more: false } }, label: undefined },
+    ] as const;
+    for (const entry of cases) {
+        catalog.personReplies.push({ status: 200, body: entry.body });
         const filter = lastQuery(tv)?.body?.type === "movie" ? "series" : "movie";
         await tv.page.locator(`[data-focus="filter:${filter}"]`).click();
-        await tv.page.getByText(label, { exact: true }).waitFor();
+        if (entry.label === undefined) {
+            await tv.eventually(async () => lastQuery(tv)?.body?.type === filter && await tv.page.locator(".person-title-count").count() === 0, "inexact empty count hidden");
+        } else {
+            await tv.page.getByText(entry.label, { exact: true }).waitFor();
+        }
         assert.equal(metadataReads(tv), 1);
         assert.equal(await tv.page.locator(".details-person-hero").count(), 1);
     }
+});
+
+journey("Person biography trims edge whitespace and omits whitespace-only bios", async tv => {
+    await tv.remote(BACK);
+    let bio = "\n\n  Stage and screen performer.\n  ";
+    await tv.page.route("**/api/v2/catalog/people/7", route => route.fulfill({
+        json: { id: "7", name: "River Vale", bio, birth_date: "1980-04-12", photo_url: "/art/river.svg" },
+    }));
+    await tv.page.locator('.details-people [data-focus^="credit:7:"]').first().click();
+    await tv.page.locator(".details-person-hero .browse-overview").waitFor();
+    assert.equal(await tv.page.locator(".details-person-hero .browse-overview").textContent(), "Stage and screen performer.");
+    await tv.remote(BACK);
+    bio = "   \n\t  ";
+    await tv.page.locator('.details-people [data-focus^="credit:7:"]').first().click();
+    await tv.page.locator(".details-person-hero").waitFor();
+    assert.equal(await tv.page.locator(".details-person-hero .browse-overview").count(), 0);
 });
 
 journey("failed initial works read retains metadata and filter recovery", async (tv, catalog) => {

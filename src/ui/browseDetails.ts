@@ -879,13 +879,15 @@ export function personHero(person: Person, baseUrl: string, metadataLoading = fa
         const row = el("div", "person-facts");
         for (const fact of facts) row.appendChild(el("span", "person-fact", fact));
         if (metadataLoading) {
-            const loading = el("span", "person-fact person-metadata-loading", translate("person.loadingMetadata"));
+            const loading = el("span", "person-fact person-metadata-loading");
             loading.setAttribute("role", "status");
+            loading.append(spinner(), el("span", "person-metadata-loading-text", translate("person.loadingMetadata")));
             row.appendChild(loading);
         }
         info.appendChild(row);
     }
-    if (person.bio) info.appendChild(el("p", "browse-text browse-overview", person.bio));
+    const bio = person.bio?.trim();
+    if (bio) info.appendChild(el("p", "browse-text browse-overview", bio));
     hero.appendChild(info);
     return hero;
 }

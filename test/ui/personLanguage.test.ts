@@ -1,13 +1,12 @@
 // The Person page in German and Arabic (silo-apple Screens/People/PersonDetailView.swift at 0e17c3e3): the facts, filters,
 // Filmography heading and count, the empty state and the metadata-refresh status read from the catalog, and in Arabic the page
-// follows the mirrored layout (the portrait and the grid read from the right). English keeps its text. The error page and the
-// non-exact "About N titles" count have no Apple text of the same English and stay as they were.
+// follows the mirrored layout (the portrait and the grid read from the right). English keeps its text.
 import assert from "node:assert/strict";
 import { after, before, test } from "node:test";
 import type { Browser } from "playwright";
 import { APP_LANGUAGE_KEY } from "../../src/contracts/v2/settings.ts";
 import { formattingLocale } from "../../src/i18n/language.ts";
-import { integerText } from "../../src/i18n/numbers.ts";
+import { groupedCount } from "../../src/i18n/format.ts";
 import { translate } from "../../src/i18n/translate.ts";
 import { registerSourceCatalogs } from "../native/support/catalogs.ts";
 import { FakeDetails } from "../native/support/fakeDetails.ts";
@@ -72,9 +71,19 @@ test("the Person page reads in German: facts, filters, Filmography and its count
         assert.equal(await tv.page.locator(".person-filmography-filters [data-focus]").allInnerTexts().then(labels => labels.join("|")), "Alle|Filme|Serien");
         assert.equal(await tv.page.locator(".person-filmography-heading h2").innerText(), "Filmografie");
         const count = await tv.page.locator(".person-title-count").innerText();
-        const total = Number.parseInt(count, 10);
+        const total = Number.parseInt(count.replace(/[^\d]/g, ""), 10);
         assert.ok(total > 0, count);
-        assert.equal(count, text("library.titleCount", "de", { count: total, count_text: integerText(total, formattingLocale("de", "en-AU")) }));
+        assert.equal(count, text("library.titleCount", "de", { count: total, count_text: groupedCount(total, formattingLocale("de", "en-AU")) }));
+    });
+});
+
+test("inexact lower-bound filmography counts read in German", async () => {
+    await onPersonPage("de", none, async (tv, catalog) => {
+        const read = catalog.route.bind(catalog);
+        catalog.route = (method, path, profile, body) => body?.cursor === "c2" ? problem(500, "internal_error", "Transient") : read(method, path, profile, body);
+        catalog.personReplies.push({ status: 200, body: { items: [{ content_id: "movie:m0001", type: "movie", title: "Sample", year: 2024 }], total: 37, total_exact: false, window_cursor: "synthetic", page: { has_more: true, next_cursor: "c2" } } });
+        await tv.page.locator('[data-focus="filter:movie"]').click();
+        await tv.eventually(async () => await tv.page.locator(".person-title-count").innerText() === text("library.titleCountMore", "de", { count: 1, count_text: groupedCount(1, formattingLocale("de", "en-AU")) }), "German lower-bound count");
     });
 });
 

@@ -482,6 +482,7 @@
  "library.startsWithLetter": "Названия на букву {letter}",
  "library.startsWithSymbol": "Названия, начинающиеся с цифры или символа",
  "library.titleCount": "{count, plural, one {{count_text} название} few {{count_text} названия} many {{count_text} названий} other {{count_text} названия}}",
+ "library.titleCountMore": "{count, plural, one {{count_text}+ названий} few {{count_text}+ названий} many {{count_text}+ названий} other {{count_text}+ названий}}",
  "marker.skipCredits": "Пропустить титры",
  "marker.skipRecap": "Пропустить пересказ",
  "menu.addProfile": "Добавить профиль",

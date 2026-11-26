@@ -482,6 +482,7 @@
  "library.startsWithLetter": "Titler som begynner på {letter}",
  "library.startsWithSymbol": "Titler som begynner med et tall eller symbol",
  "library.titleCount": "{count, plural, one {{count_text} tittel} other {{count_text} titler}}",
+ "library.titleCountMore": "{count, plural, one {{count_text}+ titler} other {{count_text}+ titler}}",
  "marker.skipCredits": "Hopp over rulletekst",
  "marker.skipRecap": "Hopp over oppsummering",
  "menu.addProfile": "Legg til profil",

@@ -482,6 +482,7 @@
  "library.startsWithLetter": "Baş harfi {letter} olan içerikler",
  "library.startsWithSymbol": "Sayı veya simgeyle başlayan içerikler",
  "library.titleCount": "{count, plural, one {{count_text} içerik} other {{count_text} içerik}}",
+ "library.titleCountMore": "{count, plural, one {{count_text}+ içerik} other {{count_text}+ içerik}}",
  "marker.skipCredits": "Jeneriği atla",
  "marker.skipRecap": "Özeti atla",
  "menu.addProfile": "Profil ekle",

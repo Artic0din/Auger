@@ -225,8 +225,8 @@ export function routeView(current: Route, handlers: RouteHandlers): View {
     return statusView(`${current.kind}:loading`, translate("common.loading"), waiting, [escape], back);
 }
 
-/** Apple tvOS HomeView and RecommendationsView while loading with nothing to show: a clear `tvPageFocusOwner` page that is only spoken. */
-export function pageLoadingView(name: string, label: string): View {
+/** Apple tvOS HomeView, RecommendationsView, and PersonDetailView while initially loading: a clear `tvPageFocusOwner` page that is only spoken. */
+export function pageLoadingView(name: string, label: string, back?: () => void): View {
     const page = el("div", "home-loading");
     page.tabIndex = 0;
     page.setAttribute("aria-label", label);
@@ -236,7 +236,7 @@ export function pageLoadingView(name: string, label: string): View {
         content: [page],
         zones: [{ id: "loading", layout: "row", items: [{ key: "loading", element: page }] }],
         focus: { zone: "loading", key: "loading" },
-        back: undefined,
+        back,
     };
 }
 

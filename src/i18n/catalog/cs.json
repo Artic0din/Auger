@@ -482,6 +482,7 @@
  "library.startsWithLetter": "Tituly začínající na {letter}",
  "library.startsWithSymbol": "Tituly začínající číslem nebo symbolem",
  "library.titleCount": "{count, plural, one {{count_text} titul} few {{count_text} tituly} many {{count_text} titulu} other {{count_text} titulů}}",
+ "library.titleCountMore": "{count, plural, one {{count_text}+ titul} few {{count_text}+ tituly} many {{count_text}+ titulu} other {{count_text}+ titulů}}",
  "marker.skipCredits": "Přeskočit titulky",
  "marker.skipRecap": "Přeskočit rekapitulaci",
  "menu.addProfile": "Přidat profil",

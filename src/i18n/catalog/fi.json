@@ -482,6 +482,7 @@
  "library.startsWithLetter": "Nimikkeet, jotka alkavat kirjaimella {letter}",
  "library.startsWithSymbol": "Nimikkeet, jotka alkavat numerolla tai symbolilla",
  "library.titleCount": "{count, plural, one {{count_text} nimike} other {{count_text} nimikettä}}",
+ "library.titleCountMore": "{count, plural, one {{count_text}+ nimikettä} other {{count_text}+ nimikettä}}",
  "marker.skipCredits": "Ohita lopputekstit",
  "marker.skipRecap": "Ohita kertaus",
  "menu.addProfile": "Lisää profiili",
