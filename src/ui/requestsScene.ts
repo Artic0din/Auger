@@ -1,7 +1,7 @@
 import type { MediaRequest, RequestTitle } from "../contracts/v2/requests.ts";
 import { artworkUrl } from "./browseModel.ts";
 import { heroBackdrop, type Tints } from "./heroBackdrop.ts";
-import { requestProgress, type RequestProgress } from "./requestProgress.ts";
+import { requestProgress, requestReasonCopy, type RequestProgress } from "./requestProgress.ts";
 import { el } from "./screen.ts";
 import { TMDB_LOGO_PATH } from "./acknowledgements.ts";
 import { balanceTwoLineText } from "./textLayout.ts";
@@ -25,21 +25,47 @@ export function requestTrack(progress: RequestProgress, labels = false): HTMLEle
 /** Apple's `marqueeContent` meta parts, which `TVFocusMarquee.metaText` joins with " · " into one `Text`. */
 function requestMetadataParts(title: RequestTitle | MediaRequest): string[] {
     const requested = "createdAt" in title && title.createdAt !== undefined ? translate("requests.requestedOn", { date: requestDate(title.createdAt) }) : undefined;
-    return [title.year === undefined ? undefined : integerText(title.year), title.mediaType === "series" ? "Series" : "Movie", requested].filter((value): value is string => value !== undefined && value !== "");
+    return [title.year !== undefined && title.year > 0 ? integerText(title.year) : undefined, title.mediaType === "series" ? "Series" : "Movie", requested].filter((value): value is string => value !== undefined && value !== "");
 }
 export function requestMetadata(title: RequestTitle | MediaRequest): string { return requestMetadataParts(title).join(" · "); }
 
 /** Apple's `.dateTime.month(.abbreviated).day().locale(AppLanguage.formattingLocale)`. */
 export function requestDate(instant: number): string { return new Intl.DateTimeFormat(shownLocale(), { month: "short", day: "numeric" }).format(new Date(instant)); }
 
+const TARGET_PHASES = new Map<string, (quality: string) => string>([
+    ["completed", quality => translate("requests.target.done", { quality })],
+    ["downloading", quality => translate("requests.target.downloading", { quality })],
+    ["queued", quality => translate("requests.target.queued", { quality })],
+    ["approved", quality => translate("requests.target.queued", { quality })],
+    ["pending", quality => translate("requests.target.pending", { quality })],
+    ["failed", quality => translate("requests.target.failed", { quality })],
+]);
+
+/** Apple RequestTargetSummary.text: per-quality breakdown only when a request targets multiple qualities. */
+export function requestTargetSummary(targets: MediaRequest["targets"]): string | undefined {
+    if ((targets?.length ?? 0) <= 1) return undefined;
+    const parts = targets?.flatMap(target => {
+        const phase = TARGET_PHASES.get(target.status);
+        return target.quality && phase !== undefined ? [phase(target.quality)] : [];
+    });
+    return parts && parts.length > 0 ? parts.join(" · ") : undefined;
+}
+
+/** Apple RequestRowCopy.status: appends failure reason or multi-target summary after the long label. */
+export function requestRowStatus(record: MediaRequest, progress: RequestProgress): string {
+    if (progress.display === "needsAttention") {
+        const reason = requestReasonCopy(record.lastError);
+        return reason !== undefined ? `${progress.long} · ${reason}` : progress.long;
+    }
+    if (progress.display === "onTheWay") {
+        const targets = requestTargetSummary(record.targets);
+        return targets !== undefined ? `${progress.long} · ${targets}` : progress.long;
+    }
+    return progress.long;
+}
+
 export function requestQuality(targets: MediaRequest["targets"]): string | undefined {
-    const phases = new Map<string, (quality: string) => string>([
-        ["completed", quality => translate("requests.target.done", { quality })], ["downloading", quality => translate("requests.target.downloading", { quality })],
-        ["queued", quality => translate("requests.target.queued", { quality })], ["approved", quality => translate("requests.target.queued", { quality })],
-        ["pending", quality => translate("requests.target.pending", { quality })], ["failed", quality => translate("requests.target.failed", { quality })],
-    ]);
-    const progress = (targets?.length ?? 0) > 1 ? targets?.flatMap(target => { const phase = phases.get(target.status); return target.quality && phase !== undefined ? [phase(target.quality)] : []; }) : undefined;
-    return (progress?.length ? progress : targets?.map(target => target.quality).filter(Boolean))?.join(" · ") || undefined;
+    return requestTargetSummary(targets) ?? (targets?.map(target => target.quality).filter(Boolean).join(" · ") || undefined);
 }
 
 export function requestStatusLabel(progress: RequestProgress, text = progress.short): HTMLElement {
@@ -49,9 +75,14 @@ export function requestStatusLabel(progress: RequestProgress, text = progress.sh
 }
 
 function strokeIcon(d: string): SVGSVGElement {
+    return strokePaths([d]);
+}
+
+function strokePaths(paths: readonly string[], className?: string): SVGSVGElement {
     const svg = document.createElementNS("http://www.w3.org/2000/svg", "svg"); svg.setAttribute("viewBox", "0 0 24 24");
-    const path = document.createElementNS("http://www.w3.org/2000/svg", "path"); path.setAttribute("d", d);
-    svg.appendChild(path); return svg;
+    if (className !== undefined) { svg.classList.add(className); svg.setAttribute("aria-hidden", "true"); }
+    for (const d of paths) { const path = document.createElementNS("http://www.w3.org/2000/svg", "path"); path.setAttribute("d", d); svg.appendChild(path); }
+    return svg;
 }
 
 export function requestPosterBadge(progress: RequestProgress): HTMLElement | undefined {
@@ -62,8 +93,19 @@ export function requestPosterBadge(progress: RequestProgress): HTMLElement | und
 }
 
 export function requestPlusIcon(): SVGSVGElement {
-    const icon = strokeIcon("M12 1.5v21M1.5 12h21"); icon.classList.add("requests-action-icon"); icon.setAttribute("aria-hidden", "true");
-    return icon;
+    return strokePaths(["M12 1.5v21M1.5 12h21"], "requests-action-icon");
+}
+
+export function requestBellIcon(): SVGSVGElement {
+    return strokePaths(["M18 8a6 6 0 0 0-12 0c0 7-3 9-3 9h18s-3-2-3-9", "M13.73 21a2 2 0 0 1-3.46 0"], "requests-secondary-icon");
+}
+
+export function requestBellSlashIcon(): SVGSVGElement {
+    return strokePaths(["M13.73 21a2 2 0 0 1-3.46 0", "M18.63 13A17.89 17.89 0 0 1 18 8", "M6.26 6.26A5.86 5.86 0 0 0 6 8c0 7-3 9-3 9h14", "M18 8a6 6 0 0 0-9.33-5", "M2 2l20 20"], "requests-secondary-icon");
+}
+
+export function requestXmarkIcon(): SVGSVGElement {
+    return strokePaths(["M6 6 18 18M18 6 6 18"], "requests-secondary-icon");
 }
 
 /** Apple's rail is a lazy stack in a 100...1820 scroll view with clipping disabled: a card that touches those bounds draws whole, and one past them does not draw. */
@@ -116,8 +158,8 @@ export function requestHero(title: RequestTitle | MediaRequest, baseUrl: string,
     const url = artworkUrl(reference, baseUrl);
     if (url !== undefined) root.appendChild(heroBackdrop(url, undefined, palette, detail));
     const copy = el("div", "requests-hero-copy");
-    // Apple's detail progress excludes unavailable: the action says so, and nothing was requested (RequestDetailViewModel.progress).
-    const titleProgress = requestProgress(title), progress = detail && titleProgress?.display === "unavailable" ? undefined : titleProgress;
+    // Apple's detail progress and discover hub preview exclude unavailable: the action or card says so, and nothing was requested (RequestDetailViewModel.progress, TVRequestsPage.marqueeContent).
+    const titleProgress = requestProgress(title), progress = titleProgress?.display === "unavailable" && (detail || "request" in title) ? undefined : titleProgress;
     if (detail) {
         if (progress?.display !== "inLibrary") copy.appendChild(el("div", "requests-eyebrow", translate(progress === undefined ? "requests.detail.eyebrowNotInLibrary" : "requests.detail.eyebrowRequested")));
         copy.append(detailTitle(title.title), detailMetadata(metadata ?? title));
@@ -129,7 +171,12 @@ export function requestHero(title: RequestTitle | MediaRequest, baseUrl: string,
     copy.appendChild(el("p", "requests-synopsis", metadata?.overview ?? title.overview ?? ""));
     if (progress !== undefined) {
         if (detail && progress.display !== "inLibrary") copy.appendChild(detailProgress(title, progress));
-        else if (!detail) { const status = el("div", "requests-progress"); status.append(requestStatusLabel(progress, progress.long), requestTrack(progress)); copy.appendChild(status); }
+        else if (!detail) {
+            const status = el("div", "requests-progress");
+            const statusText = "id" in title ? requestRowStatus(title, progress) : progress.long;
+            status.append(requestStatusLabel(progress, statusText), requestTrack(progress));
+            copy.appendChild(status);
+        }
     }
     if (detail) {
         const credit = metadata?.director ? translate("detail.directedBy", { names: metadata.director }) : metadata?.creators?.length ? translate("requests.createdBy", { names: metadata.creators.slice(0, 2).join(", ") }) : undefined;

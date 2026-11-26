@@ -3,6 +3,7 @@
 
 import assert from "node:assert/strict";
 import { after, before, test } from "node:test";
+import { build } from "esbuild";
 import type { Browser } from "playwright";
 import { FakeCatalog } from "../native/support/fakeCatalog.ts";
 import { FakeDetails } from "../native/support/fakeDetails.ts";
@@ -115,6 +116,20 @@ page("a mixed library with nothing of the tab's type says so on Recommended", as
     household.librarySections = [{ id: "series-only", title: "Series Only", items: ["series:s1", "series:s2"] }];
 });
 
+page("an empty incomplete Recommended tab shows the some-shelves bottom note as well as its empty state", async tv => {
+    await tv.page.route("**/api/v2/catalog/query**", route => route.fulfill({ status: 500, json: { type: "about:blank", title: "Server error", status: 500 } }));
+    await tv.page.locator('[data-focus="movies"]').click();
+    await tv.page.locator(".library-empty").waitFor();
+    assert.equal(await tv.page.locator(".library-empty-title").innerText(), "Some shelves could not be loaded");
+    assert.equal(await tv.page.locator(".library-empty-body").innerText(), "Open Browse to see titles matching this tab.");
+    assert.equal(await tv.page.locator(".library-incomplete").innerText(), "Some shelves could not be fully loaded. Open Browse to see this media type.");
+}, catalog => {
+    mixed(catalog);
+    const household = catalog.households.get("p-owner");
+    assert.ok(household);
+    household.librarySections = [{ id: "series-only", title: "Series Only", items: ["series:s1", "series:s2"] }];
+});
+
 page("Recommended loads behind Apple's page outline, which holds focus until the rows arrive", async tv => {
     await tv.page.locator('[data-focus="movies"]').click();
     await tv.page.locator('[data-view="library:12"] .home-section').first().waitFor();
@@ -215,15 +230,85 @@ page("collection group headers and cards match Apple's grid", async tv => {
     const header = await tv.page.locator(".collection-group-title").evaluate(node => {
         const style = getComputedStyle(node);
         const art = node.parentElement?.querySelector(".browse-art")?.getBoundingClientRect();
-        return { weight: style.fontWeight, wrap: style.whiteSpace, overflow: style.textOverflow, size: style.fontSize, gap: art === undefined ? undefined : Math.round(art.top - node.getBoundingClientRect().bottom) };
+        return { family: style.fontFamily, weight: style.fontWeight, wrap: style.whiteSpace, overflow: style.textOverflow, size: style.fontSize, gap: art === undefined ? undefined : Math.round(art.top - node.getBoundingClientRect().bottom) };
     });
-    // Monospaced text keeps Apple's points, as the details popover header does.
-    assert.deepEqual(header, { weight: "400", wrap: "nowrap", overflow: "ellipsis", size: "22px", gap: 20 });
+    // Monospaced text keeps Apple's points, using the bundled Roboto Mono token.
+    assert.match(header.family, /Roboto Mono/);
+    assert.deepEqual({ weight: header.weight, wrap: header.wrap, overflow: header.overflow, size: header.size, gap: header.gap }, { weight: "400", wrap: "nowrap", overflow: "ellipsis", size: "22px", gap: 20 });
     await card.focus();
     const ring = await card.locator(".browse-art").evaluate(node => ({ offset: getComputedStyle(node).outlineOffset, width: getComputedStyle(node).outlineWidth, shadow: getComputedStyle(node).boxShadow }));
     assert.deepEqual(ring, { offset: "-2px", width: "4px", shadow: "rgba(0, 0, 0, 0.45) 0px 8px 36px 0px" });
     const glyph = await card.locator(".collection-stack").evaluate(node => ({ symbol: node.getAttribute("data-symbol"), color: getComputedStyle(node).color, fill: node.querySelector("svg")?.getAttribute("fill") }));
     assert.deepEqual(glyph, { symbol: "square.stack.fill", color: "rgba(255, 255, 255, 0.85)", fill: "currentColor" });
+});
+
+page("Collections posters show ThumbHash or surface while loading, film glyph on failure, and stack gradient only when empty", async (tv, catalog) => {
+    const ART_HASH = "1QcSHQRnh493V4dIh4eXh1h4kJUI";
+    let releasePoster: () => void = () => undefined;
+    const posterGate = new Promise<void>(resolve => { releasePoster = resolve; });
+    await tv.page.route("**/art/col-ok.svg", route => route.fulfill({ contentType: "image/svg+xml", body: '<svg xmlns="http://www.w3.org/2000/svg" width="2" height="3"/>' }));
+    await tv.page.route("**/art/col-hash.svg", async route => { await posterGate; await route.abort(); });
+    await tv.page.route("**/art/col-plain.svg", async route => { await posterGate; await route.abort(); });
+    const loaded = { id: "c-ok", library_id: "12", library_ids: ["12"], group_id: "curated", title: "Loaded", poster_url: "/art/col-ok.svg", poster_thumbhash: ART_HASH, item_count: 5, poster_is_collage: false };
+    const withHash = { id: "c-hash", library_id: "12", library_ids: ["12"], group_id: "curated", title: "Hashed", poster_url: "/art/col-hash.svg", poster_thumbhash: ART_HASH, item_count: 2, poster_is_collage: false };
+    const noHash = { id: "c-plain", library_id: "12", library_ids: ["12"], group_id: "curated", title: "Plain", poster_url: "/art/col-plain.svg", item_count: 3, poster_is_collage: false };
+    const missing = { id: "c-empty", library_id: "12", library_ids: ["12"], group_id: "curated", title: "Empty", poster_url: "", item_count: 1, poster_is_collage: false };
+    const whitespace = { id: "c-space", library_id: "12", library_ids: ["12"], group_id: "curated", title: "Space", poster_url: "   ", item_count: 1, poster_is_collage: false };
+    catalog.failNext("/library/12/collections", {
+        status: 200,
+        body: { library_id: "12", collections: [loaded, withHash, noHash, missing, whitespace], groups: [{ id: "curated", name: "Curated", kind: "admin", sort_mode: "name_asc", sort_order: 0, collections: [loaded, withHash, noHash, missing, whitespace] }], ungrouped: { sort_order: 1, collections: [] } },
+    });
+    await tv.page.locator('[data-focus="movies"]').click();
+    await tv.page.locator('[data-view="library:12"] .home-section').first().waitFor();
+    await selectLibraryMode(tv, "Collections");
+    await tv.page.locator('[data-focus="collection:c-hash"]').waitFor();
+    const state = (focusKey: string) => tv.page.locator(`[data-focus="${focusKey}"] .browse-art`).evaluate(art => {
+        const style = getComputedStyle(art);
+        const glyph = art.querySelector(".browse-art-surface-glyph");
+        const img = art.querySelector(".browse-art-image");
+        return {
+            inlineBg: art instanceof HTMLElement ? art.style.background : "",
+            bgColor: style.backgroundColor,
+            thumbhash: art.querySelectorAll("canvas.browse-art-thumbhash").length,
+            img: art.querySelectorAll("img").length,
+            imgLoaded: img !== null && img.classList.contains("is-loaded"),
+            stack: art.querySelectorAll(".collection-stack").length,
+            surfaceGlyph: glyph?.getAttribute("data-symbol") ?? null,
+            surfaceGlyphColor: glyph === null ? null : getComputedStyle(glyph).color,
+        };
+    });
+    try {
+        await tv.eventually(async () => (await state("collection:c-ok")).imgLoaded, "valid poster loads");
+        const okState = await state("collection:c-ok");
+        assert.equal(okState.stack, 0);
+        assert.equal(okState.surfaceGlyph, null);
+        const hashLoading = await state("collection:c-hash");
+        assert.equal(hashLoading.inlineBg, "", "no id-hue gradient behind a poster while loading");
+        assert.equal(hashLoading.thumbhash, 1, "ThumbHash canvas shows while loading");
+        assert.equal(hashLoading.stack, 0);
+        assert.equal(hashLoading.surfaceGlyph, null);
+        const plainLoading = await state("collection:c-plain");
+        assert.equal(plainLoading.inlineBg, "");
+        assert.equal(plainLoading.bgColor, "rgb(14, 15, 18)", "surface variant shows when there is no ThumbHash");
+        assert.equal(plainLoading.thumbhash, 0);
+        assert.equal(plainLoading.stack, 0);
+        for (const emptyKey of ["collection:c-empty", "collection:c-space"]) {
+            const emptyState = await state(emptyKey);
+            assert.match(emptyState.inlineBg, /linear-gradient/);
+            assert.equal(emptyState.stack, 1);
+        }
+    } finally { releasePoster(); }
+    await tv.eventually(async () => (await state("collection:c-hash")).surfaceGlyph === "film" && (await state("collection:c-plain")).surfaceGlyph === "film", "failed posters show faint film glyph");
+    const hashFailed = await state("collection:c-hash");
+    assert.equal(hashFailed.img, 0);
+    assert.equal(hashFailed.thumbhash, 1, "ThumbHash stays underneath the faint film glyph");
+    assert.equal(hashFailed.stack, 0, "no stack glyph when posterUrl failed");
+    assert.equal(hashFailed.inlineBg, "");
+    assert.equal(hashFailed.surfaceGlyphColor, "rgba(237, 237, 237, 0.3)");
+    const plainFailed = await state("collection:c-plain");
+    assert.equal(plainFailed.img, 0);
+    assert.equal(plainFailed.bgColor, "rgb(14, 15, 18)");
+    assert.equal(plainFailed.stack, 0);
 });
 
 // Browse, against TVLibraryGridView and TVLibraryGridViewModel.
@@ -244,6 +329,7 @@ page("Browse's first load shows twelve static poster placeholders", async tv => 
         await openBrowse(tv);
         const cards = tv.page.locator(".browse .catalog-skeleton .poster-skeleton");
         await cards.first().waitFor();
+        await tv.eventually(async () => tv.pendingReplies <= tv.fake.heldReplies, "browse setup answers delivered");
         assert.equal(await cards.count(), 12);
         assert.equal(await tv.page.locator(".discovery-skeleton").count(), 0);
         const style = await cards.first().evaluate(node => ({ background: getComputedStyle(node).backgroundColor, radius: getComputedStyle(node).borderRadius, animations: node.getAnimations().length, ratio: node.getBoundingClientRect().height / node.getBoundingClientRect().width }));
@@ -973,4 +1059,93 @@ test("a late image probe upgrades a mixed tab's refilled cards as well as the in
         assert.deepEqual((await cardIds(tv, "mixed-row")).slice(0, 2), ["movie:m0001", "movie:m0002"]);
         assert.deepEqual(tv.console, [], "the page logs nothing");
     } finally { held.release(); await tv.page.context().close(); }
+});
+
+page("entering a facet focuses the first selected value, else the first value", async tv => {
+    await browseReady(tv);
+    await tv.page.locator('[data-focus="filter"]').click();
+    await tv.page.locator('[data-focus="facet:genre"]').click();
+    assert.equal(await tv.focused(), "value:Drama");
+    await tv.page.locator('[data-focus="value:Comedy"]').click();
+    await tv.remote(10009);
+    assert.equal(await tv.focused(), "facet:genre");
+    await tv.page.locator('[data-focus="facet:genre"]').click();
+    assert.equal(await tv.focused(), "value:Comedy");
+});
+
+test("Explore all section page renders blank loading focus owner, empty stack icon and unavailable icon", async () => {
+    const tv = await openTv(browser, { app: "browse" });
+    try {
+        const catalog = new FakeCatalog();
+        await start(tv, catalog);
+        await tv.page.locator('[data-focus="movies"]').click();
+        await tv.page.locator('[data-focus="expand:library-picks"]').waitFor();
+        let release = (): void => undefined;
+        const gate = new Promise<void>(resolve => { release = resolve; });
+        await tv.page.route("**/api/v2/catalog/query**", async route => { await gate; await route.fulfill({ json: emptyPage }); });
+        await tv.page.locator('[data-focus="expand:library-picks"]').click();
+        const loadingOwner = tv.page.locator('.section-catalog-state');
+        await loadingOwner.waitFor();
+        assert.equal(await loadingOwner.innerText(), "");
+        assert.equal(await loadingOwner.getAttribute("aria-label"), "Loading Library Picks");
+        assert.equal(await tv.focused(), "state");
+        release();
+        await loadingOwner.locator(".library-empty").waitFor();
+        assert.equal(await loadingOwner.locator('[data-symbol="square.stack.3d.up.fill"]').count(), 1);
+        assert.equal(await loadingOwner.locator(".library-empty-title").innerText(), "Nothing here yet");
+        assert.equal(await loadingOwner.locator(".library-empty-body").innerText(), "This row does not have any items right now.");
+        assert.equal(await tv.focused(), "state");
+        await tv.remote(10009);
+        await tv.page.unroute("**/api/v2/catalog/query**");
+        await tv.page.route("**/api/v2/catalog/query**", route => route.fulfill({ status: 404, contentType: "application/problem+json", json: problem(404, "not_found", "Missing section").body }));
+        await tv.page.locator('[data-focus="expand:library-picks"]').click();
+        await loadingOwner.locator(".library-empty").waitFor();
+        assert.equal(await loadingOwner.locator('[data-symbol="rectangle.stack.badge.minus"]').count(), 1);
+        assert.equal(await loadingOwner.locator(".library-empty-title").innerText(), "Row unavailable");
+        assert.equal(await loadingOwner.locator(".library-empty-body").innerText(), "This row is no longer available.");
+        assert.equal(await tv.focused(), "state");
+        assert.deepEqual(tv.console, [], "the page logs nothing");
+    } finally { await tv.page.context().close(); }
+});
+
+test("SectionCatalog shows ErrorView with Retry over a cached unavailable snapshot when a reload fails", async () => {
+    const tv = await openTv(browser, { app: "browse" });
+    try {
+        const compiled = await build({
+            stdin: {
+                contents: 'import { SectionCatalog } from "./src/ui/sectionCatalog.ts"; (window as unknown as { SectionCatalog: typeof SectionCatalog }).SectionCatalog = SectionCatalog;',
+                resolveDir: process.cwd(),
+                loader: "ts",
+            },
+            bundle: true,
+            write: false,
+            format: "iife",
+            target: "chrome108",
+        });
+        await tv.page.addScriptTag({ content: compiled.outputFiles[0]!.text });
+        const summary = await tv.page.evaluate(() => {
+            const SectionCatalog = (window as unknown as { SectionCatalog: new () => { snapshot: unknown; view: (...args: unknown[]) => { focus?: { zone: string; key: string }; content: HTMLElement[] } } }).SectionCatalog;
+            const catalog = new SectionCatalog();
+            catalog.snapshot = { page: { items: [], nextCursor: undefined, total: 0, totalExact: true }, cursors: new Set(), unavailable: true };
+            const route = {
+                kind: "homeSection",
+                id: "library-picks",
+                title: "Library Picks",
+                continuing: false,
+                pages: { page: undefined, cursors: [undefined], index: 0 },
+                failure: "Server unreachable",
+                error: undefined,
+            };
+            const view = catalog.view(route, { baseUrl: "https://silo.example.test", open: () => undefined }, false, () => undefined, () => undefined, () => undefined);
+            const host = document.createElement("div");
+            host.append(...view.content);
+            return {
+                focus: view.focus,
+                retryCount: host.querySelectorAll('[data-focus="retry"]').length,
+                unavailableCount: host.querySelectorAll('[data-symbol="rectangle.stack.badge.minus"]').length,
+            };
+        });
+        assert.deepEqual(summary, { focus: { zone: "status", key: "retry" }, retryCount: 1, unavailableCount: 0 });
+        assert.deepEqual(tv.console, [], "the page logs nothing");
+    } finally { await tv.page.context().close(); }
 });

@@ -1240,3 +1240,24 @@ tvTest("an empty household offers creation and a failed list offers Try again", 
     await tv.page.keyboard.press("Enter");
     await screenIs(tv, "profiles");
 });
+
+tvTest("submitting a restricted child profile without selected libraries shows a refusal dialog without POST and returns focus to Restrict libraries", async tv => {
+    tv.fake.catalog = { route: (method, path) => method === "GET" && path === "/user/libraries" ? { status: 200, body: { items: [{ id: "movies", name: "Movies", type: "movies", sort_order: 0 }] } } : undefined };
+    await picker(tv);
+    await tv.page.getByRole("button", { name: "Add", exact: true }).click();
+    await screenIs(tv, "profile-create");
+    await tv.page.locator("#create-profile-name").fill("Kid");
+    await tv.page.locator('[data-focus="create-child"]').click();
+    await tv.page.locator('[data-focus="create-libraries"]').click();
+    await tv.page.locator('[data-focus="library:movies"]').waitFor();
+    await tv.page.getByRole("button", { name: "Create Profile", exact: true }).click();
+    await screenIs(tv, "profile-create:alert");
+    await tv.page.getByRole("alertdialog").waitFor();
+    await shows(tv, "Choose a Library");
+    await shows(tv, "Select at least one library for this child profile.");
+    assert.equal(tv.fake.paths().filter(path => path === "POST /profiles").length, 0);
+    await tv.page.keyboard.press("Enter");
+    await screenIs(tv, "profile-create");
+    assert.equal(await tv.focused(), "create-libraries");
+    assert.equal(tv.fake.paths().filter(path => path === "POST /profiles").length, 0);
+});

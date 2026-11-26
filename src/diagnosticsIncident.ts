@@ -56,6 +56,8 @@ export interface PlaybackAttemptTrace {
     readonly recovered: boolean;
     /** The reconnect loop gave up: applicable recovery ran out, so the failure is not ordinary connectivity. */
     readonly exhausted: boolean;
+    /** Whether the final failing request timed out without an HTTP status; never serialized directly. */
+    readonly timedOut?: boolean | undefined;
     readonly steps: readonly string[];
     /** Undefined until the playback defaults were read for this attempt. */
     readonly settings: { readonly quality: string; readonly capKbps: number | undefined; readonly hdr: boolean } | undefined;
@@ -238,7 +240,10 @@ export function playbackErrorCode(error: PlaybackError, trace: PlaybackAttemptTr
         }
         case "session_expired": return http === undefined ? "session_missing" : `http_${http}`;
         case "playback_failed": return cleanAvplayError(trace.lastAvplay) ?? cleanIncidentCode(trace.first?.code) ?? "routes_exhausted";
-        case "network": return error.noResponse === true ? "no_response" : "network_unreachable";
+        case "network": {
+            if (http !== undefined) return `http_${http}`;
+            return error.noResponse === true || trace.timedOut === true ? "no_response" : "network_unreachable";
+        }
         default: return error.kind;
     }
 }
@@ -259,10 +264,10 @@ export function playbackOutcome(error: PlaybackError | undefined): IncidentOutco
 
 /**
  * Opt-in filing applies only to a technical failure that ended the requested playback after applicable recovery.
- * A connectivity failure files only when the reconnect loop ran out; ordinary loss of network stays manual.
+ * Exhausted network reconnects auto-file only when an HTTP error was observed; pure connectivity drops and timeouts stay manual.
  */
 export function incidentAutoEligible(incident: DiagnosticsIncidentPayload): boolean {
-    return incident.out === "failed" && (incident.kind !== "network" || incident.rec.r === "exhausted");
+    return incident.out === "failed" && (incident.kind !== "network" || (incident.rec.r === "exhausted" && incident.http !== undefined));
 }
 
 /**

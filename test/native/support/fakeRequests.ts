@@ -17,7 +17,7 @@ export class FakeRequests extends FakeDetails {
     readonly record = { id: "request-one", media_type: "movie", tmdb_id: 949, title: "Heat", overview: "A detective pursues a professional thief.", requested_by_profile_id: "p-owner", state: "pending", status: "pending", outcome: "active" };
     title(): Record<string, unknown> {
         return { media_type: "movie", tmdb_id: 949, title: "Heat", overview: this.record.overview, availability: "missing", in_watchlist: false,
-            request: { requestable: !this.created && !this.requestedByOther, following: this.following, requested_by_viewer: this.created, ...(this.created || this.following || this.requestedByOther ? { request_id: this.record.id, state: "pending" } : {}) } };
+            request: { requestable: !this.created && !this.requestedByOther, following: this.following, requested_by_viewer: this.created, ...(this.requestedByOther ? { reason: "already_requested" } : {}), ...(this.created || this.following || this.requestedByOther ? { request_id: this.record.id, state: "pending" } : {}) } };
     }
     override route(method: string, path: string, profileId: string | undefined, body?: Record<string, unknown>): Reply | undefined {
         const url = new URL(path, "https://fake.invalid"), p = url.pathname;

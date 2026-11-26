@@ -46,9 +46,36 @@ export function createProfileFlow(options: Options): ProfileCreateFlow {
     let updateLibraries = (): void => undefined;
     let redrawer: (() => void) | undefined;
 
-    const late = lateRedraw(() => false, () => { if (!ended) redrawer?.(); });
-    const stopCatalog = onCatalogLoaded(() => { late.arrived(); });
-    const destroy = (): void => { ended = true; redrawer = undefined; stopCatalog(); late.clear(); controller.abort(); management.close(); pin = ""; };
+    let blurTimer: number | undefined;
+    let blurredField: HTMLInputElement | undefined;
+    let catalogWaiting = false;
+    const cancelPendingResume = (): void => {
+        if (blurTimer !== undefined) { window.clearTimeout(blurTimer); blurTimer = undefined; }
+        if (blurredField !== undefined) { blurredField.removeEventListener("blur", onFieldBlur); blurredField = undefined; }
+    };
+    const onFieldBlur = (): void => {
+        if (blurTimer !== undefined) window.clearTimeout(blurTimer);
+        blurTimer = window.setTimeout(() => {
+            blurTimer = undefined;
+            blurredField = undefined;
+            if (!ended && catalogWaiting) late.arrived();
+        }, 0);
+    };
+    const editing = (): boolean => {
+        const active = document.activeElement;
+        if (active instanceof HTMLInputElement && (active.dataset.focus === "create-name" || active.dataset.focus === "create-pin")) {
+            if (blurredField !== active) {
+                blurredField?.removeEventListener("blur", onFieldBlur);
+                blurredField = active;
+                active.addEventListener("blur", onFieldBlur, { once: true });
+            }
+            return true;
+        }
+        return false;
+    };
+    const late = lateRedraw(editing, () => { catalogWaiting = false; cancelPendingResume(); if (!ended) redrawer?.(); });
+    const stopCatalog = onCatalogLoaded(() => { catalogWaiting = true; late.arrived(); });
+    const destroy = (): void => { ended = true; redrawer = undefined; catalogWaiting = false; cancelPendingResume(); stopCatalog(); late.clear(); controller.abort(); management.close(); pin = ""; };
     const finish = (profileId?: string, uncertain = false): void => {
         try { destroy(); }
         catch {
@@ -61,6 +88,10 @@ export function createProfileFlow(options: Options): ProfileCreateFlow {
         options.finished(profileId, uncertain);
     };
     const showProblem = (line: string): void => {
+        redrawer = undefined;
+        catalogWaiting = false;
+        cancelPendingResume();
+        late.clear();
         const heading = el("h1", "signin-title", "Profile could not be created");
         const detail = el("p", "signin-text signin-error", line);
         detail.setAttribute("role", "alert");
@@ -88,6 +119,9 @@ export function createProfileFlow(options: Options): ProfileCreateFlow {
 
     const render = (focus = "create-name"): void => {
         if (ended) return;
+        catalogWaiting = false;
+        cancelPendingResume();
+        late.clear();
         const controls: Control[] = [];
         updateLibraries = () => undefined;
         let drawLibraries: (() => void) | undefined;

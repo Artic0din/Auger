@@ -8,9 +8,9 @@ import { decodeMediaRequest, decodeRequestTitle } from "../../src/contracts/v2/r
 import { SHIPPED_LANGUAGES, setAppLanguage } from "../../src/i18n/language.ts";
 import { registerCatalog, translate } from "../../src/i18n/translate.ts";
 import { unconfirmedWriteMessage, writeFailureMessage } from "../../src/ui/errorState.ts";
-import { requestProgress } from "../../src/ui/requestProgress.ts";
+import { requestProgress, requestReasonCopy } from "../../src/ui/requestProgress.ts";
 import { createRequests } from "../../src/ui/requestsModule.ts";
-import { requestQuality } from "../../src/ui/requestsScene.ts";
+import { requestQuality, requestRowStatus } from "../../src/ui/requestsScene.ts";
 import { settle } from "./support/clock.ts";
 import { FakeRequests } from "./support/fakeRequests.ts";
 import { problem } from "./support/fakeSilo.ts";
@@ -80,6 +80,12 @@ test("a request's quality summary, removal notice and write failures read in Ger
         const qualityRecord = decodeMediaRequest({ id: "r1", media_type: "movie", tmdb_id: 949, title: "Heat", state: "processing", status: "downloading", outcome: "active", requested_by_profile_id: "p",
             targets: [{ quality: "1080p", status: "downloading" }, { quality: "4K", status: "queued" }] });
         assert.equal(requestQuality(qualityRecord.targets), `${translate("requests.target.downloading", { quality: "1080p" }, "de")} · ${translate("requests.target.queued", { quality: "4K" }, "de")}`);
+        assert.equal(requestRowStatus(qualityRecord, requestProgress(qualityRecord)!), `${translate("requests.long.downloading", undefined, "de")} · ${translate("requests.target.downloading", { quality: "1080p" }, "de")} · ${translate("requests.target.queued", { quality: "4K" }, "de")}`);
+        assert.equal(requestReasonCopy("quota_exceeded"), translate("requests.reason.quota_exceeded", undefined, "de"));
+        const failedReason = decodeMediaRequest({ id: "r2", media_type: "movie", tmdb_id: 949, title: "Heat", state: "failed", status: "approved", outcome: "failed", last_error: "quota_exceeded" });
+        assert.equal(requestRowStatus(failedReason, requestProgress(failedReason)!), `${translate("requests.long.failed", undefined, "de")} · ${translate("requests.reason.quota_exceeded", undefined, "de")}`);
+        assert.equal(translate("requests.discover.trendingNow", undefined, "de"), "Jetzt im Trend");
+        assert.equal(translate("requests.discover.crowdFavorites", undefined, "de"), "Publikumsfavoriten");
         await page.removeRecord(record, { zone: "mine", key: record.id });
         assert.equal(page.snapshot().notice, translate("requests.notice.removed", undefined, "de"));
         assert.notEqual(page.snapshot().notice, "Request removed");

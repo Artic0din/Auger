@@ -205,3 +205,42 @@ for (const exit of ["the Cancel button", "the Back key", "the right PIN"] as con
         });
     });
 }
+
+test("Add Profile holds a late language file while editing the name and translates once focus leaves", async () => {
+    await withHeldCatalog(async (tv, land) => {
+        await tv.remote(10009);
+        await tv.page.locator('[data-screen="profiles"]').waitFor();
+        await tv.page.locator('[data-focus="add-profile"]').click();
+        await tv.page.locator('[data-screen="profile-create"]').waitFor();
+        assert.equal(await tv.focused(), "create-name");
+        await tv.page.locator("#create-profile-name").fill("Kid");
+        const name = await tv.page.locator("#create-profile-name").elementHandle();
+        assert.ok(name !== null);
+        await land();
+        assert.equal(await name.evaluate(element => element.isConnected), true);
+        assert.equal(await tv.focused(), "create-name");
+        assert.equal(await tv.page.locator('[data-focus="create-submit"]').textContent(), "Create Profile");
+        await tv.page.locator('[data-focus="create-child"]').focus();
+        await tv.page.getByRole("button", { name: "Profil erstellen", exact: true }).waitFor();
+        assert.equal(await tv.page.locator("#create-profile-name").inputValue(), "Kid");
+        assert.equal(await tv.focused(), "create-child");
+    });
+});
+
+test("a late language file does not replace the profile creation error screen", async () => {
+    await withHeldCatalog(async (tv, land) => {
+        await tv.remote(10009);
+        await tv.page.locator('[data-screen="profiles"]').waitFor();
+        tv.fake.catalog = { route: (method, path) => method === "POST" && path === "/profiles" ? { status: 503 } : undefined };
+        await tv.page.locator('[data-focus="add-profile"]').click();
+        await tv.page.locator('[data-screen="profile-create"]').waitFor();
+        await tv.page.locator("#create-profile-name").fill("Kid");
+        await tv.page.locator('[data-focus="create-submit"]').click();
+        await tv.page.locator('[data-screen="profile-create-error"]').waitFor();
+        await land();
+        assert.equal(await tv.screen(), "profile-create-error");
+        assert.equal(await tv.page.locator(".signin-title").textContent(), "Profile could not be created");
+        assert.equal(await tv.page.locator('[data-focus="creation-back"]').textContent(), "Choose profile");
+        assert.equal(await tv.focused(), "creation-back");
+    });
+});

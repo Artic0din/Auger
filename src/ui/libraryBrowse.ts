@@ -42,7 +42,7 @@ export const SORT_KEYS: readonly { readonly key: SortKey; readonly name: Message
 
 /** BrowseMediaType.from(libraryType:); a music library reads as movies, as Apple's does. */
 export function browseMediaType(libraryType: string): BrowseMediaType {
-    return libraryType === "mixed" ? "mixed" : libraryType === "audiobooks" ? "audiobook" : libraryType === "series" ? "series" : "movie";
+    return libraryType === "mixed" ? "mixed" : libraryType === "audiobooks" || libraryType === "audiobook" ? "audiobook" : libraryType === "series" ? "series" : "movie";
 }
 
 /** CatalogSortKey.applies(to:): whether the key orders a library of this media type, as the web client decides. */
@@ -63,25 +63,49 @@ function ratingSource(key: SortKey): string | undefined {
 const NO_SOURCES: ReadonlySet<string> = new Set();
 
 /**
+ * The media a sort list is for (CatalogSortKey.sortMediaType): a mixed library narrowed by Type sorts as that type
+ * while Match All holds or Type is the only active facet.
+ */
+export function sortMediaType(libraryType: string, filter: BrowseFilter): BrowseMediaType {
+    const mediaType = browseMediaType(libraryType);
+    if (mediaType !== "mixed" || (!filter.matchAll && activeFacetCount(filter) > 1)) return mediaType;
+    const scope = selected(filter, "itemType")[0];
+    return scope === "series" ? "series" : scope === "movie" ? "movie" : "mixed";
+}
+
+/**
  * CatalogSortKey.available: the sorts a library of this type offers, in Apple's order. A rating sort is listed only while the
  * server shows its source, and `current`, the sort in use, is always listed so a saved sort stays visible and can be changed.
  */
-export function sortKeysFor(libraryType: string, shownRatingSources: ReadonlySet<string> = NO_SOURCES, current?: SortKey): typeof SORT_KEYS {
-    const mediaType = browseMediaType(libraryType);
+export function sortKeysFor(libraryType: string, shownRatingSources: ReadonlySet<string> = NO_SOURCES, current?: SortKey, filter?: BrowseFilter): typeof SORT_KEYS {
+    const mediaType = filter === undefined ? browseMediaType(libraryType) : sortMediaType(libraryType, filter);
     return SORT_KEYS.filter(entry => {
         const source = ratingSource(entry.key);
         return entry.key === current || applies(entry.key, mediaType) && (source === undefined || shownRatingSources.has(source));
     });
 }
 
-export type Facet = "genre" | "decade" | "watchStatus" | "contentRating" | "resolution" | "dynamicRange" | "studio" | "network" | "country" | "audioLanguage" | "subtitleLanguage" | "originalLanguage";
-/** CatalogFacet.available(for: .movie / .series), in display order, with the title's catalog key (CatalogFacet.title). */
-export const FACETS: readonly { readonly facet: Facet; readonly name: MessageKey }[] = [
-    { facet: "genre", name: "filters.facet.genre" }, { facet: "decade", name: "filters.facet.decade" }, { facet: "watchStatus", name: "filters.facet.watchStatus" },
-    { facet: "contentRating", name: "filters.facet.contentRating" }, { facet: "resolution", name: "filters.facet.resolution" }, { facet: "dynamicRange", name: "filters.facet.dynamicRange" },
-    { facet: "studio", name: "filters.facet.studio" }, { facet: "network", name: "filters.facet.network" }, { facet: "country", name: "filters.facet.country" },
-    { facet: "audioLanguage", name: "filters.facet.audioLanguage" }, { facet: "subtitleLanguage", name: "filters.facet.subtitleLanguage" }, { facet: "originalLanguage", name: "filters.facet.originalLanguage" },
-];
+export type Facet = "itemType" | "genre" | "decade" | "watchStatus" | "contentRating" | "resolution" | "dynamicRange" | "studio" | "network" | "country" | "audioLanguage" | "subtitleLanguage" | "originalLanguage" | "author" | "narrator" | "series";
+const FACET_NAMES: Readonly<Record<Facet, MessageKey>> = {
+    itemType: "filters.facet.itemType", genre: "filters.facet.genre", decade: "filters.facet.decade", watchStatus: "filters.facet.watchStatus",
+    contentRating: "filters.facet.contentRating", resolution: "filters.facet.resolution", dynamicRange: "filters.facet.dynamicRange",
+    studio: "filters.facet.studio", network: "filters.facet.network", country: "filters.facet.country",
+    audioLanguage: "filters.facet.audioLanguage", subtitleLanguage: "filters.facet.subtitleLanguage", originalLanguage: "filters.facet.originalLanguage",
+    author: "filters.facet.author", narrator: "filters.facet.narrator", series: "filters.facet.series",
+};
+const VIDEO_FACET_ORDER: readonly Facet[] = ["genre", "decade", "watchStatus", "contentRating", "resolution", "dynamicRange", "studio", "network", "country", "audioLanguage", "subtitleLanguage", "originalLanguage"];
+const AUDIOBOOK_FACET_ORDER: readonly Facet[] = ["genre", "author", "narrator", "series", "decade", "watchStatus"];
+const MIXED_FACET_ORDER: readonly Facet[] = ["itemType", ...VIDEO_FACET_ORDER];
+const ALL_FACETS: readonly Facet[] = [...VIDEO_FACET_ORDER, "itemType", "author", "narrator", "series"];
+/** Every filter facet with its catalog key (CatalogFacet.title), keeping genre/decade/watchStatus first. */
+export const FACETS: readonly { readonly facet: Facet; readonly name: MessageKey }[] = ALL_FACETS.map(facet => ({ facet, name: FACET_NAMES[facet] }));
+
+/** CatalogFacet.available(for:) in Apple's display order for the library's media type. */
+export function facetsFor(libraryType: string): readonly { readonly facet: Facet; readonly name: MessageKey }[] {
+    const mediaType = browseMediaType(libraryType);
+    const order = mediaType === "audiobook" ? AUDIOBOOK_FACET_ORDER : mediaType === "mixed" ? MIXED_FACET_ORDER : VIDEO_FACET_ORDER;
+    return order.map(facet => ({ facet, name: FACET_NAMES[facet] }));
+}
 
 const DECADES = [2020, 2010, 2000, 1990, 1980, 1970, 1960];
 /** WatchStatusFilter: the stored value, its label's catalog key and the server rule it lowers to. */
@@ -113,7 +137,7 @@ export function sortLabel(key: SortKey): string {
 
 /** A facet's title in the shown language. */
 export function facetTitle(facet: Facet): string {
-    return translate((FACETS.find(entry => entry.facet === facet) ?? FACETS[0] as (typeof FACETS)[number]).name);
+    return translate(FACET_NAMES[facet]);
 }
 
 export function effectiveOrder(filter: BrowseFilter): Order {
@@ -138,14 +162,20 @@ export function withSort(filter: BrowseFilter, key: SortKey): BrowseFilter {
     return { ...filter, sort: key, order: undefined };
 }
 
+/** Resets the sort and direction to Title when a filter change removes the active sort's media scope. */
+export function withValidSort(libraryType: string, filter: BrowseFilter): BrowseFilter {
+    const mediaType = sortMediaType(libraryType, filter);
+    return applies(filter.sort, mediaType) ? filter : { ...filter, sort: "title", order: undefined };
+}
+
 export function selected(filter: BrowseFilter, facet: Facet): readonly string[] {
     return filter.values[facet] ?? [];
 }
 
-/** Watch status is single-select; every other facet is multi-select. */
+/** Watch status and Type are single-select; every other facet is multi-select. */
 export function toggled(filter: BrowseFilter, facet: Facet, value: string): BrowseFilter {
     const current = selected(filter, facet);
-    const next = current.includes(value) ? current.filter(item => item !== value) : facet === "watchStatus" ? [value] : [...current, value];
+    const next = current.includes(value) ? current.filter(item => item !== value) : facet === "watchStatus" || facet === "itemType" ? [value] : [...current, value];
     return { ...filter, values: { ...filter.values, [facet]: next } };
 }
 
@@ -170,6 +200,7 @@ export function canReset(filter: BrowseFilter): boolean {
 export function options(facet: Facet, vocabulary: CatalogFilters | undefined): readonly { readonly value: string; readonly label: string }[] {
     const plain = (values: readonly string[] | undefined): { value: string; label: string }[] => (values ?? []).map(value => ({ value, label: value }));
     switch (facet) {
+        case "itemType": return [{ value: "movie", label: translate("filters.value.movie") }, { value: "series", label: translate("filters.value.series") }];
         case "decade": return DECADES.map(year => ({ value: String(year), label: translate("filters.decade", { year: localizeNumerals(String(year)) }) }));
         case "dynamicRange": return [{ value: "hdr", label: translate("filters.value.hdr") }, { value: "dolby_vision", label: translate("filters.value.dolby_vision") }];
         case "watchStatus": return WATCH_STATUS.map(([value, name]) => ({ value, label: translate(name) }));
@@ -182,6 +213,9 @@ export function options(facet: Facet, vocabulary: CatalogFilters | undefined): r
         case "resolution": return plain(vocabulary?.technical?.resolutions);
         case "audioLanguage": return plain(vocabulary?.technical?.audioLanguages);
         case "subtitleLanguage": return plain(vocabulary?.technical?.subtitleLanguages);
+        case "author": return plain(vocabulary?.authors);
+        case "narrator": return plain(vocabulary?.narrators);
+        case "series": return plain(vocabulary?.series);
     }
 }
 
@@ -199,6 +233,8 @@ export function browseQuery(filter: BrowseFilter, library: UserLibrary, limit: n
     const any = (field: string, op: string, values: readonly string[]): void => {
         if (values.length > 0) groups.push({ match: "any", rules: [...values].sort().map(value => ({ field, op, value })) });
     };
+    const itemType = selected(filter, "itemType")[0];
+    if (browseMediaType(library.type) === "mixed" && itemType !== undefined) groups.push({ match: "all", rules: [{ field: "type", op: "is", value: itemType }] });
     any("genre", "contains", selected(filter, "genre"));
     any("studio", "is", selected(filter, "studio"));
     any("network", "is", selected(filter, "network"));
@@ -214,8 +250,13 @@ export function browseQuery(filter: BrowseFilter, library: UserLibrary, limit: n
     if (range.length > 0) groups.push({ match: "any", rules: range });
     const status = WATCH_STATUS.find(([value]) => value === selected(filter, "watchStatus")[0]);
     if (status !== undefined) groups.push({ match: "all", rules: [{ field: status[2], op: "is", value: status[0] !== "unwatched" }] });
+    any("author", "is", selected(filter, "author"));
+    any("narrator", "is", selected(filter, "narrator"));
+    any("series", "is", selected(filter, "series"));
+    const libraryMedia = browseMediaType(library.type);
+    const omitType = libraryMedia === "audiobook" || libraryMedia === "mixed";
     return {
-        library_id: library.id, ...(library.type === "audiobooks" ? {} : { type: scopeOf(library) }), limit,
+        library_id: library.id, ...(omitType ? {} : { type: scopeOf(library) }), limit,
         sort: filter.sort, order: effectiveOrder(filter), match: filter.matchAll ? "all" : "any",
         ...(filter.prefix === undefined ? {} : { name_prefix: filter.prefix }),
         ...(groups.length === 0 ? {} : { groups }),
@@ -260,14 +301,24 @@ export class BrowsePrefs {
         if (raw == null) return undefined;
         try {
             const value = JSON.parse(raw) as Partial<BrowseFilter>;
-            const sort = SORT_KEYS.find(entry => entry.key === value.sort && applies(entry.key, browseMediaType(library.type)))?.key ?? "title";
-            const order = value.order === "asc" || value.order === "desc" ? value.order : undefined;
+            const matchAll = value.matchAll !== false;
             const values: Partial<Record<Facet, readonly string[]>> = {};
-            for (const { facet } of FACETS) {
+            for (const { facet } of facetsFor(library.type)) {
                 const chosen = (value.values as Record<string, unknown> | undefined)?.[facet];
-                if (Array.isArray(chosen)) values[facet] = chosen.filter((entry): entry is string => typeof entry === "string");
+                if (!Array.isArray(chosen)) continue;
+                const strings = chosen.filter((entry): entry is string => typeof entry === "string");
+                const normalized = facet === "itemType"
+                    ? strings.filter(entry => entry === "movie" || entry === "series").slice(0, 1)
+                    : facet === "watchStatus"
+                        ? strings.filter(entry => WATCH_STATUS.some(([known]) => known === entry)).slice(0, 1)
+                        : strings;
+                if (normalized.length > 0) values[facet] = normalized;
             }
-            return { sort, order, matchAll: value.matchAll !== false, values, prefix: undefined };
+            const mediaType = sortMediaType(library.type, { ...DEFAULT_FILTER, matchAll, values });
+            const matchedSort = SORT_KEYS.find(entry => entry.key === value.sort && applies(entry.key, mediaType));
+            const sort = matchedSort?.key ?? "title";
+            const order = matchedSort !== undefined && (value.order === "asc" || value.order === "desc") ? value.order : undefined;
+            return { sort, order, matchAll, values, prefix: undefined };
         } catch { return undefined; }
     }
 
