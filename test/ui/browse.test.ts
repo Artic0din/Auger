@@ -3529,7 +3529,7 @@ browseTest("Browse filter edits are drafts and nested Back restores the facet li
     const before = count();
     await tv.page.locator('.browse-controls [data-focus="filter"]').click();
     await tv.page.locator('[data-focus="facet:genre"]').click();
-    assert.equal(await tv.focused(), "facet-back");
+    assert.equal(await tv.focused(), "value:Drama");
     await tv.page.locator('[data-focus="value:Drama"]').click();
     assert.equal(count(), before);
     await tv.remote(BACK);

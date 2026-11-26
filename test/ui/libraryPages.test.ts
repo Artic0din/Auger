@@ -115,6 +115,20 @@ page("a mixed library with nothing of the tab's type says so on Recommended", as
     household.librarySections = [{ id: "series-only", title: "Series Only", items: ["series:s1", "series:s2"] }];
 });
 
+page("an empty incomplete Recommended tab shows the some-shelves bottom note as well as its empty state", async tv => {
+    await tv.page.route("**/api/v2/catalog/query**", route => route.fulfill({ status: 500, json: { type: "about:blank", title: "Server error", status: 500 } }));
+    await tv.page.locator('[data-focus="movies"]').click();
+    await tv.page.locator(".library-empty").waitFor();
+    assert.equal(await tv.page.locator(".library-empty-title").innerText(), "Some shelves could not be loaded");
+    assert.equal(await tv.page.locator(".library-empty-body").innerText(), "Open Browse to see titles matching this tab.");
+    assert.equal(await tv.page.locator(".library-incomplete").innerText(), "Some shelves could not be fully loaded. Open Browse to see this media type.");
+}, catalog => {
+    mixed(catalog);
+    const household = catalog.households.get("p-owner");
+    assert.ok(household);
+    household.librarySections = [{ id: "series-only", title: "Series Only", items: ["series:s1", "series:s2"] }];
+});
+
 page("Recommended loads behind Apple's page outline, which holds focus until the rows arrive", async tv => {
     await tv.page.locator('[data-focus="movies"]').click();
     await tv.page.locator('[data-view="library:12"] .home-section').first().waitFor();
@@ -973,4 +987,51 @@ test("a late image probe upgrades a mixed tab's refilled cards as well as the in
         assert.deepEqual((await cardIds(tv, "mixed-row")).slice(0, 2), ["movie:m0001", "movie:m0002"]);
         assert.deepEqual(tv.console, [], "the page logs nothing");
     } finally { held.release(); await tv.page.context().close(); }
+});
+
+page("entering a facet focuses the first selected value, else the first value", async tv => {
+    await browseReady(tv);
+    await tv.page.locator('[data-focus="filter"]').click();
+    await tv.page.locator('[data-focus="facet:genre"]').click();
+    assert.equal(await tv.focused(), "value:Drama");
+    await tv.page.locator('[data-focus="value:Comedy"]').click();
+    await tv.remote(10009);
+    assert.equal(await tv.focused(), "facet:genre");
+    await tv.page.locator('[data-focus="facet:genre"]').click();
+    assert.equal(await tv.focused(), "value:Comedy");
+});
+
+test("Explore all section page renders blank loading focus owner, empty stack icon and unavailable icon", async () => {
+    const tv = await openTv(browser, { app: "browse" });
+    try {
+        const catalog = new FakeCatalog();
+        await start(tv, catalog);
+        await tv.page.locator('[data-focus="movies"]').click();
+        await tv.page.locator('[data-focus="expand:library-picks"]').waitFor();
+        let release = (): void => undefined;
+        const gate = new Promise<void>(resolve => { release = resolve; });
+        await tv.page.route("**/api/v2/catalog/query**", async route => { await gate; await route.fulfill({ json: emptyPage }); });
+        await tv.page.locator('[data-focus="expand:library-picks"]').click();
+        const loadingOwner = tv.page.locator('.section-catalog-state');
+        await loadingOwner.waitFor();
+        assert.equal(await loadingOwner.innerText(), "");
+        assert.equal(await loadingOwner.getAttribute("aria-label"), "Loading Library Picks");
+        assert.equal(await tv.focused(), "state");
+        release();
+        await loadingOwner.locator(".library-empty").waitFor();
+        assert.equal(await loadingOwner.locator('[data-symbol="square.stack.3d.up.fill"]').count(), 1);
+        assert.equal(await loadingOwner.locator(".library-empty-title").innerText(), "Nothing here yet");
+        assert.equal(await loadingOwner.locator(".library-empty-body").innerText(), "This row does not have any items right now.");
+        assert.equal(await tv.focused(), "state");
+        await tv.remote(10009);
+        await tv.page.unroute("**/api/v2/catalog/query**");
+        await tv.page.route("**/api/v2/catalog/query**", route => route.fulfill({ status: 404, contentType: "application/problem+json", json: problem(404, "not_found", "Missing section").body }));
+        await tv.page.locator('[data-focus="expand:library-picks"]').click();
+        await loadingOwner.locator(".library-empty").waitFor();
+        assert.equal(await loadingOwner.locator('[data-symbol="rectangle.stack.badge.minus"]').count(), 1);
+        assert.equal(await loadingOwner.locator(".library-empty-title").innerText(), "Row unavailable");
+        assert.equal(await loadingOwner.locator(".library-empty-body").innerText(), "This row is no longer available.");
+        assert.equal(await tv.focused(), "state");
+        assert.deepEqual(tv.console, [], "the page logs nothing");
+    } finally { await tv.page.context().close(); }
 });

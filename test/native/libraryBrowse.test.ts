@@ -1,7 +1,8 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
 import type { UserLibrary } from "../../src/contracts/v2/catalog.ts";
-import { applies, browseMediaType, browseQuery, DEFAULT_FILTER, directionLabel, effectiveOrder, SORT_KEYS, sortKeysFor, sortLabel, toggled, withSort, reset, BrowsePrefs, type BrowseMediaType, type SortKey } from "../../src/ui/libraryBrowse.ts";
+import { applies, browseMediaType, browseQuery, DEFAULT_FILTER, directionLabel, effectiveOrder, facetsFor, options, SORT_KEYS, sortKeysFor, sortLabel, sortMediaType, toggled, withSort, reset, BrowsePrefs, type BrowseMediaType, type SortKey } from "../../src/ui/libraryBrowse.ts";
+import { panelFocus } from "../../src/ui/libraryBrowseViews.ts";
 import { discoveryState } from "../../src/ui/libraryDiscovery.ts";
 
 const library: UserLibrary = { id: "12", name: "Movies", type: "movies", sortOrder: 0 };
@@ -176,4 +177,77 @@ test("the preserve choice still works for the current session when optional stor
         prefs.setPreserve(library, true);
         assert.equal(prefs.preserve(library), true);
     }
+});
+
+test("facets are chosen per library media type, itemType is single-select, and audiobook facets lower to server rules", () => {
+    assert.deepEqual(facetsFor("movies").map(entry => entry.facet), ["genre", "decade", "watchStatus", "contentRating", "resolution", "dynamicRange", "studio", "network", "country", "audioLanguage", "subtitleLanguage", "originalLanguage"]);
+    assert.deepEqual(facetsFor("series").map(entry => entry.facet), ["genre", "decade", "watchStatus", "contentRating", "resolution", "dynamicRange", "studio", "network", "country", "audioLanguage", "subtitleLanguage", "originalLanguage"]);
+    assert.deepEqual(facetsFor("mixed").map(entry => entry.facet)[0], "itemType");
+    for (const bookType of ["audiobooks", "audiobook"]) {
+        assert.deepEqual(facetsFor(bookType).map(entry => entry.facet), ["genre", "author", "narrator", "series", "decade", "watchStatus"]);
+    }
+
+    assert.deepEqual(options("itemType", undefined), [{ value: "movie", label: "Movies" }, { value: "series", label: "Series" }]);
+    const bookVocab = { genres: ["Fantasy"], studios: [], networks: [], countries: [], originalLanguages: [], contentRatings: [], authors: ["Brandon Sanderson"], narrators: ["Michael Kramer"], series: ["Stormlight"], technical: undefined };
+    assert.deepEqual(options("author", bookVocab), [{ value: "Brandon Sanderson", label: "Brandon Sanderson" }]);
+    assert.deepEqual(options("narrator", bookVocab), [{ value: "Michael Kramer", label: "Michael Kramer" }]);
+    assert.deepEqual(options("series", bookVocab), [{ value: "Stormlight", label: "Stormlight" }]);
+
+    const movieScope = toggled(DEFAULT_FILTER, "itemType", "movie");
+    assert.deepEqual(movieScope.values.itemType, ["movie"]);
+    const seriesScope = toggled(movieScope, "itemType", "series");
+    assert.deepEqual(seriesScope.values.itemType, ["series"]);
+    assert.deepEqual(toggled(seriesScope, "itemType", "series").values.itemType, []);
+
+    const mixedLibrary = { id: "9", name: "Mixed", type: "mixed" as const, sortOrder: 0 };
+    assert.equal(sortMediaType("mixed", DEFAULT_FILTER), "mixed");
+    assert.equal(sortMediaType("mixed", seriesScope), "series");
+    const narrowedAll = toggled(seriesScope, "genre", "Drama");
+    assert.equal(sortMediaType("mixed", narrowedAll), "series");
+    const narrowedAny = { ...narrowedAll, matchAll: false };
+    assert.equal(sortMediaType("mixed", narrowedAny), "mixed");
+    assert.equal(sortKeysFor("mixed", undefined, undefined, seriesScope).some(entry => entry.key === "last_air_date"), true);
+    assert.equal(sortKeysFor("mixed", undefined, undefined, narrowedAny).some(entry => entry.key === "last_air_date"), false);
+
+    assert.equal(browseQuery(DEFAULT_FILTER, mixedLibrary, 100).type, undefined);
+    const mixedQuery = browseQuery(seriesScope, mixedLibrary, 100);
+    assert.equal(mixedQuery.type, undefined);
+    assert.deepEqual(mixedQuery.groups, [{ match: "all", rules: [{ field: "type", op: "is", value: "series" }] }]);
+
+    const bookFilter = toggled(toggled(toggled(DEFAULT_FILTER, "author", "Brandon Sanderson"), "narrator", "Michael Kramer"), "series", "Stormlight");
+    const bookQuery = browseQuery(bookFilter, { id: "14", name: "Books", type: "audiobooks", sortOrder: 0 }, 100);
+    assert.equal(bookQuery.type, undefined);
+    assert.deepEqual(bookQuery.groups, [
+        { match: "any", rules: [{ field: "author", op: "is", value: "Brandon Sanderson" }] },
+        { match: "any", rules: [{ field: "narrator", op: "is", value: "Michael Kramer" }] },
+        { match: "any", rules: [{ field: "series", op: "is", value: "Stormlight" }] },
+    ]);
+
+    const store = new Map<string, string>();
+    const storage = { getItem: (k: string) => store.get(k) ?? null, setItem: (k: string, v: string) => { store.set(k, v); }, removeItem: (k: string) => { store.delete(k); } };
+    const prefs = new BrowsePrefs(storage, "server-profile");
+    prefs.setPreserve(mixedLibrary, true);
+    prefs.save(mixedLibrary, withSort(seriesScope, "last_air_date"));
+    assert.equal(prefs.saved(mixedLibrary)?.sort, "last_air_date");
+    const moviesLibrary = { id: "12", name: "Movies", type: "movies" as const, sortOrder: 1 };
+    store.set('server-profile.["12","movies"].state', JSON.stringify({
+        sort: "last_air_date", order: "desc", matchAll: true,
+        values: { itemType: ["series"], author: ["X"], watchStatus: ["watched", "bad"], genre: ["Drama"] },
+    }));
+    const restored = prefs.saved(moviesLibrary);
+    assert.equal(restored?.sort, "title");
+    assert.equal(restored?.order, undefined);
+    assert.deepEqual(restored?.values, { watchStatus: ["watched"], genre: ["Drama"] });
+});
+
+test("panelFocus selects first selected option, else first option, else facet-back, and picks first per-type facet", () => {
+    const filters = { genres: ["Drama", "Comedy"], studios: ["HBO"], networks: [], countries: [], originalLanguages: [], contentRatings: [], authors: ["Frank Herbert"], narrators: [], series: [], technical: undefined };
+    const data = { sections: [], collections: undefined, filters };
+    const base = { ...discoveryState(), mode: "Browse" as const };
+    assert.deepEqual(panelFocus({ ...base, data, panel: { kind: "filter", draft: DEFAULT_FILTER, facet: undefined, lastFacet: undefined } }, "mixed"), { zone: "panel", key: "facet:itemType" });
+    assert.deepEqual(panelFocus({ ...base, data, panel: { kind: "filter", draft: DEFAULT_FILTER, facet: undefined, lastFacet: undefined } }, "audiobooks"), { zone: "panel", key: "facet:genre" });
+    assert.deepEqual(panelFocus({ ...base, data, panel: { kind: "filter", draft: DEFAULT_FILTER, facet: "genre", lastFacet: "genre" } }, "movies"), { zone: "panel", key: "value:Drama" });
+    const selectedComedy = toggled(DEFAULT_FILTER, "genre", "Comedy");
+    assert.deepEqual(panelFocus({ ...base, data, panel: { kind: "filter", draft: selectedComedy, facet: "genre", lastFacet: "genre" } }, "movies"), { zone: "panel", key: "value:Comedy" });
+    assert.deepEqual(panelFocus({ ...base, data: undefined, panel: { kind: "filter", draft: DEFAULT_FILTER, facet: "genre", lastFacet: "genre" } }, "movies"), { zone: "panel", key: "facet-back" });
 });

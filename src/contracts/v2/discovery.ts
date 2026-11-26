@@ -55,6 +55,9 @@ function strings(obj: Obj, key: string, path: string): string[] {
         return v;
     });
 }
+function optionalStrings(obj: Obj, key: string, path: string): string[] {
+    return obj[key] === undefined ? [] : strings(obj, key, path);
+}
 function count(obj: Obj, key: string, path: string): number {
     const value = integer(obj, key, path);
     if (value < 0) throw new WireError(`${path}.${key}`, "a nonnegative integer");
@@ -97,6 +100,9 @@ export interface CatalogFilters {
     readonly countries: readonly string[];
     readonly originalLanguages: readonly string[];
     readonly contentRatings: readonly string[];
+    readonly authors: readonly string[];
+    readonly narrators: readonly string[];
+    readonly series: readonly string[];
     readonly technical: {
         readonly resolutions: readonly string[];
         readonly audioLanguages: readonly string[];
@@ -111,6 +117,8 @@ export function decodeCatalogFilters(value: unknown): CatalogFilters {
         genres: strings(obj, "genres", path), studios: strings(obj, "studios", path),
         networks: strings(obj, "networks", path), countries: strings(obj, "countries", path),
         originalLanguages: strings(obj, "original_languages", path), contentRatings: strings(obj, "content_ratings", path),
+        authors: optionalStrings(obj, "authors", path), narrators: optionalStrings(obj, "narrators", path),
+        series: optionalStrings(obj, "series", path),
         technical: tech === undefined ? undefined : {
             resolutions: strings(tech, "resolutions", path + ".technical"),
             audioLanguages: strings(tech, "audio_languages", path + ".technical"),
