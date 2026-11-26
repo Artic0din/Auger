@@ -6,6 +6,12 @@ All notable changes to this project are documented in this file.
 
 <!-- changelog:releases -->
 
+## [0.14.5] - 2026-11-26
+
+### Fixes
+
+- **Sign-In**: Port Sign-in from the tvOS source ([#939](https://github.com/Artic0din/Auger-Tizen/pull/939), [`458014c4`](https://github.com/Artic0din/Auger-Tizen/commit/458014c4))
+
 ## [0.14.4] - 2026-11-26
 
 ### Fixes
