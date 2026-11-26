@@ -499,9 +499,9 @@ test("profile null is explicit, reset removes only the profile row, effective ov
 });
 
 test("uiCustomizationMessage reflects server UI customization capability gates", async () => {
-    for (const mode of ["supported", "revision4", "no_tv_family", "no_batch", "no_shortcuts", "no_client_scope"] as const) {
+    for (const mode of ["supported", "revision4", "no_tv_family", "no_batch", "no_shortcuts", "no_client_scope", "missing_definition"] as const) {
         const { state, fakeSettings } = await setup();
-        fakeSettings.remainingRows = true;
+        fakeSettings.remainingRows = mode !== "missing_definition";
         if (mode === "revision4") fakeSettings.revision = 4;
         if (mode === "no_tv_family") fakeSettings.clientFamilies = ["mobile"];
         if (mode === "no_batch") fakeSettings.supportsBatchedEffective = false;

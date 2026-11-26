@@ -98,8 +98,8 @@ export class SettingsState {
             const revision = Math.min(contract.revision, capability.manifestRevision);
             // UICustomizationPreferences.swift:156-157, 405-417: require revision >= 5, batched/atomic/client support, and tv family.
             const supportsUiCustomization = capability.manifestRevision >= 5 && capability.supportsBatchedEffective && capability.supportsAtomicShortcuts && capability.scopes.includes("profile_client") && capability.clientFamilies.includes("tv");
-            this.uiCustomizationMessage = supportsUiCustomization ? undefined : "Update this Silo server to use synced interface settings.";
             this.definitions = profileSettings(contract, capability).filter(def => def.key !== CARD_PRESENTATION_KEY || (supportsUiCustomization && def.client));
+            this.uiCustomizationMessage = this.definitions.some(def => def.key === CARD_PRESENTATION_KEY) ? undefined : "Update this Silo server to use synced interface settings.";
             this.manifestRevision = contract.revision;
             this.batchedEffective = capability.supportsBatchedEffective;
             const keys: SettingsKey[] = [...SETTINGS_KEYS, SUBTITLE_LANGUAGE_KEY, SUBTITLE_MODE_KEY, SHOW_FORCED_KEY].filter(key => this.definitions.some(def => def.key === key));
