@@ -8,7 +8,7 @@ import { FakeCatalog } from "../native/support/fakeCatalog.ts";
 import { FakeDetails } from "../native/support/fakeDetails.ts";
 import { FakeRequests } from "../native/support/fakeRequests.ts";
 import { FakeSettings } from "../native/support/fakeSettings.ts";
-import { problem, type CatalogRoutes, type Reply } from "../native/support/fakeSilo.ts";
+import { FAKE_PASSWORD, problem, type CatalogRoutes, type Reply } from "../native/support/fakeSilo.ts";
 import { FakeWatchParty, ROOM_ID } from "../native/support/fakeWatchParty.ts";
 import { selectLibraryMode } from "./support/library.ts";
 import { ACTIVE, openChangeAccount, openSettingsAccounts, seedAccounts, withSignedInTv } from "./support/accounts.ts";
@@ -1168,4 +1168,194 @@ test("Watch Party hub, lobby, sheets, invite, picker, search, choice, episodes, 
 
     assert.deepEqual([...found].sort(), []);
     assert.deepEqual(WATCH_PARTY_ROLES.map(([selector]) => selector).filter(selector => !seen.has(selector)), [], "every pinned Watch Party role was on screen");
+});
+
+/** Sign-in screens and shared alert dialogs, paths under iosApp/iosApp/. */
+const SIGN_IN_ROLES: readonly Role[] = [
+    [".signin-auth .marquee-chip", 22, "500", "DesignSystem/Marquee/MarqueeLayout.swift:410"],
+    [".signin-auth .marquee-hero", 88, "800", "DesignSystem/Marquee/MarqueeControls.swift:13,268; Screens/Auth/TVServerSetupView.swift:198; Screens/Auth/TVLoginView.swift:572; tvOS/Screens/Auth/TVServerNeedsSetupView.swift:29"],
+    [".signin-auth .marquee-lead", 28, "400", "DesignSystem/Marquee/MarqueeControls.swift:14; DesignSystem/Marquee/MarqueeTV.swift:184,191"],
+    [".signin-auth .marquee-field", 30, "400", "DesignSystem/Marquee/MarqueeControls.swift:11; DesignSystem/Marquee/MarqueeFields.swift:225"],
+    [".signin-auth .marquee-input", 30, "400", "DesignSystem/Marquee/MarqueeControls.swift:11; DesignSystem/Marquee/MarqueeFields.swift:225"],
+    [".signin-auth .marquee-error", 24, "400", "DesignSystem/Marquee/MarqueeControls.swift:312,321"],
+    [".signin-auth .marquee-button.marquee-primary:not(.marquee-compact)", 29, "600", "DesignSystem/Marquee/MarqueeControls.swift:8,129-130"],
+    [".signin-auth .marquee-copy .marquee-button.marquee-glass:not(.marquee-compact)", 29, "600", "DesignSystem/Marquee/MarqueeControls.swift:8,129-130"],
+    [".signin-auth .marquee-button.marquee-plain:not(.marquee-compact):not(:focus)", 29, "500", "DesignSystem/Marquee/MarqueeControls.swift:8,129-130"],
+    [".signin-auth .marquee-button.marquee-plain:not(.marquee-compact):focus", 29, "600", "DesignSystem/Marquee/MarqueeControls.swift:8,129-130"],
+    [".signin-auth .marquee-button.marquee-plain.marquee-compact:not(:focus), .signin-auth .marquee-button.marquee-plain.marquee-compact:not(:focus) > span:not(.marquee-spinner)", 24.65, "500", "DesignSystem/Marquee/MarqueeControls.swift:8,129-130"],
+    [".signin-auth .marquee-button.marquee-plain.marquee-compact:focus, .signin-auth .marquee-button.marquee-plain.marquee-compact:focus > span:not(.marquee-spinner)", 24.65, "600", "DesignSystem/Marquee/MarqueeControls.swift:8,129-130"],
+    [".signin-auth .marquee-button.marquee-glass.marquee-compact, .signin-auth .marquee-button.marquee-glass.marquee-compact > span:not(.marquee-spinner)", 24.65, "600", "DesignSystem/Marquee/MarqueeControls.swift:8,129-130"],
+    [".signin-auth .marquee-card-title", 40, "700", "Screens/Auth/TVLoginView.swift:512,713"],
+    [".signin-auth .marquee-card-text", 24, "400", "Screens/Auth/TVLoginView.swift:516,716"],
+    [".signin-auth .marquee-mark-initial", 43.2, "700", "DesignSystem/Marquee/MarqueeControls.swift:385,480"],
+    [".signin-auth .marquee-server-name", 34, "700", "DesignSystem/Marquee/MarqueeControls.swift:436,481"],
+    [".signin-auth .marquee-server-address", 23, "400", "DesignSystem/Marquee/MarqueeControls.swift:440,482"],
+    [".signin-auth .marquee-badge", 18, "600", "DesignSystem/Marquee/MarqueeControls.swift:508,521"],
+    [".signin-auth .signin-typed-url", 24, "400", "Screens/Auth/TVLoginView.swift:265"],
+    [".signin-auth .signin-status", 24, "400", "Screens/Auth/TVLoginView.swift:301"],
+    [".signin-auth .signin-hint", 22, "400", "Screens/Auth/TVLoginView.swift:392"],
+    [".signin-auth .signin-alert .signin-alert-title", 32, "700", "tvOS system .alert title measured at 32pt bold"],
+    [".signin-auth .signin-alert .signin-alert-text", 25, "400", "tvOS system .alert body measured at 25pt regular"],
+    [".signin-auth .signin-alert .marquee-button", 30, "600", "tvOS system .alert action measured at 30pt semibold"],
+];
+
+const BROWSE_ALERT_ROLES: readonly Role[] = [
+    [".browse .signin-alert .signin-alert-title", 32, "700", "tvOS system .alert title measured at 32pt bold"],
+    [".browse .signin-alert .signin-alert-text", 25, "400", "tvOS system .alert body measured at 25pt regular"],
+    [".browse .signin-alert .card-alert-button", 30, "600", "tvOS system .alert action measured at 30pt semibold"],
+    [".browse .signin-alert .signin-actions .browse-button", 30, "600", "tvOS system .alert action measured at 30pt semibold"],
+];
+
+test("Sign-in screens and shared alert dialogs use Apple's points times the cap scale", async () => {
+    const found = new Set<string>();
+    const seen = new Set<string>();
+    const collect = async (tv: Tv, state: string): Promise<void> => {
+        for (const entry of await tv.page.evaluate(unscaledText, ["body", SIGN_IN_ROLES] as const)) found.add(`${state}: ${entry}`);
+        const roles = await tv.page.evaluate(offRoles, SIGN_IN_ROLES);
+        for (const entry of roles.off) found.add(`${state}: ${entry}`);
+        for (const role of roles.seen) seen.add(role);
+    };
+
+    const tv = await openTv(browser, { sessionOnly: true });
+    try {
+        await tv.page.emulateMedia({ reducedMotion: "reduce" });
+        await tv.page.locator("#signin-address").waitFor();
+        await tv.page.evaluate(() => document.fonts.ready);
+        await tv.page.addStyleTag({ content: "* { font-family: SamsungOne; font-weight: 600; }" });
+        await collect(tv, "entry");
+        assert.match((await fontStyle(tv, ".signin-auth .marquee-hero")).fontFamily, /^"?Inter\b/);
+
+        await tv.page.locator('[data-focus="advanced"]').focus();
+        await collect(tv, "entry-advanced-focus");
+        await tv.page.locator('[data-focus="advanced"]').click();
+        await tv.page.locator("#signin-port").fill("99999");
+        await tv.page.locator('[data-focus="connect"]').click();
+        await tv.page.locator(".marquee-error").waitFor();
+        await collect(tv, "entry-advanced-error");
+        await tv.page.locator("#signin-port").fill("");
+
+        tv.fake.script("/system/setup", { status: 200, body: { needs_setup: true, wizard_completed: false } });
+        await tv.page.locator("#signin-address").fill("silo.example.test");
+        await tv.page.locator('[data-focus="connect"]').click();
+        await tv.page.locator('[data-screen="needs-setup"]').waitFor();
+        await collect(tv, "needs-setup");
+        await tv.page.locator('[data-focus="change"]').focus();
+        await collect(tv, "needs-setup-plain-focus");
+
+        const heldStart = tv.fake.hold("/auth/device/start");
+        await tv.page.locator('[data-focus="change"]').click();
+        await tv.page.locator('[data-screen="entry"]').waitFor();
+        await tv.page.locator('[data-focus="connect"]').click();
+        await tv.page.locator('[data-screen="starting"]').waitFor();
+        await collect(tv, "starting");
+        heldStart.release();
+        await tv.page.locator('[data-screen="code"] .signin-code').waitFor();
+        await tv.eventually(async () => tv.pendingReplies === 0, "code screen settled");
+        await collect(tv, "code");
+        const codeStyle = await fontStyle(tv, ".signin-code");
+        assert.equal(codeStyle.fontSize, "72px");
+        assert.equal(codeStyle.fontWeight, "700");
+        assert.match(codeStyle.fontFamily, /monospace/);
+
+        const firstCode = [...tv.fake.devices.keys()].pop();
+        assert.ok(firstCode !== undefined);
+        tv.fake.deny(firstCode);
+        await tv.jump(5000);
+        await tv.page.locator('[data-screen="ended"]').waitFor();
+        await collect(tv, "ended");
+
+        await tv.page.locator('[data-focus="password"]').click();
+        await tv.page.locator('[data-screen="credentials"]').waitFor();
+        await tv.eventually(async () => tv.pendingReplies === 0, "credentials settled");
+        await tv.page.locator(".signin-hint:not([hidden])").waitFor();
+        await tv.page.locator('[data-focus="signin"]').click();
+        await tv.page.locator(".marquee-error").waitFor();
+        await collect(tv, "credentials-error");
+
+        await tv.page.locator('[data-focus="phone"]').click();
+        await tv.page.locator('[data-screen="code"] .signin-code').waitFor();
+        await tv.eventually(async () => tv.pendingReplies === 0, "returned code screen settled");
+        const secondCode = [...tv.fake.devices.keys()].pop();
+        assert.ok(secondCode !== undefined);
+        tv.fake.approve(secondCode);
+        await tv.jump(5000);
+        await tv.page.locator('[data-screen="approved"]').waitFor();
+        await collect(tv, "approved");
+
+        await tv.jump(1000);
+        await tv.page.locator('[data-screen="notice"]').waitFor();
+        await collect(tv, "notice");
+        assert.deepEqual(tv.console, []);
+    } finally { await tv.page.context().close(); }
+
+    const plainTv = await openTv(browser, { origin: "http://silo.example.test" });
+    try {
+        await plainTv.page.emulateMedia({ reducedMotion: "reduce" });
+        await plainTv.page.locator("#signin-address").waitFor();
+        await plainTv.page.evaluate(() => document.fonts.ready);
+        await plainTv.page.addStyleTag({ content: "* { font-family: SamsungOne; font-weight: 600; }" });
+        await plainTv.page.locator("#signin-address").fill("silo.example.test");
+        await plainTv.page.locator('[data-focus="connect"]').click();
+        await plainTv.page.locator('[data-screen="insecure"] .signin-alert').waitFor();
+        await collect(plainTv, "insecure-alert");
+        for (const selector of [
+          ".signin-auth .signin-alert .signin-alert-title",
+          ".signin-auth .signin-alert .signin-alert-text",
+          ".signin-auth .signin-alert .marquee-button",
+        ]) {
+          assert.match((await fontStyle(plainTv, selector)).fontFamily, /^"?Inter\b/);
+        }
+        assert.deepEqual(plainTv.console, []);
+    } finally { await plainTv.page.context().close(); }
+
+    const alertSeen = new Set<string>();
+    const browseTv = await openTv(browser, { app: "browse" });
+    try {
+        const catalog = new ForYouCatalog();
+        catalog.cardUserState = true;
+        catalog.mutationFailure = problem(500, "internal_error", "Failed");
+        await browseTv.page.emulateMedia({ reducedMotion: "reduce" });
+        await signedIn(browseTv, catalog);
+        await browseTv.page.evaluate(() => document.fonts.ready);
+        await browseTv.page.addStyleTag({ content: "* { font-family: SamsungOne; font-weight: 600; }" });
+        const collectBrowseAlert = async (state: string): Promise<void> => {
+            for (const entry of await browseTv.page.evaluate(unscaledText, [".signin-alert", BROWSE_ALERT_ROLES] as const)) found.add(`${state}: ${entry}`);
+            const alertRoles = await browseTv.page.evaluate(offRoles, BROWSE_ALERT_ROLES);
+            for (const entry of alertRoles.off) found.add(`${state}: ${entry}`);
+            for (const role of alertRoles.seen) alertSeen.add(role);
+        };
+
+        const assertBrowseAlertInter = async (buttonSelector: string) => {
+          for (const selector of [
+            ".browse .signin-alert .signin-alert-title",
+            ".browse .signin-alert .signin-alert-text",
+            buttonSelector,
+          ]) {
+            assert.match((await fontStyle(browseTv, selector)).fontFamily, /^"?Inter\b/);
+          }
+        };
+
+        await browseTv.page.locator('[data-view="home"] [data-focus="movie:m0001"]').first().click({ button: "right" });
+        await browseTv.page.locator(".card-menu").getByRole("menuitem", { name: "Add to Favorites" }).click();
+        await browseTv.page.locator(".browse .signin-alert").waitFor();
+        await collectBrowseAlert("home-card-alert");
+        await assertBrowseAlertInter(".browse .signin-alert .card-alert-button");
+        await browseTv.page.locator('[data-focus="card-alert-ok"]').click();
+        await browseTv.page.locator(".browse .signin-alert").waitFor({ state: "detached" });
+        await browseTv.eventually(async () => browseTv.pendingReplies === 0, "home reread settled");
+
+        catalog.mutationFailure = problem(500, "internal_error", "Failed");
+        await browseTv.page.locator('[data-section="recently_added"] [data-focus="movie:m0001"]').first().click();
+        await browseTv.page.locator('[data-focus="watchlist"][aria-pressed]').waitFor();
+        await browseTv.eventually(async () => browseTv.pendingReplies === 0, "details settled");
+        await browseTv.page.locator('[data-focus="watchlist"]').click();
+        await browseTv.page.locator('.browse .signin-alert [data-focus="alert-ok"]').waitFor();
+        await collectBrowseAlert("details-alert");
+        await assertBrowseAlertInter(".browse .signin-alert .signin-actions .browse-button");
+        assert.deepEqual(browseTv.console, []);
+    } finally { await browseTv.page.context().close(); }
+
+    assert.deepEqual([...found].sort(), []);
+    assert.deepEqual(SIGN_IN_ROLES.map(([selector]) => selector).filter(selector => !seen.has(selector)), [], "every pinned Sign-in role was on screen");
+    assert.deepEqual(BROWSE_ALERT_ROLES.map(([selector]) => selector).filter(selector => !alertSeen.has(selector)), [], "every pinned Browse alert role was on screen");
 });

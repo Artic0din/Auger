@@ -38,32 +38,25 @@
     background: rgba(17, 17, 20, 0.6);
     backdrop-filter: blur(30px);
     transform: translate(-50%, -50%);
+    font-family: var(--silo-font);
+    font-weight: 400;
 }
 
-.signin-alert-title {
+.signin-alert * { font-family: inherit; }
+
+.signin-alert .signin-alert-title {
     margin: 0 16px 12px;
-    font-size: 32px;
+    font-size: calc(32px * var(--silo-sf-cap-scale));
     line-height: 37px;
     font-weight: 700;
 }
 
-.signin-alert-text {
+.signin-alert .signin-alert-text {
     margin: 0 16px 28px;
-    font-size: 25px;
-    line-height: 1.32;
-    font-weight: 400;
-    color: var(--silo-secondary);
-}
-
-:is(.accounts-screen, .profiles-flow) .signin-alert-title {
-    font-size: calc(32px * var(--silo-sf-cap-scale));
-    font-weight: 700;
-}
-
-:is(.accounts-screen, .profiles-flow) .signin-alert-text {
     font-size: calc(25px * var(--silo-sf-cap-scale));
     line-height: 33px;
     font-weight: 400;
+    color: var(--silo-secondary);
 }
 
 .signin-alert-text.signin-error { margin-bottom: 12px; color: var(--silo-error-ink); }
