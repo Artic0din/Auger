@@ -1028,6 +1028,68 @@ test("loading spinner waits 500ms before showing, stays for 500ms minimum, fades
     } finally { await page.close(); }
 });
 
+test("scrubber draws marker bands in Apple colors and chapter ticks that widen during timeline scrub (#777)", async () => {
+    const { page } = await open();
+    try {
+        await show(page, {
+            ...playing(TRACKS),
+            durationSeconds: 1000,
+            positionSeconds: 100,
+            markers: [
+                { kind: "intro", startSeconds: 50, endSeconds: 150 },
+                { kind: "recap", startSeconds: 0, endSeconds: 40 },
+                { kind: "credits", startSeconds: 850, endSeconds: 950 },
+                { kind: "preview", startSeconds: 950, endSeconds: 1000 },
+            ],
+            hud: {
+                chapters: [
+                    { title: "Start", seconds: 0 },
+                    { title: "Act 1", seconds: 250 },
+                    { title: "Act 2", seconds: 500 },
+                ],
+                chapterState: "ready",
+                stats: NO_STATS,
+                speeds: [],
+                aspects: [],
+                speed: 1,
+                aspect: "Fit",
+                autoNext: false,
+                busy: false,
+            },
+        });
+        const focusedBands = await page.locator(".player-bar-band").evaluateAll(nodes => nodes.map(node => {
+            const style = getComputedStyle(node);
+            return { bg: style.backgroundColor, opacity: style.opacity, left: (node as HTMLElement).style.left, width: (node as HTMLElement).style.width };
+        }));
+        assert.deepEqual(focusedBands, [
+            { bg: "rgb(81, 162, 255)", opacity: "0.45", left: "5%", width: "10%" },
+            { bg: "rgb(255, 137, 4)", opacity: "0.45", left: "0%", width: "4%" },
+            { bg: "rgb(194, 122, 255)", opacity: "0.45", left: "85%", width: "10%" },
+            { bg: "rgb(0, 211, 242)", opacity: "0.45", left: "95%", width: "5%" },
+        ]);
+        // Unfocus the scrubber onto transport: band opacity drops to 0.34.
+        await remote(page, DOWN);
+        assert.equal(await page.locator(".player-bar-band").first().evaluate(node => getComputedStyle(node).opacity), "0.34");
+        await remote(page, UP);
+        // Chapter-0 tick at x=0 is omitted; Act 1 and Act 2 draw 3x21 ticks at 85% white.
+        const idleTicks = await page.locator(".player-bar-tick").evaluateAll(nodes => nodes.map(node => {
+            const style = getComputedStyle(node);
+            return { width: style.width, height: style.height, bg: style.backgroundColor, left: (node as HTMLElement).style.left };
+        }));
+        assert.deepEqual(idleTicks, [
+            { width: "3px", height: "21px", bg: "rgba(255, 255, 255, 0.85)", left: "calc(25% - 1px)" },
+            { width: "3px", height: "21px", bg: "rgba(255, 255, 255, 0.85)", left: "calc(50% - 1px)" },
+        ]);
+        // Timeline scrub widens ticks to 4x26.
+        await remote(page, ENTER);
+        const scrubTick = await page.locator(".player-bar-tick").first().evaluate(node => {
+            const style = getComputedStyle(node);
+            return { width: style.width, height: style.height };
+        });
+        assert.deepEqual(scrubTick, { width: "4px", height: "26px" });
+    } finally { await page.close(); }
+});
+
 test("Info panel measured placement and Up Down Menu focus", async () => {
     const { page } = await open();
     try {
