@@ -1,14 +1,13 @@
 import type { RequestSpec } from "../api/http.ts";
 import { operations } from "../api/operations.ts";
-import type { CatalogPage } from "../contracts/v2/catalog.ts";
+import type { Card, CatalogPage } from "../contracts/v2/catalog.ts";
 import type { CatalogQueryRequest } from "../contracts/v2/discovery.ts";
-import { boolean, object, string } from "../contracts/v2/wire.ts";
 import type { FocusItem, View, Zone } from "./browseFocus.ts";
 import type { ErrorState } from "./browseRoutes.ts";
 import { PAGE_SIZE, type Route, type RouteHandlers } from "./browseRoutes.ts";
 import { actionButton, FAILURE_ICON, recoveryActions, searchState, zoneNode } from "./browseViews.ts";
 import { feedGrid } from "./catalogFeed.ts";
-import { SOURCE_LANGUAGE } from "../i18n/language.ts";
+import { artworkMark } from "./defaultArtwork.ts";
 import { integerText } from "../i18n/numbers.ts";
 import { type MessageKey, translate } from "../i18n/translate.ts";
 import { errorHeadline, errorMessage, failureState } from "./errorState.ts";
@@ -16,33 +15,38 @@ import { navigationIcon } from "./navigationIcon.ts";
 import { el } from "./screen.ts";
 
 export type PersonalSource = "watchlist" | "favorites" | "history";
-export type PersonalFilter = "movie" | "series";
+export type PersonalFilter = "movie" | "series" | "audiobook";
 const PERSONAL_TITLE_KEYS: Readonly<Record<PersonalSource, MessageKey>> = { watchlist: "personal.watchlist.title", favorites: "personal.favorites.title", history: "personal.history.title" };
 export const personalTitle = (source: PersonalSource): string => translate(PERSONAL_TITLE_KEYS[source]);
-export interface PersonalListCapability {
-    readonly state: string;
-    readonly allowed: boolean;
-    readonly membershipSupported: boolean;
+
+/** PersonalMediaSection.available & resolved (silo-apple FavoritesView.swift:5-53): Audiobooks only while audiobooks are shown. */
+export function availablePersonalFilters(source: PersonalSource, audiobooksEnabled: boolean): readonly PersonalFilter[] {
+    if (source !== "favorites") return ["movie", "series"];
+    return audiobooksEnabled ? ["movie", "series", "audiobook"] : ["movie", "series"];
 }
-export function decodePersonalListCapability(value: unknown): PersonalListCapability {
-    const obj = object(value, "personal_lists");
-    string(obj, "revision", "personal_lists");
-    return { state: string(obj, "state", "personal_lists"), allowed: boolean(obj, "allowed", "personal_lists"), membershipSupported: boolean(obj, "membership_supported", "personal_lists") };
+
+export function matchesPersonalFilter(card: Card, filter: PersonalFilter): boolean {
+    return filter === "movie" ? card.type === "movie" : filter === "audiobook" ? card.type === "audiobook" : card.type === "series" || card.type === "episode";
 }
-export function personalListCapability(): RequestSpec<PersonalListCapability> {
-    return { method: "GET", path: "/capabilities/personal-lists", retry: "safe", decode: decodePersonalListCapability };
+
+export function resolvePersonalFilter(filter: PersonalFilter, audiobooksEnabled: boolean): PersonalFilter {
+    return filter === "audiobook" && !audiobooksEnabled ? "movie" : filter;
 }
+
 export function personalQuery(source: PersonalSource, filter: PersonalFilter, cursor?: string): CatalogQueryRequest {
     // Omit sort/order: each source's native default defines the fenced ordering.
-    return { source, ...(source === "history" ? {} : { type: source === "favorites" ? filter : "video" }), limit: source === "history" ? 60 : PAGE_SIZE, ...(cursor === undefined ? {} : { cursor }) };
+    return { source, ...(source === "history" ? {} : { type: source === "favorites" && filter !== "audiobook" ? filter : "video" }), limit: source === "history" ? 60 : PAGE_SIZE, ...(cursor === undefined ? {} : { cursor }) };
 }
-export function readPersonalPage(source: PersonalSource, filter: PersonalFilter, cursor: string | undefined): RequestSpec<CatalogPage> {
+export function readPersonalPage(source: PersonalSource, filter: PersonalFilter, cursor: string | undefined, onRawItems?: (items: readonly Card[]) => void): RequestSpec<CatalogPage> {
     if (source === "history") return operations.queryCatalogItems(personalQuery(source, filter, cursor));
     const spec = operations.listPersonalItems(source, { limit: PAGE_SIZE, ...(cursor === undefined ? {} : { cursor }) });
     return { ...spec, decode: value => {
         const page = spec.decode(value);
+        onRawItems?.(page.items);
         // Apple's FavoritesView filters the stored list without changing its order.
-        const items = source === "favorites" ? page.items.filter(card => filter === "movie" ? card.type === "movie" : card.type === "series" || card.type === "episode") : page.items;
+        const items = source === "favorites"
+            ? page.items.filter(card => matchesPersonalFilter(card, filter))
+            : page.items;
         return { ...page, items, total: items.length };
     } };
 }
@@ -87,23 +91,35 @@ function emptyOwner(title: string, subtitle: string, icon: string): FocusItem {
     return owner;
 }
 
+const SECTION_EMPTY: Readonly<Record<PersonalFilter, { readonly filterKey: MessageKey; readonly emptyKey: MessageKey }>> = {
+    movie: { filterKey: "personal.filter.movies", emptyKey: "personal.favorites.noMovies" },
+    series: { filterKey: "personal.filter.tvShows", emptyKey: "personal.favorites.noTvShows" },
+    audiobook: { filterKey: "personal.filter.audiobooks", emptyKey: "personal.favorites.noAudiobooks" },
+};
+
 function sectionEmpty(filter: PersonalFilter): HTMLElement {
     const node = el("div", "personal-section-empty");
-    const mark = navigationIcon(filter === "series" ? "series" : "movies");
-    mark.classList.add("personal-section-icon");
-    node.append(mark, el("p", "personal-section-title", translate(filter === "series" ? "personal.favorites.noTvShows" : "personal.favorites.noMovies")), el("p", "personal-section-subtitle", translate("personal.favorites.emptyAnyBody")));
+    const mark = filter === "audiobook"
+        ? artworkMark("book.closed", "personal-section-icon")
+        : (() => {
+            const icon = navigationIcon(filter === "series" ? "series" : "movies");
+            icon.classList.add("personal-section-icon");
+            return icon;
+        })();
+    node.append(mark, el("p", "personal-section-title", translate(SECTION_EMPTY[filter].emptyKey)), el("p", "personal-section-subtitle", translate("personal.favorites.emptyAnyBody")));
     return node;
 }
 
-function savedFilters(route: PersonalRoute, handlers: RouteHandlers): FocusItem[] {
-    return (["movie", "series"] as const).map(filter => {
-        const item = actionButton(`filter:${filter}`, translate(filter === "movie" ? "personal.filter.movies" : "personal.filter.tvShows"), () => handlers.personalFilter(route, filter));
-        item.element.setAttribute("aria-pressed", String(route.filter === filter));
+function savedFilters(route: PersonalRoute, activeFilter: PersonalFilter, handlers: RouteHandlers): FocusItem[] {
+    const audiobooksEnabled = handlers.audiobooksEnabled?.() ?? false;
+    return availablePersonalFilters(route.source, audiobooksEnabled).map(filter => {
+        const item = actionButton(`filter:${filter}`, translate(SECTION_EMPTY[filter].filterKey), () => handlers.personalFilter(route, filter));
+        item.element.setAttribute("aria-pressed", String(activeFilter === filter));
         return item;
     });
 }
 
-/** Apple ErrorView, the same recovery plan the Requests hub uses. */
+/** Apple ErrorView: Watchlist and Favorites are root tabs (empty router path) so they omit Go Back; History is pushed and keeps it. */
 function errorPage(route: PersonalRoute, handlers: RouteHandlers): View {
     const error: ErrorState = route.error ?? failureState(route.failure ?? "");
     const page = searchState(errorHeadline(error), errorMessage(error), "personal-failure", FAILURE_ICON);
@@ -111,7 +127,7 @@ function errorPage(route: PersonalRoute, handlers: RouteHandlers): View {
     const items = recoveryActions(
         error,
         actionButton("retry", translate("shell.errorView.tryAgain"), () => handlers.retry(route)),
-        actionButton("go-back", translate("player.goBack"), handlers.pop),
+        route.source === "history" ? actionButton("go-back", translate("player.goBack"), handlers.pop) : undefined,
         handlers.signIn === undefined ? undefined : actionButton("sign-in", translate("settings.accounts.signInAgain"), handlers.signIn),
     );
     page.appendChild(zoneNode("browse-actions", items));
@@ -151,18 +167,12 @@ function continuousGrid(route: PersonalRoute, handlers: RouteHandlers, columns: 
 function savedListView(route: PersonalRoute, handlers: RouteHandlers): View {
     const title = personalTitle(route.source);
     const page = route.pages.page;
-    const blocked = route.capability !== undefined && (!route.capability.allowed || route.capability.state !== "available");
-    if (!blocked && shownError(route, page)) return errorPage(route, handlers);
+    const activeFilter = resolvePersonalFilter(route.filter, handlers.audiobooksEnabled?.() ?? false);
+    if (shownError(route, page)) return errorPage(route, handlers);
     const content: HTMLElement[] = [];
     const zones: Zone[] = [];
     const wholeEmpty = page !== undefined && page.items.length === 0 && (route.source === "watchlist" || route.elsewhere !== true);
-    if (blocked) {
-        // Apple has no key for this sentence, so it stays English whole, with the title in English too.
-        const unavailable = `${translate(PERSONAL_TITLE_KEYS[route.source], undefined, SOURCE_LANGUAGE)} is unavailable.`;
-        const status = statusOwner("personal-status", unavailable, unavailable);
-        content.push(status.element);
-        zones.push({ id: "status", layout: "row", items: [status] });
-    } else if (page === undefined) {
+    if (page === undefined) {
         const status = statusOwner("personal-loading", translate(route.source === "watchlist" ? "personal.watchlist.loading" : "personal.favorites.loading"));
         content.push(status.element);
         zones.push({ id: "status", layout: "row", items: [status] });
@@ -176,11 +186,11 @@ function savedListView(route: PersonalRoute, handlers: RouteHandlers): View {
     } else {
         content.push(el("h1", "browse-title", title));
         if (route.source === "favorites") {
-            const filters = savedFilters(route, handlers);
+            const filters = savedFilters(route, activeFilter, handlers);
             content.push(zoneNode("personal-filters", filters));
             zones.push({ id: "filters", layout: "row", down: "grid", items: filters });
         }
-        if (page.items.length === 0) content.push(sectionEmpty(route.filter));
+        if (page.items.length === 0) content.push(sectionEmpty(activeFilter));
         else {
             const grid = continuousGrid(route, handlers, DENSE_COLUMNS, DENSE_POSTER, DENSE_WIDTH);
             content.push(...grid.content);
@@ -191,7 +201,7 @@ function savedListView(route: PersonalRoute, handlers: RouteHandlers): View {
     const grid = zones.find(zone => zone.id === "grid" && zone.items.length > 0);
     const preferred = route.source === "favorites" && page !== undefined && route.failure === undefined && route.error === undefined ? filters : grid;
     const zone = preferred ?? zones.find(candidate => candidate.items.length > 0);
-    const item = zone?.id === "filters" ? zone.items.find(candidate => candidate.key === `filter:${route.filter}`) ?? zone.items[0] : zone?.items[0];
+    const item = zone?.id === "filters" ? zone.items.find(candidate => candidate.key === `filter:${activeFilter}`) ?? zone.items[0] : zone?.items[0];
     const pageNode = el("div", "personal-page");
     return { name: `personal:${route.source}`, prepare: () => pageNode.append(...content), content: [pageNode], zones, focus: zone === undefined || item === undefined ? undefined : { zone: zone.id, key: item.key }, back: handlers.pop };
 }

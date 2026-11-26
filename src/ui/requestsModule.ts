@@ -251,6 +251,14 @@ interface PageInternal {
 const once = <T>(spec: RequestSpec<T>): RequestSpec<T> => ({ ...spec, retry: "never" });
 const isRefusal = (error: unknown): boolean => error instanceof ApiError && REFUSAL_PROBLEMS.has(error.problemId ?? "");
 
+/** Resolves the title state eligible for Notify Me on either a media or request-record detail page. */
+export function requestFollowTarget(data: RequestTitle | MediaRequest, detail: RequestTitle | undefined): RequestTitle | undefined {
+    if ("request" in data) return data;
+    if (detail === undefined) return undefined;
+    if (detail.request.id !== undefined) return detail.request.id === data.id ? detail : undefined;
+    return data.outcome === "active" ? detail : undefined;
+}
+
 export function createRequests(options: RequestsOptions): RequestsModule {
     const { session } = options;
     const clock = options.clock ?? systemClock;
@@ -815,10 +823,11 @@ export function createRequests(options: RequestsOptions): RequestsModule {
                 const data = internal.data;
                 if (disposed || internal.retired || visiblePage !== internal || writePending || gate.actingId !== undefined || internal.writing || internal.uncertain || foreground.busy() || data === undefined || !capability.enabled) return;
                 const title = "request" in data ? data : internal.detail;
+                const followTarget = "request" in data || "id" in data ? requestFollowTarget(data, internal.detail) : undefined;
                 const spec = action === "cancel" && "id" in data ? requestOperations.cancel(data.id)
-                    : title === undefined || action === "cancel" ? undefined
-                    : action === "create" ? requestOperations.create(title)
-                    : requestOperations.follow(title, action === "follow");
+                    : action === "cancel" ? undefined
+                    : action === "create" ? (title === undefined ? undefined : requestOperations.create(title))
+                    : followTarget === undefined ? undefined : requestOperations.follow(followTarget, action === "follow");
                 if (spec === undefined) return;
                 // Claim the list gate for Cancel so a hub menu cannot start a second POST for the same request.
                 const cancelId = action === "cancel" && "id" in data ? data.id : undefined;

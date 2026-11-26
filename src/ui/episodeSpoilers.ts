@@ -85,6 +85,10 @@ export function hidesMarqueeBackdrop(card: Pick<Card, "type" | "played" | "posit
     return hidesEpisodeImage(settings, cardWatch(card), card.backdropIsEpisodeStill);
 }
 
+export function hidesMarqueePoster(card: Pick<Card, "type" | "played" | "positionSeconds" | "posterIsEpisodeStill">, settings: EpisodeSpoilerSettings): boolean {
+    return card.type === "episode" && hidesEpisodeImage(settings, cardWatch(card), card.posterIsEpisodeStill);
+}
+
 function episodeWatch(episode: Pick<Episode, "played" | "isInProgress" | "positionSeconds">): EpisodeWatchState {
     return {
         played: episode.played,

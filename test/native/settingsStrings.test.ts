@@ -60,7 +60,7 @@ test("Apple's text for 'this Apple TV' reads 'this TV' in every language", () =>
     assert.deepEqual(appleTvKeys, [
         "player.hud.onlyOnThisAppleTv", "profiles.rememberOffer.bodyAppleTv", "profiles.tile.appleTvUser", "profiles.tile.pairedAppleTvUser",
         "servers.accounts.blurbAppleTv", "settings.accounts.footerAppleTv", "settings.blurb.generalAppleTv", "settings.blurb.playbackAppleTv", "settings.blurb.serverAppleTv", "settings.general.appleTvUserHeaderTv",
-        "settings.general.pairingSharedAskEveryTime", "settings.general.pairingShared", "settings.general.themeMusicFooterTv", "settings.general.titleArtAllOffTv",
+        "settings.general.deviceOverrideFooterTv", "settings.general.pairingSharedAskEveryTime", "settings.general.pairingShared", "settings.general.themeMusicFooterTv", "settings.general.titleArtAllOffTv",
         "settings.general.titleArtAllOnTv", "settings.general.titleArtThisAppleTv", "settings.profileLaunch.automatic.detailAppleTv", "settings.profileSettings.resetFooterAppleTv",
         "settings.subtitles.onlyOnThisAppleTv", "settings.subtitles.resetMessageAppleTv", "settings.subtitles.scopeDeviceOnlyAppleTv",
         "tvSignIn.appleTv.lead", "tvSignIn.appleTv.leadNoPage",

@@ -24,7 +24,7 @@ import { el } from "./screen.ts";
 import { discoveryState, type BrowseChange, type DiscoveryState, type LibraryMode, type LibrarySource } from "./libraryDiscovery.ts";
 import { collectionRowCards } from "./collectionCards.ts";
 import { discoveryView, resultsView } from "./libraryDiscoveryViews.ts";
-import { personalView, type PersonalFilter, type PersonalSource, type PersonalListCapability } from "./personalLists.ts";
+import { personalView, type PersonalFilter, type PersonalSource } from "./personalLists.ts";
 import type { RecommendationRow } from "../contracts/v2/recommendations.ts";
 import { boxSetView } from "./boxSetView.ts";
 import type { BoxSetRowState } from "./boxSetRow.ts";
@@ -47,14 +47,14 @@ export type RouteData =
     | { readonly kind: "requests"; readonly page: RequestPage; readonly anchor?: string }
     | { readonly kind: "watchParty"; readonly watchParty: WatchPartyScreen; readonly anchor?: string }
     | { readonly kind: "calendar"; readonly calendar: CalendarState }
-    | { readonly kind: "personal"; readonly source: PersonalSource; readonly anchor?: string; filter: PersonalFilter; capability: PersonalListCapability | undefined; pages: Pages; pendingIndex: number | undefined; error?: ErrorState | undefined; elsewhere?: boolean }
+    | { readonly kind: "personal"; readonly source: PersonalSource; readonly anchor?: string; filter: PersonalFilter; pages: Pages; pendingIndex: number | undefined; error?: ErrorState | undefined; elsewhere?: boolean }
     | { readonly kind: "home"; data: { libraries: UserLibrary[]; sections: HomeSection[] } | undefined }
     | { readonly kind: "homeSection"; readonly id: string; readonly title: string; readonly continuing: boolean; pages: Pages; pendingIndex: number | undefined }
     | { readonly kind: "resume"; readonly id: string; readonly title: string; readonly episode?: true; readonly startOver?: boolean; readonly selection?: EpisodeSelection; readonly seriesLine?: SeriesLine }
     | { readonly kind: "library"; readonly library: UserLibrary; pages: Pages; discovery?: DiscoveryState }
     | { readonly kind: "libraryResults"; readonly library: UserLibrary; readonly title: string; readonly source: LibrarySource; pages: Pages }
     | { readonly kind: "search"; readonly search: SearchModule }
-    | { readonly kind: "audiobook"; readonly id: string; readonly title: string; readonly seed?: DetailSeed; data: Audiobook | undefined; /** The chapter picker covers the page. */ picker?: boolean }
+    | { readonly kind: "audiobook"; readonly id: string; readonly title: string; readonly seed?: DetailSeed; data: { book: Audiobook; details?: DetailsState } | undefined; /** The chapter picker covers the page. */ picker?: boolean; /** The full description screen covers the page. */ description?: boolean }
     | { readonly kind: "boxSet"; readonly id: string; readonly libraryId: string; readonly title: string; data: CatalogBoxSetDetail | undefined }
     | { readonly kind: "item"; readonly id: string; readonly title: string; readonly seriesContext?: SeriesContext; readonly seed?: DetailSeed; readonly fromRelated?: boolean; error?: ErrorState; data: { detail: ItemDetail; seasons: Season[]; details?: DetailsState; boxSet?: BoxSetRowState } | undefined }
     | { readonly kind: "person"; readonly id: string; readonly title: string; readonly person: PersonModule }
@@ -89,7 +89,7 @@ export function hasData(current: Route): boolean {
         case "resume":
             return false;
         case "personal":
-            return current.pages.page !== undefined || current.capability !== undefined;
+            return current.pages.page !== undefined;
         case "library":
             return current.discovery?.mode === "Browse" ? current.discovery.snapshot !== undefined : current.discovery?.data !== undefined;
         // A loaded filmography is kept; only a missing person is read again (Apple loadInitial: person == nil, items.isEmpty).
@@ -116,7 +116,9 @@ export interface RouteHandlers {
     readonly shuffle: { readonly starting: boolean; readonly failure: string | undefined; readonly start: (route: Extract<Route, { kind: "library" | "libraryResults" }>) => void; readonly dismiss: () => void } | undefined;
     readonly calendar: (route: Extract<Route, { kind: "calendar" }>) => CalendarHandlers;
     readonly personalFilter: (route: Extract<Route, { kind: "personal" }>, filter: PersonalFilter) => void;
+    readonly audiobooksEnabled?: (() => boolean) | undefined;
     readonly audiobookPicker: (route: Extract<Route, { kind: "audiobook" }>, open: boolean) => void;
+    readonly audiobookDescription: (route: Extract<Route, { kind: "audiobook" }>, open: boolean) => void;
     readonly morePersonal: (route: Extract<Route, { kind: "personal" }>) => void;
     readonly signIn: (() => void) | undefined;
     readonly context: ViewContext;
@@ -201,7 +203,15 @@ export function routeView(current: Route, handlers: RouteHandlers): View {
             break;
         case "audiobook":
             if (current.data !== undefined) {
-                return withNote(audiobookView(current.data, { context, pickerOpen: current.picker === true, setPicker: open => handlers.audiobookPicker(current, open), back: pop }), current.failure);
+                return withDetailsAlert(withNote(audiobookView(current.data.book, {
+                    context,
+                    details: current.data.details,
+                    pickerOpen: current.picker === true,
+                    setPicker: open => handlers.audiobookPicker(current, open),
+                    descriptionOpen: current.description === true,
+                    setDescription: open => handlers.audiobookDescription(current, open),
+                    back: pop,
+                }), current.failure), current.data.details);
             }
             break;
         case "boxSet":

@@ -14,6 +14,7 @@ import type { PlaybackView, TrackView } from "../../src/player/controller.ts";
 import { UP_NEXT_PREVIEW, upNextPreviewLeft } from "../../src/player/upNextPreview.ts";
 import { percentText } from "../../src/i18n/format.ts";
 import { formattingLocale } from "../../src/i18n/language.ts";
+import { integerText } from "../../src/i18n/numbers.ts";
 import { type MessageKey, translate, translateTv } from "../../src/i18n/translate.ts";
 import { registerSourceCatalogs } from "../native/support/catalogs.ts";
 
@@ -733,6 +734,34 @@ test("Secondary heading and Secondary Off row use the catalog in German and Arab
             await openPanel(page, 4);
             assert.equal(await page.locator(".player-menu-heading-secondary").textContent(), text("player.hud.secondaryHeading", language).toUpperCase());
             assert.equal(await page.locator('[data-focus="secondary-off"] .player-choice-label').textContent(), text("player.tracks.subtitlesOff", language));
+        } finally { await page.close(); }
+    }
+});
+
+test("Chapters localize untitled chapter numbers, row digits and current-chapter label in German and Arabic (#779)", async () => {
+    for (const [language, expectedNumberPrefix, expectedTitleNumeral] of [["de", "01", "1"], ["ar", "٠١", "١"]] as const) {
+        const page = await open(language);
+        try {
+            await show(page, playing({
+                positionSeconds: 10,
+                hud: { ...HUD, chapters: [{ title: undefined, seconds: 0 }, { title: "Finale", seconds: 800 }] },
+            }));
+            await openPanel(page);
+            const expectedUntitled = text("options.chapterNumbered", language, { number: integerText(1, formattingLocale(language, undefined)) });
+            assert.ok(expectedUntitled.includes(expectedTitleNumeral), `expected numeral ${expectedTitleNumeral} in ${expectedUntitled}`);
+            assert.ok((await page.locator(".player-menu-info").innerText()).includes(expectedUntitled));
+
+            await nextTab(page, 5);
+            assert.equal(await focusedId(page), "chapter:0");
+            assert.equal(await page.locator('[data-focus="chapter:0"] .player-chapter-number').textContent(), expectedNumberPrefix);
+            assert.equal(await page.locator('[data-focus="chapter:0"] .player-chapter-title').textContent(), expectedUntitled);
+            assert.equal(await page.locator('[data-focus="chapter:0"] .player-chapter-playing svg').count(), 1);
+            assert.equal(await page.locator('[data-focus="chapter:0"]').getAttribute("aria-description"), text("player.hud.currentlyPlaying", language));
+            assert.equal(await page.locator('[data-focus="chapter:1"] .player-chapter-playing svg').count(), 0);
+            if (language === "ar") {
+                const titleAlign = await page.locator('[data-focus="chapter:1"] .player-chapter-title').evaluate(node => getComputedStyle(node).textAlign);
+                assert.equal(titleAlign, "right");
+            }
         } finally { await page.close(); }
     }
 });

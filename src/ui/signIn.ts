@@ -9,7 +9,7 @@ import type { ServerConnection } from "../api/discovery.ts";
 import { type AdvancedScheme, advancedAddress, plainHttpFallbacks, portFieldFault } from "../api/serverUrl.ts";
 import { resolveBrandingAsset } from "../contracts/v2/branding.ts";
 import { type MessageKey, onCatalogLoaded, translate } from "../i18n/translate.ts";
-import { type ConnectedServer, type ConnectResult, connect, forgetStoredCredential, openDiscoveredServer, type SessionCoreDeps } from "../session/core.ts";
+import { type ConnectedServer, type ConnectResult, connect, openDiscoveredServer, type SessionCoreDeps } from "../session/core.ts";
 import type { DeviceCodeView, DeviceLogin, DeviceLoginState } from "../session/deviceLogin.ts";
 import { passwordLogin } from "../session/passwordLogin.ts";
 import type { LogoutResult } from "../session/session.ts";
@@ -144,6 +144,7 @@ export function mountSignIn(root: HTMLElement, options: SignInOptions): SignInSc
     let port = "";
     let advanced = false;
     let connecting: AbortController | undefined;
+    let cancelCleanupWait = (): void => {};
     let active: Active | undefined;
     let destroyed = false;
     /** The server whose setup screen is showing. */
@@ -153,6 +154,8 @@ export function mountSignIn(root: HTMLElement, options: SignInOptions): SignInSc
 
     const destroy = (): void => {
         destroyed = true;
+        cancelCleanupWait();
+        cancelCleanupWait = () => {};
         connecting?.abort();
         connecting = undefined;
         setupProbe?.abort();
@@ -245,10 +248,10 @@ export function mountSignIn(root: HTMLElement, options: SignInOptions): SignInSc
     };
 
     /**
-     * The Apple TV manual entry. `busy`: a connect is running; Connect says so and holds focus,
-     * and nothing else is reachable until it answers, as the Apple TV app waits for its probe.
+     * The Apple TV manual entry (TVServerSetupView.swift:272-286, 327-334). `busy`: a connect is running;
+     * Connect shows progress, Cancel replaces Back and stays focusable, and Cancel/Back abort the probe.
      */
-    const entryScreen = (notes: readonly Note[], offerForget: boolean, error?: ErrorLine, busy = false, errorField?: "address" | "port"): Screen => {
+    const entryScreen = (notes: readonly Note[], error?: ErrorLine, busy = false, errorField?: "address" | "port"): Screen => {
         const input = textInput("signin-address", "address", translate("setup.placeholder"), "Server address", address);
         input.type = "url";
         input.readOnly = busy;
@@ -263,7 +266,7 @@ export function mountSignIn(root: HTMLElement, options: SignInOptions): SignInSc
         }, { loading: busy });
         const toggle = marqueeButton("advanced", translate(advanced ? "setup.advanced.hide" : "setup.advanced.show"), "plain", () => {
             advanced = !advanced;
-            show(() => entryScreen(notes, offerForget, error, false, errorField), "advanced");
+            show(() => entryScreen(notes, error, false, errorField), "advanced");
         }, { glyph: "gear", compact: true });
         const controls: Control[] = [
             { key: "address", element: input, row: 0, done: "connect" },
@@ -286,7 +289,7 @@ export function mountSignIn(root: HTMLElement, options: SignInOptions): SignInSc
             for (const [value, label] of SCHEMES) {
                 const option = marqueeButton(`scheme-${value}`, translate(label), "glass", () => {
                     scheme = value;
-                    show(() => entryScreen(notes, offerForget, error, false, errorField), `scheme-${value}`);
+                    show(() => entryScreen(notes, error, false, errorField), `scheme-${value}`);
                 }, { compact: true, ...(scheme === value ? { glyph: "check" as const } : {}) });
                 option.element.setAttribute("aria-pressed", String(scheme === value));
                 options.appendChild(option.element);
@@ -309,18 +312,17 @@ export function mountSignIn(root: HTMLElement, options: SignInOptions): SignInSc
             copy.push(options);
         }
         const row = [connect];
-        if (options.onCancel) row.push(marqueeButton("back", translate("common.back"), "plain", () => { destroy(); options.onCancel?.(); }));
+        if (busy) {
+            row.push(marqueeButton("cancel", translate("common.cancel"), "plain", cancelConnect));
+        } else if (options.onCancel) row.push(marqueeButton("back", translate("common.back"), "plain", () => { destroy(); options.onCancel?.(); }));
         else if (options.onChangeAccount && opensAccountList()) {
             row.push(marqueeButton("change-account", options.returnToAccounts ? translate("tvSignIn.backToAccounts") : savedAccounts().some(account => !account.needsSignIn) ? translate("signIn.backToProfiles") : translate("signIn.changeAccount"), "plain", changeServer));
-        }
-        if (offerForget) {
-            row.push(marqueeButton("forget", "Remove saved sign-in", "plain", () => void forget()));
         }
         copy.push(actionRow(row));
         controls.push(...row.map((control) => ({ ...control, row: 3, landing: control.key === "connect" })));
         if (busy) {
             for (const control of controls) {
-                if (control.key !== "connect" && !(control.element instanceof HTMLInputElement)) {
+                if (control.key !== "connect" && control.key !== "cancel" && !(control.element instanceof HTMLInputElement)) {
                     control.element.setAttribute("disabled", "");
                 }
             }
@@ -329,16 +331,15 @@ export function mountSignIn(root: HTMLElement, options: SignInOptions): SignInSc
         return {
             name: busy ? "connecting" : "entry",
             content: marqueeScreen(copy, keyboardCard(), tvName === "" ? undefined : chip(tvName, "tv")),
-            controls: busy ? controls.filter((control) => control.key === "connect") : controls,
-            focus: address === "" ? "address" : "connect",
-            // Leaving mid-probe would let a late connect pull the app on, so Back waits for it.
-            back: busy ? () => undefined : options.onCancel ? () => { destroy(); options.onCancel?.(); } : undefined,
+            controls: busy ? controls.filter((control) => control.key === "connect" || control.key === "cancel") : controls,
+            focus: busy || address !== "" ? "connect" : "address",
+            back: busy ? cancelConnect : options.onCancel ? () => { destroy(); options.onCancel?.(); } : undefined,
             translated: true,
         };
     };
 
-    const showEntry = (notes: readonly Note[], offerForget: boolean, focus?: string, error?: ErrorLine, errorField?: "address" | "port"): void => {
-        show(() => entryScreen(notes, offerForget, error, false, errorField), focus);
+    const showEntry = (notes: readonly Note[], focus?: string, error?: ErrorLine, errorField?: "address" | "port"): void => {
+        show(() => entryScreen(notes, error, false, errorField), focus);
     };
 
     /**
@@ -346,49 +347,37 @@ export function mountSignIn(root: HTMLElement, options: SignInOptions): SignInSc
      * outline is in view. Focus stays on Connect. TVServerSetupView.connect does not move
      * focusedField, and the running Apple TV app stays on Connect.
      */
-    const rejectPort = (offerForget: boolean, fault: "address" | "port"): void => {
+    const rejectPort = (fault: "address" | "port"): void => {
         if (fault === "port") {
             advanced = true;
         }
-        showEntry([], offerForget, "connect", text.invalidPort, fault);
+        showEntry([], "connect", text.invalidPort, fault);
     };
 
     /** Applies Advanced options; a bad port is explained before anything is sent. */
     const submit = (): void => {
         const fault = portFieldFault(address, port);
         if (fault !== undefined) {
-            rejectPort(false, fault);
+            rejectPort(fault);
             return;
         }
         const chosen = advancedAddress(address, scheme, port);
         if (!chosen.ok) {
-            rejectPort(false, "port");
+            rejectPort("port");
             return;
         }
         startConnect([], chosen.address, scheme);
     };
 
-    const forget = async (): Promise<void> => {
-        const fault = portFieldFault(address, port);
-        if (fault !== undefined) {
-            rejectPort(true, fault);
+    const cancelConnect = (): void => {
+        if (connecting === undefined) {
             return;
         }
-        const chosen = advancedAddress(address, scheme, port);
-        if (!chosen.ok) {
-            rejectPort(true, "port");
-            return;
-        }
-        const result = await forgetStoredCredential(chosen.address, core);
-        if (destroyed || host.name !== "entry") {
-            return;
-        }
-        if (result === "cleared" || result === "guarded" || result === "failed") {
-            const failed = result === "failed";
-            showEntry(failed ? [] : [{ text: text.forgetResult(result), tone: "info" }], failed, failed ? "forget" : "connect", failed ? () => text.forgetResult(result) : undefined);
-            return;
-        }
-        showEntry([], false, "address", () => text.connectProblem({ status: "invalid_url", problem: result }));
+        cancelCleanupWait();
+        cancelCleanupWait = () => {};
+        connecting.abort();
+        connecting = undefined;
+        showEntry([], address === "" ? "address" : "connect");
     };
 
     /**
@@ -397,22 +386,25 @@ export function mountSignIn(root: HTMLElement, options: SignInOptions): SignInSc
      */
     const startConnect = (fallbacks: readonly string[] = [], target = address, chosen: AdvancedScheme = "auto", offlineRestore = false): void => {
         connecting?.abort();
+        cancelCleanupWait();
         const controller = new AbortController();
         connecting = controller;
-        show(() => entryScreen([], false, undefined, true), "connect");
-        const cancelCleanupWait = clock.schedule(() => {
+        show(() => entryScreen([], undefined, true), "connect");
+        cancelCleanupWait = clock.schedule(() => {
+            cancelCleanupWait = () => {};
             if (connecting === controller && !controller.signal.aborted && !destroyed) {
                 controller.abort();
                 connecting = undefined;
-                showEntry([], false, "connect", () => "This TV is still removing the earlier sign-in. Try connecting again in a moment.");
+                showEntry([], "connect", () => "This TV is still removing the earlier sign-in. Try connecting again in a moment.");
             }
         }, CLEANUP_WAIT_MS);
         pendingAccountCleanup.then(() => {
-            cancelCleanupWait();
-            if (!controller.signal.aborted && !destroyed) {
-                return connectInOrder([target, ...fallbacks], controller.signal, offlineRestore);
+            if (connecting !== controller || controller.signal.aborted || destroyed) {
+                return undefined;
             }
-            return undefined;
+            cancelCleanupWait();
+            cancelCleanupWait = () => {};
+            return connectInOrder([target, ...fallbacks], controller.signal, offlineRestore);
         }).then(
             (result) => {
                 if (result !== undefined && connecting === controller && !controller.signal.aborted && !destroyed) {
@@ -434,7 +426,7 @@ export function mountSignIn(root: HTMLElement, options: SignInOptions): SignInSc
                     return;
                 }
                 connecting = undefined;
-                showEntry([], false, "connect", () => "Something went wrong while connecting. Try again.");
+                showEntry([], "connect", () => "Something went wrong while connecting. Try again.");
                 clock.schedule(() => {
                     throw error;
                 }, 0);
@@ -459,7 +451,7 @@ export function mountSignIn(root: HTMLElement, options: SignInOptions): SignInSc
      * Like the tvOS alert: centred over the dimmed address screen, Cancel then Connect, Connect focused.
      */
     const askCleartext = (plain: readonly string[]): void => {
-        const decline = (): void => showEntry([], false, "connect", text.cleartextDeclined);
+        const decline = (): void => showEntry([], "connect", text.cleartextDeclined);
         show(() => {
             const controls = [
                 marqueeButton("cancel", translate("common.cancel"), "glass", decline),
@@ -471,7 +463,7 @@ export function mountSignIn(root: HTMLElement, options: SignInOptions): SignInSc
             // The address screen stays behind the alert, dimmed and out of reach.
             const behind = el("div", "signin-behind");
             behind.setAttribute("aria-hidden", "true");
-            for (const node of entryScreen([], false).content) {
+            for (const node of entryScreen([]).content) {
                 behind.appendChild(node);
             }
             for (const node of Array.from(behind.querySelectorAll("input, button"))) {
@@ -610,7 +602,7 @@ export function mountSignIn(root: HTMLElement, options: SignInOptions): SignInSc
     const leaveForAddress = (): void => {
         cancelSetupCheck();
         pendingSetup = undefined;
-        showEntry([], false, "connect");
+        showEntry([], "connect");
     };
 
     const connected = (result: ConnectResult): void => {
@@ -626,7 +618,7 @@ export function mountSignIn(root: HTMLElement, options: SignInOptions): SignInSc
             return;
         }
         if (result.status !== "connected") {
-            showEntry([], result.status !== "invalid_url", "connect", () => text.connectProblem(result));
+            showEntry([], "connect", () => text.connectProblem(result));
             return;
         }
         address = result.server.http.base.baseUrl;
@@ -758,7 +750,7 @@ export function mountSignIn(root: HTMLElement, options: SignInOptions): SignInSc
                 const abandonedAddress = address;
                 void logoutCollectedAccount(current.server).then((result) => {
                     if (!destroyed && host.name === "entry" && address === abandonedAddress && (result.storage === "failed" || result.server === "unreachable")) {
-                        showEntry(text.signedOutNotice(result).map((line) => ({ text: line, tone: "info" })), result.storage === "failed");
+                        showEntry(text.signedOutNotice(result).map((line) => ({ text: line, tone: "info" })));
                     }
                 }, (error: unknown) => {
                     clock.schedule(() => {
@@ -801,7 +793,7 @@ export function mountSignIn(root: HTMLElement, options: SignInOptions): SignInSc
         // AppRouter.resetToServerSetup clears loginNotice: a new connection is not an expiry.
         sessionExpired = false;
         leaveSignIn();
-        showEntry([], false, "connect");
+        showEntry([], "connect");
     };
 
     /** Starts the next attempt; a renewal or a retry after a failed start keeps what the screen says. */
@@ -1169,13 +1161,13 @@ export function mountSignIn(root: HTMLElement, options: SignInOptions): SignInSc
     };
 
     if (options.signedOut !== undefined) {
-        showEntry(text.signedOutNotice(options.signedOut).map((line) => ({ text: line, tone: "info" })), false);
+        showEntry(text.signedOutNotice(options.signedOut).map((line) => ({ text: line, tone: "info" })));
     } else if (options.chooseServer === true) {
-        showEntry([], false, "connect");
+        showEntry([], "connect");
     } else if (address !== "") {
         startConnect([], address, "auto", true);
     } else {
-        showEntry([], false);
+        showEntry([]);
     }
     return { destroy };
 }

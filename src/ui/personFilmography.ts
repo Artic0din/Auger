@@ -42,7 +42,7 @@ export function personFilmographyView(module: PersonModule, nav: PersonViewNav):
     }
     // Apple rootContent (PersonDetailView.swift:360-361): blank focus-owning loading page until person arrives.
     if (snapshot.person === undefined) {
-        return pageLoadingView(`person:${snapshot.id}`, translate("common.loading"), nav.back);
+        return pageLoadingView(`person:${snapshot.id}:loading`, translate("common.loading"), nav.back);
     }
     const empty = (snapshot.page?.items.length ?? 0) === 0;
     const filters = snapshot.availableFilters.map(filter => {
