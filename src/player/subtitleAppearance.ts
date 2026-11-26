@@ -5,6 +5,7 @@
 // Settings page; this player writes the same key and the same profile / profile_device scope.
 
 import type { SubtitleAppearance } from "../contracts/v2/subtitles.ts";
+import { percentText } from "../i18n/format.ts";
 import { integerText } from "../i18n/numbers.ts";
 import { type MessageKey, translate } from "../i18n/translate.ts";
 import { decodeSettingsCapabilities } from "../contracts/v2/settings.ts";
@@ -27,7 +28,7 @@ export const FONT_FAMILIES = [["sans-serif", "player.subtitles.font.sansSerif"],
 export const FONT_COLORS = [["#ffffff", "player.subtitles.color.white"], ["#facc15", "player.subtitles.color.yellow"], ["#22c55e", "player.subtitles.color.green"], ["#06b6d4", "player.subtitles.color.cyan"], ["#d946ef", "player.subtitles.color.magenta"], ["#ef4444", "player.subtitles.color.red"], ["#3b82f6", "player.subtitles.color.blue"], ["#9ca3af", "player.subtitles.color.gray"], ["#000000", "player.subtitles.color.black"]] as const satisfies NamedChoices;
 export const BACKGROUND_COLORS = [["#000000", "player.subtitles.color.black"], ["#374151", "player.subtitles.color.darkGrayTitleCase"], ["#1e3a5f", "player.subtitles.color.navy"], ["#7f1d1d", "player.subtitles.color.darkRedTitleCase"], ["#14532d", "player.subtitles.color.darkGreenTitleCase"]] as const satisfies NamedChoices;
 
-export interface LabeledChoice { readonly id: string; readonly label: string }
+export interface LabeledChoice { readonly id: string; readonly label: string; readonly colorHex?: string }
 export interface SubtitleControlSupport {
     readonly delay: boolean;
     readonly styling: boolean;
@@ -61,9 +62,9 @@ export function choiceLabel(table: NamedChoices, id: string): string {
     return key === undefined ? id : translate(key);
 }
 
-/** A table as picker options. */
-export function choiceOptions(table: NamedChoices): readonly LabeledChoice[] {
-    return table.map(([id, key]) => ({ id, label: translate(key) }));
+/** A table as picker options. Pass `swatch: true` for color palettes so pickers render 18px color swatches. */
+export function choiceOptions(table: NamedChoices, swatch = false): readonly LabeledChoice[] {
+    return table.map(([id, key]) => swatch ? { id, label: translate(key), colorHex: id } : { id, label: translate(key) });
 }
 
 export function appearanceSummary(appearance: SubtitleAppearance): string {
@@ -141,7 +142,7 @@ export function opacityOptions(current: number, lowest: number): readonly Labele
     const values = new Set<number>();
     for (let value = lowest; value <= 100; value += 25) values.add(value);
     values.add(current);
-    return [...values].sort((left, right) => left - right).map(value => ({ id: String(value), label: value === 0 ? translate("options.off") : `${value}%` }));
+    return [...values].sort((left, right) => left - right).map(value => ({ id: String(value), label: value === 0 ? translate("options.off") : percentText(value) }));
 }
 
 export function allowedScopes(contract: unknown, key: string): readonly string[] {
