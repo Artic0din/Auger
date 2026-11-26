@@ -172,6 +172,7 @@ export async function connect(serverAddress: string, deps: SessionCoreDeps, sign
         }
     }
     const discovered = await discoverServer(serverAddress, device, deps.fetch, clock, signal);
+    if (signal?.aborted) throw new ApiError({ kind: "aborted" });
     if (discovered.status === "unreachable") {
         const saved = savedServer();
         return saved === undefined ? discovered : openServerSession(saved, deps, "offline");
@@ -190,10 +191,12 @@ export async function connect(serverAddress: string, deps: SessionCoreDeps, sign
         }
         return failedDiscovery(error);
     }
+    if (signal?.aborted) throw new ApiError({ kind: "aborted" });
     if (setup.needsSetup) {
         return { status: "needs_setup", server: discovered.server };
     }
     const opened = await openDiscoveredServer(discovered.server, deps);
+    if (signal?.aborted) throw new ApiError({ kind: "aborted" });
     return localFailure !== undefined && opened.restore === "signed_out" ? { ...opened, restore: localFailure } : opened;
 }
 
