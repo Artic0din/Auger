@@ -6,6 +6,12 @@ All notable changes to this project are documented in this file.
 
 <!-- changelog:releases -->
 
+## [0.13.3] - 2026-11-26
+
+### Fixes
+
+- **Home**: Port Home and the top bar from the tvOS source ([#933](https://github.com/Artic0din/Auger-Tizen/pull/933), [`55918adf`](https://github.com/Artic0din/Auger-Tizen/commit/55918adf))
+
 ## [0.13.2] - 2026-11-26
 
 ### Fixes
