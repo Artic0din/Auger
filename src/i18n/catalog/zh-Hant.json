@@ -499,6 +499,7 @@
  "library.startsWithLetter": "以 {letter} 開頭的作品",
  "library.startsWithSymbol": "以數字或符號開頭的作品",
  "library.titleCount": "{count, plural, other {{count_text} 部作品}}",
+ "library.titleCountMore": "{count, plural, other {{count_text}+ 部作品}}",
  "marker.skipCredits": "略過片尾",
  "marker.skipRecap": "略過前情提要",
  "menu.addProfile": "新增個人檔案",

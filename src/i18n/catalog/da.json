@@ -499,6 +499,7 @@
  "library.startsWithLetter": "Titler, der begynder med {letter}",
  "library.startsWithSymbol": "Titler, der begynder med et tal eller symbol",
  "library.titleCount": "{count, plural, one {{count_text} titel} other {{count_text} titler}}",
+ "library.titleCountMore": "{count, plural, one {{count_text}+ titler} other {{count_text}+ titler}}",
  "marker.skipCredits": "Spring rulletekster over",
  "marker.skipRecap": "Spring resumé over",
  "menu.addProfile": "Tilføj profil",

@@ -499,6 +499,7 @@
  "library.startsWithLetter": "시작 글자: {letter}",
  "library.startsWithSymbol": "시작 글자: 숫자 또는 기호",
  "library.titleCount": "{count, plural, other {작품 {count_text}개}}",
+ "library.titleCountMore": "{count, plural, other {작품 {count_text}+개}}",
  "marker.skipCredits": "크레딧 건너뛰기",
  "marker.skipRecap": "요약 건너뛰기",
  "menu.addProfile": "프로필 추가",

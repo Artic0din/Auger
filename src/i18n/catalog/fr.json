@@ -499,6 +499,7 @@
  "library.startsWithLetter": "Titres commençant par {letter}",
  "library.startsWithSymbol": "Titres commençant par un chiffre ou un symbole",
  "library.titleCount": "{count, plural, one {{count_text} titre} many {{count_text} de titres} other {{count_text} titres}}",
+ "library.titleCountMore": "{count, plural, one {{count_text}+ titres} many {{count_text}+ titres} other {{count_text}+ titres}}",
  "marker.skipCredits": "Passer le générique",
  "marker.skipRecap": "Passer le récapitulatif",
  "menu.addProfile": "Ajouter un profil",

@@ -3294,8 +3294,8 @@ browseTest("personal reads retry explicitly and omitted Related recovers on a ne
     const person = tv.fake.hold("/catalog/people/7", true);
     await tv.page.locator('.details-people [data-focus^="credit:7:"]').focus();
     await press(tv, "Enter");
-    await showing(tv, "person:7");
-    await shows(tv, "Loading metadata");
+    await showing(tv, "person:7:loading");
+    await tv.page.locator('[data-focus="loading"][aria-label="Loading"]').waitFor();
     await tv.page.evaluate(() => window.browseHarness.clearProfile());
     person.release();
     await tv.jump(0);

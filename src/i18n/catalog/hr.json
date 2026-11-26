@@ -499,6 +499,7 @@
  "library.startsWithLetter": "Naslovi koji počinju slovom {letter}",
  "library.startsWithSymbol": "Naslovi koji počinju brojem ili simbolom",
  "library.titleCount": "{count, plural, one {{count_text} naslov} few {{count_text} naslova} other {{count_text} naslova}}",
+ "library.titleCountMore": "{count, plural, one {{count_text}+ naslova} few {{count_text}+ naslova} other {{count_text}+ naslova}}",
  "marker.skipCredits": "Preskoči odjavnu špicu",
  "marker.skipRecap": "Preskoči sažetak",
  "menu.addProfile": "Dodaj profil",

@@ -499,6 +499,7 @@
  "library.startsWithLetter": "Titels die beginnen met {letter}",
  "library.startsWithSymbol": "Titels die beginnen met een cijfer of symbool",
  "library.titleCount": "{count, plural, one {{count_text} titel} other {{count_text} titels}}",
+ "library.titleCountMore": "{count, plural, one {{count_text}+ titels} other {{count_text}+ titels}}",
  "marker.skipCredits": "Aftiteling overslaan",
  "marker.skipRecap": "Samenvatting overslaan",
  "menu.addProfile": "Profiel toevoegen",
