@@ -20,8 +20,7 @@
 .section-catalog-grid .browse-art { width: calc(260px * var(--section-scale, 1)); height: calc(390px * var(--section-scale, 1)); border-radius: 12px; transition: transform 150ms ease-out; }
 .section-catalog-grid .browse-card-title { margin: 22px 0 4px; padding: 0; font-size: 24px; line-height: 29px; font-weight: 500; color: rgba(237,237,237,.45); }
 .section-catalog-grid .browse-card-subtitle { margin: 0; padding: 0; font-size: 20px; line-height: 24px; font-weight: 400; color: rgba(237,237,237,.32); }
-.section-catalog-state { margin: 220px 0 16px; font-size: 36px; font-weight: 600; text-align: center; outline: none; }
-.section-catalog-state ~ .browse-text { text-align: center; font-size: 26px; }
+.section-catalog-state { display: flex; align-items: center; justify-content: center; min-height: 760px; outline: none; }
 /* TVCatalogGrid.swift:83-91: ProgressView tinted siloOnSurface with default padding, spinning as on Requests. */
 .section-catalog-loading { width: 40px; height: 40px; margin: 0 auto 48px; padding: 16px; color: var(--silo-text); }
 .section-catalog-loading svg { display: block; width: 40px; height: 40px; animation: search-spin 1s steps(8) infinite; }

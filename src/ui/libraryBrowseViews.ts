@@ -8,7 +8,8 @@ import { actionButton, errorView, failureError, zoneNode } from "./browseViews.t
 import { feedGrid, feedGridMinWidth, feedGridWidth } from "./catalogFeed.ts";
 import { localizeNumerals, shownLocale } from "../i18n/format.ts";
 import { translate } from "../i18n/translate.ts";
-import { activeFacetCount, canReset, cleared, directionLabel, effectiveOrder, FACETS, facetSummary, facetTitle, options, reset, selected, sortKeysFor, sortLabel, toggled, withSort, type BrowseFilter } from "./libraryBrowse.ts";
+import type { CatalogFilters } from "../contracts/v2/discovery.ts";
+import { activeFacetCount, browseMediaType, canReset, cleared, directionLabel, effectiveOrder, facetsFor, facetSummary, facetTitle, options, reset, selected, sortKeysFor, sortLabel, toggled, withSort, type BrowseFilter, type Facet } from "./libraryBrowse.ts";
 import type { DiscoveryState } from "./libraryDiscovery.ts";
 import { emptyState, type StateSymbol } from "./libraryStates.ts";
 import { el } from "./screen.ts";
@@ -255,7 +256,7 @@ export function browsePage(route: LibraryRoute, state: DiscoveryState, handlers:
         railLeft = "empty";
     } else {
         // TVLibraryGridView.emptyState .libraryEmpty (:262-267, :296-300): inert; the controls and rail keep focus.
-        const symbol: StateSymbol = route.library.type === "series" ? "tv" : route.library.type === "audiobooks" ? "book.closed" : "film.stack";
+        const symbol: StateSymbol = route.library.type === "series" ? "tv" : browseMediaType(route.library.type) === "audiobook" ? "book.closed" : "film.stack";
         const empty = el("div", "browse-empty-state");
         empty.append(emptyState(symbol, translate("library.empty"), translate("library.emptyBody")));
         content.push(empty);
@@ -293,7 +294,7 @@ export function browsePage(route: LibraryRoute, state: DiscoveryState, handlers:
     const entering = shownPanel !== panel.kind ? " browse-panel-enter" : "";
     const scrim = el("div", `browse-panel-scrim${entering}`);
     if (panel.kind === "sort") {
-        const items = sortKeysFor(route.library.type, handlers.ratingSources, filter.sort).map(entry => {
+        const items = sortKeysFor(route.library.type, handlers.ratingSources, filter.sort, filter).map(entry => {
             const current = entry.key === filter.sort;
             const name = translate(entry.name);
             const parts: (HTMLElement | string)[] = [symbol("checkmark", current), name];
@@ -320,7 +321,7 @@ export function browsePage(route: LibraryRoute, state: DiscoveryState, handlers:
     const body: HTMLElement[] = [];
     const section = (title: string): void => { body.push(el("p", "browse-panel-section", upper(title))); };
     if (panel.facet === undefined) {
-        const available = FACETS.filter(({ facet }) => options(facet, vocabulary).length > 0);
+        const available = facetsFor(route.library.type).filter(({ facet }) => options(facet, vocabulary).length > 0);
         if (available.length === 0) body.push(el("p", "browse-panel-note", translate("filters.none")));
         for (const { facet } of available) {
             const title = facetTitle(facet);
@@ -361,8 +362,8 @@ export function browsePage(route: LibraryRoute, state: DiscoveryState, handlers:
         body.push(back.element);
         if (selected(draft, facet).length > 0) {
             const title = facetTitle(facet);
-            const first = options(facet, vocabulary)[0];
-            const clear = row(`clear:${facet}`, [icon("clear"), translate("filters.clearFacet", { facet: title })], () => handlers.browse(route, { panel: { ...panel, draft: cleared(draft, facet) }, focus: first === undefined ? { zone: "panel", key: "facet-back" } : { zone: "panel", key: `value:${first.value}` } }));
+            const nextDraft = cleared(draft, facet);
+            const clear = row(`clear:${facet}`, [icon("clear"), translate("filters.clearFacet", { facet: title })], () => handlers.browse(route, { panel: { ...panel, draft: nextDraft }, focus: defaultValueFocus(nextDraft, facet, vocabulary) }));
             items.push(clear);
             body.push(clear.element);
         }
@@ -392,14 +393,23 @@ export function browsePage(route: LibraryRoute, state: DiscoveryState, handlers:
     return { content: [...content, scrim, box], zones: [...zones.map(zone => ({ ...zone, items: [] })), { id: "panel", layout: "column", up: "panel", down: "panel", items, ...(panel.facet === undefined ? {} : { onLeft: back }) }], back };
 }
 
+/** TVBrowseFilterPanel.defaultValueFocus (TVBrowseFilterUI.swift:551-561): first selected value, else first option, else Back. */
+function defaultValueFocus(filter: BrowseFilter, facet: Facet, vocabulary: CatalogFilters | undefined): { zone: string; key: string } {
+    const chosen = new Set(selected(filter, facet));
+    const entries = options(facet, vocabulary);
+    const target = entries.find(option => chosen.has(option.value)) ?? entries[0];
+    return target === undefined ? { zone: "panel", key: "facet-back" } : { zone: "panel", key: `value:${target.value}` };
+}
+
 /** Where focus lands when a panel opens or changes screen: the current choice, as Apple's claimFocus. */
-export function panelFocus(state: DiscoveryState): { zone: string; key: string } | undefined {
+export function panelFocus(state: DiscoveryState, libraryType = "movies"): { zone: string; key: string } | undefined {
     const panel = state.panel;
     if (panel === undefined) return undefined;
     if (panel.kind === "sort") return { zone: "panel", key: `sort:${state.filter.sort}` };
     if (panel.facet === undefined) {
-        const facet = panel.lastFacet ?? FACETS.find(({ facet }) => options(facet, state.data?.filters).length > 0)?.facet;
+        const available = facetsFor(libraryType).filter(({ facet }) => options(facet, state.data?.filters).length > 0);
+        const facet = panel.lastFacet !== undefined && available.some(entry => entry.facet === panel.lastFacet) ? panel.lastFacet : available[0]?.facet;
         return facet === undefined ? { zone: "panel", key: "done" } : { zone: "panel", key: `facet:${facet}` };
     }
-    return { zone: "panel", key: "facet-back" };
+    return defaultValueFocus(panel.draft, panel.facet, state.data?.filters);
 }

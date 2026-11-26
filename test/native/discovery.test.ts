@@ -104,10 +104,24 @@ test("facets decode structured technical data, tolerate additions and optional o
     const raw = fixture("get_catalog_filters_ok");
     const result = decodeCatalogFilters({ ...raw, future: true });
     assert.deepEqual(result.genres, ["Crime"]);
+    assert.deepEqual(result.authors, ["Frank Herbert"]);
+    assert.deepEqual(result.narrators, []);
+    assert.deepEqual(result.series, []);
     assert.deepEqual(result.technical, { resolutions: ["2160p"], audioLanguages: [], subtitleLanguages: ["en"] });
-    delete raw.technical;
-    assert.equal(decodeCatalogFilters(raw).technical, undefined);
+    const withoutOptional = { ...raw } as Record<string, unknown>;
+    delete withoutOptional.technical;
+    delete withoutOptional.authors;
+    delete withoutOptional.narrators;
+    delete withoutOptional.series;
+    const minimal = decodeCatalogFilters(withoutOptional);
+    assert.equal(minimal.technical, undefined);
+    assert.deepEqual(minimal.authors, []);
+    assert.deepEqual(minimal.narrators, []);
+    assert.deepEqual(minimal.series, []);
     for (const value of [null, [7], "secret-value"]) assert.throws(() => decodeCatalogFilters({ ...raw, genres: value }), WireError);
+    for (const key of ["authors", "narrators", "series"]) {
+        for (const value of [null, [7], "secret-value"]) assert.throws(() => decodeCatalogFilters({ ...raw, [key]: value }), WireError);
+    }
 });
 
 test("letters keep discontiguous runs and positions without client alphabet sorting", () => {

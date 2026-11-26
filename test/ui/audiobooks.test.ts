@@ -424,6 +424,36 @@ audiobookTest("the Audiobooks library Browse grid queries by library alone and o
     assert.deepEqual(await tv.page.locator('.browse-sort-panel [data-focus^="sort:"]').evaluateAll(nodes => nodes.map(node => node.getAttribute("data-focus"))), ["sort:title", "sort:added_at", "sort:release_date", "sort:year", "sort:runtime", "sort:bitrate", "sort:progress", "sort:date_viewed", "sort:plays", "sort:author", "sort:narrator", "sort:series"]);
 });
 
+audiobookTest("the Audiobooks library Browse grid offers only audiobook filter facets and lowers them to rules", async tv => {
+    await tv.page.route("**/api/v2/catalog/filters**", route => route.fulfill({
+        json: {
+            genres: ["Fantasy"], studios: ["Tor"], networks: ["HBO"], countries: ["US"], original_languages: ["en"], content_ratings: ["R"],
+            authors: ["Brandon Sanderson"], narrators: ["Michael Kramer"], series: ["Stormlight"],
+            technical: { resolutions: ["2160p"], audio_languages: ["en"], subtitle_languages: ["en"] },
+        },
+    }));
+    await showAudiobooks(tv);
+    await tv.page.locator('[data-focus="audiobooks"]').click();
+    await showing(tv, "library:14");
+    await selectLibraryMode(tv, "Browse");
+    await tv.page.locator('.browse-grid .browse-card-square').first().waitFor();
+    await tv.page.locator('[data-focus="filter"]').click();
+    await tv.page.locator('[data-focus="facet:author"]').waitFor();
+    assert.deepEqual(
+        await tv.page.locator('.browse-filter-panel [data-focus^="facet:"]').evaluateAll(nodes => nodes.map(node => node.getAttribute("data-focus"))),
+        ["facet:genre", "facet:author", "facet:narrator", "facet:series", "facet:decade", "facet:watchStatus"],
+    );
+    await tv.page.locator('[data-focus="facet:author"]').click();
+    assert.equal(await tv.focused(), "value:Brandon Sanderson");
+    await tv.page.locator('[data-focus="value:Brandon Sanderson"]').click();
+    await tv.remote(BACK);
+    await tv.page.locator('[data-focus="done"]').click();
+    await tv.eventually(async () => tv.fake.requests.some(request => request.path.startsWith("/catalog/query") && JSON.stringify(request.body?.groups ?? []).includes('"author"')), "author filter query sent");
+    const query = tv.fake.requests.filter(request => request.path.startsWith("/catalog/query") && request.body?.library_id === "14").at(-1);
+    assert.equal(query?.body?.type, undefined);
+    assert.deepEqual(query?.body?.groups, [{ match: "any", rules: [{ field: "author", op: "is", value: "Brandon Sanderson" }] }]);
+});
+
 audiobookTest("with Show Audiobooks off, Search offers no Audiobooks filter and keeps to a video scope", async tv => {
     await tv.page.locator('[data-focus="search"]').click();
     assert.equal(await tv.page.locator("#browse-search").getAttribute("placeholder"), "Search movies and series...", "search.fieldPrompt.video");

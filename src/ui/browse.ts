@@ -75,7 +75,7 @@ import { CALENDAR_FILTER_KEY, calendarEventKeys, calendarState, calendarWeek, Ca
 import type { CalendarHandlers } from "./calendarView.ts";
 import { isSectionRoute, SectionCatalog, type SectionRoute } from "./sectionCatalog.ts";
 import { readSectionCatalog, type SectionSnapshot } from "./sectionCatalogState.ts";
-import { BrowsePrefs, browseQuery } from "./libraryBrowse.ts";
+import { BrowsePrefs, browseQuery, withValidSort } from "./libraryBrowse.ts";
 import { stopFeed, waitForFeedEnd } from "./catalogFeed.ts";
 import { leavePanel } from "./libraryBrowseViews.ts";
 import type { BrowseChange, DiscoveryState } from "./libraryDiscovery.ts";
@@ -1448,8 +1448,9 @@ export function mountBrowse(root: HTMLElement, options: BrowseOptions): Browse {
         if ("panel" in change && change.panel === undefined && state.panel !== undefined) leavePanel(container);
         if ("panel" in change) state.panel = change.panel;
         if (change.filter !== undefined) {
-            const changed = JSON.stringify(browseQuery(change.filter, current.library, 100)) !== JSON.stringify(browseQuery(state.filter, current.library, 100));
-            state.filter = change.filter;
+            const nextFilter = withValidSort(current.library.type, change.filter);
+            const changed = JSON.stringify(browseQuery(nextFilter, current.library, 100)) !== JSON.stringify(browseQuery(state.filter, current.library, 100));
+            state.filter = nextFilter;
             browsePrefs.save(current.library, state.filter);
             if (changed) {
                 state.snapshot = undefined; current.pages = newPages(); current.failure = undefined;
