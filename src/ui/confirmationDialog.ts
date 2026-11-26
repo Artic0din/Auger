@@ -53,7 +53,12 @@ export function centredDialog(options: DialogOptions): HTMLElement[] {
         problem.setAttribute("role", "alert");
         lines.push(problem);
     }
-    if (options.message !== "") lines.push(el("p", alert ? "signin-alert-text" : "skyline-confirm-message", options.message));
+    if (options.message !== "") {
+        const message = el("p", alert ? "signin-alert-text" : "skyline-confirm-message", options.message);
+        message.id = `${options.id}-message`;
+        dialog.setAttribute("aria-describedby", message.id);
+        lines.push(message);
+    }
     options.destructive?.classList.add("skyline-destructive");
     const row = el("div", alert ? "signin-actions" : "skyline-confirm-actions");
     row.append(...options.buttons);

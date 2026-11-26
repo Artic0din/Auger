@@ -53,15 +53,15 @@ export function mountAccounts(root: HTMLElement, core: SessionCoreDeps, current:
         const mine = { id: row.id };
         opening = mine;
         refresh();
-        const settle = (error?: unknown): void => {
+        const settle = (failed: boolean, error?: unknown): void => {
             if (destroyed || opening !== mine) return;
             opening = undefined;
-            if (error !== undefined) {
+            if (failed) {
                 const text = error instanceof Error && error.message.trim() !== "" ? error.message : "Could not open the account. Try again.";
                 showError(text, host.focused()?.zone === "servers" ? "servers" : "accounts", row.id);
             } else refresh();
         };
-        void (async () => open(row, undefined, true))().then(() => settle(), (error: unknown) => settle(error));
+        void (async () => open(row, undefined, true))().then(() => settle(false), (error: unknown) => settle(true, error));
     };
     /** Redraws in place: focus stays in the column it was in. */
     const refresh = (zone = host.focused()?.zone): void => { render(zone === "servers", zone === "accounts"); };

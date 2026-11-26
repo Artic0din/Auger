@@ -70,7 +70,11 @@ test("Settings › Accounts and its confirmations read in German", async () => {
         assert.equal(title, text("servers.remove.title", "de", { server: new URL(await tv.page.evaluate(() => location.origin)).host }));
         assert.equal(await tv.page.locator('[data-focus="cancel"]').innerText(), text("common.cancel", "de"));
         assert.equal(await tv.page.locator('[data-focus="confirm"]').innerText(), text("servers.remove.confirm", "de"));
-        assert.equal(await tv.page.locator(".skyline-confirm-message").innerText(), text("account.removeServer.signsOutMany", "de", { count: 3 }));
+        const message = tv.page.locator(".skyline-confirm-message");
+        assert.equal(await message.innerText(), text("account.removeServer.signsOutMany", "de", { count: 3 }));
+        const describedBy = await tv.page.locator(".confirm-dialog").getAttribute("aria-describedby");
+        assert.ok(describedBy !== null && describedBy !== "");
+        assert.equal(await message.getAttribute("id"), describedBy);
     }, "de");
 });
 
@@ -145,6 +149,23 @@ test("a failed account switch shows the German alert over Change Account", async
         await tv.page.locator('[data-view="change-account"]').waitFor();
         assert.equal(await tv.focused(), "second");
     }, "de");
+});
+
+test("an account switch rejecting without a value still shows the generic alert over Change Account", async () => {
+    await withSignedInTv(browser, async tv => {
+        await seed(tv);
+        await tv.page.evaluate(() => {
+            window.appHarness.mountAccounts(() => Promise.reject());
+        });
+        await tv.page.locator('[data-view="change-account"]').waitFor();
+        await tv.page.locator('.accounts-pane [data-focus="second"]').focus();
+        await tv.page.keyboard.press("Enter");
+        await tv.page.locator(".signin-alert").waitFor();
+        assert.equal(await tv.page.locator(".signin-alert-text").innerText(), "Could not open the account. Try again.");
+        await tv.page.keyboard.press("Enter");
+        await tv.page.locator('[data-view="change-account"]').waitFor();
+        assert.equal(await tv.focused(), "second");
+    });
 });
 
 test("a German catalog that lands while Change Account is up redraws it in German", async () => {
