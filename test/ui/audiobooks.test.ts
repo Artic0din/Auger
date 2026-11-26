@@ -46,6 +46,13 @@ function audiobookTest(name: string, body: (tv: Tv, catalog: FakeAudiobooks) => 
 
 const view = (tv: Tv): Promise<string | null> => tv.page.evaluate(() => document.querySelector(".browse")?.getAttribute("data-view") ?? null);
 const showing = (tv: Tv, name: string): Promise<void> => tv.eventually(async () => (await view(tv)) === name, `the ${name} view`);
+/** Reads a computed style or CSS custom property in one page turn so a background repaint cannot detach a handle mid-check. */
+const readStyle = (tv: Tv, selector: string, property: string): Promise<string> => tv.page.evaluate(({ sel, prop }) => {
+    const node = document.querySelector(sel);
+    if (node === null) throw new Error(`missing ${sel}`);
+    const style = getComputedStyle(node);
+    return prop.startsWith("--") ? style.getPropertyValue(prop).trim() : style.getPropertyValue(prop);
+}, { sel: selector, prop: property });
 
 async function shoot(tv: Tv, name: string): Promise<void> {
     const dir = process.env.EVIDENCE_DIR;
@@ -95,9 +102,17 @@ audiobookTest("the audiobook detail shows the cover, hero height, action pills, 
     assert.equal(await tv.page.locator(".audiobook-state-detail").innerText(), "8:32 into the chapter · 1h 51m left in the book");
     assert.equal(await tv.page.locator(".audiobook-ring-label").innerText(), "38%");
     await tv.page.locator('[data-focus="favorite"][aria-pressed]').waitFor();
-    const cover = await tv.page.locator(".audiobook-cover").evaluate(node => { const box = node.getBoundingClientRect(); return [box.width, box.height]; });
+    const cover = await tv.page.evaluate(() => {
+        const box = document.querySelector(".audiobook-cover")?.getBoundingClientRect();
+        if (box === undefined) throw new Error("missing .audiobook-cover");
+        return [box.width, box.height];
+    });
     assert.deepEqual(cover, [460, 460]);
-    const heroHeight = await tv.page.locator(".audiobook-hero").evaluate(node => Math.round(node.getBoundingClientRect().height));
+    const heroHeight = await tv.page.evaluate(() => {
+        const hero = document.querySelector(".audiobook-hero");
+        if (hero === null) throw new Error("missing .audiobook-hero");
+        return Math.round(hero.getBoundingClientRect().height);
+    });
     assert.equal(heroHeight, 860, "TVAudiobookDetailView.heroHeight is 860");
     const play = tv.page.locator('[data-focus="play"]');
     const chapters = tv.page.locator('[data-focus="chapters"]');
@@ -107,10 +122,10 @@ audiobookTest("the audiobook detail shows the cover, hero height, action pills, 
     assert.equal(await play.evaluate(n => n.classList.contains("audiobook-pill-primary")), true);
     assert.equal(await chapters.evaluate(n => n.classList.contains("audiobook-pill-secondary")), true);
     assert.equal(await startOver.evaluate(n => n.classList.contains("audiobook-pill-secondary")), true);
-    assert.equal(await play.evaluate(n => getComputedStyle(n).backgroundColor), "rgba(255, 255, 255, 0.7)");
-    assert.notEqual(await play.evaluate(n => getComputedStyle(n).boxShadow), "none");
-    assert.equal(await chapters.evaluate(n => getComputedStyle(n).backgroundColor), "rgba(0, 0, 0, 0.52)");
-    assert.equal(await tv.page.locator(".audiobook-actions").evaluate(n => getComputedStyle(n).columnGap), "18px");
+    assert.equal(await readStyle(tv, '[data-focus="play"]', "background-color"), "rgba(255, 255, 255, 0.7)");
+    assert.notEqual(await readStyle(tv, '[data-focus="play"]', "box-shadow"), "none");
+    assert.equal(await readStyle(tv, '[data-focus="chapters"]', "background-color"), "rgba(0, 0, 0, 0.52)");
+    assert.equal(await readStyle(tv, ".audiobook-actions", "column-gap"), "18px");
     const pillGap = await tv.page.evaluate(() => {
         const a = document.querySelector('[data-focus="play"]')?.getBoundingClientRect();
         const b = document.querySelector('[data-focus="chapters"]')?.getBoundingClientRect();
@@ -159,11 +174,10 @@ audiobookTest("Start Over hides without resume progress, and Favorite and Finish
     await finished.focus();
     assert.equal(await finished.locator("svg").getAttribute("data-symbol"), "checkmark.circle");
     await tv.page.keyboard.press("Enter");
-    await tv.eventually(async () => await finished.getAttribute("aria-pressed") === "true", "marked finished");
+    await tv.eventually(async () => catalog.mutations.includes("POST /watched/audiobook%3Ahail") && await finished.getAttribute("aria-pressed") === "true", "marked finished");
     assert.equal(await finished.locator("svg").getAttribute("data-symbol"), "checkmark.circle.fill");
-    assert.equal(await finished.evaluate(n => getComputedStyle(n).getPropertyValue("--icon-ink").trim()), "#fff", "focused filled circle checkmark uses inverse ink");
+    assert.equal(await readStyle(tv, '[data-focus="finished"]', "--icon-ink"), "#fff", "focused filled circle checkmark uses inverse ink");
     assert.equal(await tv.focused(), "finished");
-    assert.ok(catalog.mutations.includes("POST /watched/audiobook%3Ahail"));
 });
 
 audiobookTest("personalSupported=false hides Favorite while keeping Finished, and write failures surface the alert", async (tv, catalog) => {
@@ -304,28 +318,32 @@ audiobookTest("the remote reaches About, narrations and every rail card, and a l
     const up = 38;
     await tv.remote(down);
     assert.equal(await tv.focused(), "about", "Down from the actions reaches the About text");
-    const focused = await tv.page.locator('[data-focus="about"]').evaluate(node => getComputedStyle(node).backgroundColor);
+    const focused = await readStyle(tv, '[data-focus="about"]', "background-color");
     assert.match(focused, /rgba\(0, 0, 0, 0\)|transparent/, "focus keeps the text readable: no white fill");
     await tv.remote(down);
     assert.equal(await tv.focused(), "narration:audiobook:fresh");
-    assert.equal(await tv.page.locator('[data-focus="narration:audiobook:fresh"]').evaluate(n => getComputedStyle(n).borderRadius), "8px");
-    assert.notEqual(await tv.page.locator('[data-focus="narration:audiobook:fresh"]').evaluate(n => getComputedStyle(n).boxShadow), "none");
+    assert.equal(await readStyle(tv, '[data-focus="narration:audiobook:fresh"]', "border-radius"), "8px");
+    assert.notEqual(await readStyle(tv, '[data-focus="narration:audiobook:fresh"]', "box-shadow"), "none");
     await tv.remote(down);
     assert.match(await tv.focused() ?? "", /^audiobook:/, "Down enters the first rail");
     await tv.remote(down); await tv.remote(down);
-    const related = tv.page.locator(".audiobook-section", { hasText: "Related" }).locator(".audiobook-rail");
-    const railGap = await related.evaluate(rail => {
-        const cards = rail.querySelectorAll<HTMLElement>(".browse-card");
+    const railGap = await tv.page.evaluate(() => {
+        const section = [...document.querySelectorAll(".audiobook-section")].find(node => node.textContent?.includes("Related"));
+        const cards = section?.querySelectorAll<HTMLElement>(".audiobook-rail .browse-card") ?? [];
         if (cards.length < 2) return -1;
         return Math.round(cards[1]!.getBoundingClientRect().left - cards[0]!.getBoundingClientRect().right);
     });
     assert.equal(railGap, 40, "rail cards use a 40 px horizontal gap");
     for (let step = 0; step < 11; step++) await tv.remote(39);
     assert.equal(await tv.focused(), "audiobook:similar11");
-    const inside = await tv.page.locator('[data-focus="audiobook:similar11"]').evaluate((card, row) => {
+    const inside = await tv.page.evaluate(() => {
+        const section = [...document.querySelectorAll(".audiobook-section")].find(node => node.textContent?.includes("Related"));
+        const row = section?.querySelector(".audiobook-rail");
+        const card = document.querySelector('[data-focus="audiobook:similar11"]');
+        if (row === null || row === undefined || card === null) return false;
         const box = card.getBoundingClientRect(), bounds = row.getBoundingClientRect();
         return box.left >= bounds.left && box.right <= bounds.right;
-    }, await related.elementHandle());
+    });
     assert.equal(inside, true, "the last card is revealed inside its row");
     for (let step = 0; step < 5; step++) await tv.remote(up);
     assert.equal(await tv.focused(), "play", "Up returns to primary pill");
@@ -478,7 +496,7 @@ audiobookTest("a truncated About shows MORE and opens the scrollable full descri
     assert.equal(await tv.page.locator('[data-focus="about"]').getAttribute("aria-describedby"), null, "About button does not recite the full overview or facts on focus");
     assert.equal(await tv.page.locator('[data-focus="about"]').getAttribute("aria-haspopup"), "dialog");
     assert.equal(await tv.page.locator('[data-focus="about"]').getAttribute("aria-label"), "About: MORE");
-    assert.equal(await tv.page.locator('[data-focus="about"]').evaluate(node => getComputedStyle(node).backgroundColor), "rgba(0, 0, 0, 0)");
+    assert.equal(await readStyle(tv, '[data-focus="about"]', "background-color"), "rgba(0, 0, 0, 0)");
     await tv.page.keyboard.press("Enter");
     await showing(tv, "audiobook:audiobook:fresh:description");
     assert.equal(await tv.page.locator('.audiobook-description[role="dialog"]').count(), 1);
