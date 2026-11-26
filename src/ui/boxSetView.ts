@@ -6,6 +6,7 @@ import { boxSetFacts, boxSetNextMovie, boxSetPlayVerb } from "../contracts/v2/bo
 import { artworkUrl } from "./browseModel.ts";
 import type { FocusItem, View, Zone } from "./browseFocus.ts";
 import { actionButton, cardItems, GRID_COLUMNS, heading, type ViewContext, zoneNode } from "./browseViews.ts";
+import { titleParts } from "./browseDetails.ts";
 import { detailAction } from "./detailsActions.ts";
 import { heroBackdrop, type Tints } from "./heroBackdrop.ts";
 import { el } from "./screen.ts";
@@ -67,14 +68,14 @@ export function boxSetView(detail: CatalogBoxSetDetail, context: ViewContext, pl
     };
 }
 
-/** TVHeroTitle: one line, or a lead and a subtitle split on ": " (TVDetailHero.swift:486-520). */
+/** TVHeroTitle: one line, or a lead and subtitle via shared `titleParts` (TVDetailHero.swift:571-583). */
 function heroTitle(title: string): HTMLElement {
     const node = heading(title);
     node.classList.add("requests-detail-title");
-    const split = title.indexOf(": ");
+    const parts = titleParts(title);
     node.textContent = "";
-    node.appendChild(el("span", "requests-title-primary", split < 0 ? title : title.slice(0, split)));
-    if (split >= 0) node.appendChild(el("span", "requests-title-secondary", title.slice(split + 2)));
+    node.appendChild(el("span", "requests-title-primary", parts.primary));
+    if (parts.subtitle !== undefined) node.appendChild(el("span", "requests-title-secondary", parts.subtitle));
     return node;
 }
 

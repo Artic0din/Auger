@@ -5,6 +5,7 @@ import { actionButton, cardItem, errorView, failureError, type ViewContext } fro
 import { loadingMore } from "./catalogFeed.ts";
 import { isolated, markEnglishOnly } from "../i18n/direction.ts";
 import { translate } from "../i18n/translate.ts";
+import { emptyState } from "./libraryStates.ts";
 import { el } from "./screen.ts";
 import { sectionCountLabel, type SectionSnapshot } from "./sectionCatalogState.ts";
 
@@ -52,21 +53,18 @@ export class SectionCatalog {
         const name = route.kind === "homeSection" ? `homeSection:${route.id}` : `libraryResults:${route.library.id}:${route.source.id}`;
         const content: HTMLElement[] = [title];
         if (page === undefined || page.items.length === 0) {
+            if (route.failure !== undefined) return errorView(name, failureError(route.failure, route.error), retry, back, signIn);
             const unavailable = this.snapshot?.unavailable === true;
-            if (!unavailable && route.failure !== undefined) return errorView(name, failureError(route.failure, route.error), retry, back, signIn);
-            const message = unavailable ? translate("rowPage.unavailable") : busy ? translate("common.loading") : translate("rowPage.empty");
-            const owner = el("div", "section-catalog-state", message);
-            owner.tabIndex = 0;
-            owner.setAttribute("role", route.failure === undefined ? "status" : "alert");
-            owner.setAttribute("aria-label", busy ? translate("rowPage.loading", { title: isolated(route.title) }) : message);
+            const message = unavailable ? translate("rowPage.unavailable") : busy ? translate("rowPage.loading", { title: isolated(route.title) }) : translate("rowPage.empty");
+            const owner = el("div", "section-catalog-state");
+            owner.tabIndex = -1;
+            if (!unavailable && busy) owner.setAttribute("role", "status");
+            owner.setAttribute("aria-label", message);
             owner.setAttribute("data-focus", "state");
+            if (unavailable) owner.append(emptyState("rectangle.stack.badge.minus", translate("rowPage.unavailable"), translate("rowPage.unavailableBody")));
+            else if (!busy) owner.append(emptyState("square.stack.3d.up.fill", translate("rowPage.empty"), translate("rowPage.emptyBody")));
             content.push(owner);
-            if (route.failure !== undefined) content.push(failureNote(route.failure));
-            else if (unavailable) content.push(el("p", "browse-text", translate("rowPage.unavailableBody")));
-            else if (!busy) content.push(el("p", "browse-text", translate("rowPage.emptyBody")));
-            const controls = route.failure === undefined ? [{ key: "state", element: owner }] : [actionButton("retry", translate("common.tryAgain"), retry)];
-            if (route.failure !== undefined) content.push(...controls.map(item => item.element));
-            return { name, content, zones: [{ id: "state", layout: "column", items: controls }], focus: { zone: "state", key: controls[0]?.key ?? "state" }, back };
+            return { name, content, zones: [{ id: "state", layout: "column", items: [{ key: "state", element: owner }] }], focus: { zone: "state", key: "state" }, back };
         }
         const count = sectionCountLabel(page);
         if (count !== undefined) {

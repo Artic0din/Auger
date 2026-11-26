@@ -6,6 +6,7 @@ import type { View, Zone } from "./browseFocus.ts";
 import { newPages, newRoute, type Route, type RouteHandlers } from "./browseRoutes.ts";
 import { actionButton, errorView, failureError, homeView, homeRows, lines, zoneNode } from "./browseViews.ts";
 import { collectionArt, collectionPreview, collectionRowCards, collectionSpoken, countLine } from "./collectionCards.ts";
+import { browseMediaType } from "./libraryBrowse.ts";
 import { emptyState, pageOwner, recommendedLoading, type StateSymbol } from "./libraryStates.ts";
 import type { DiscoveryState, LibrarySource } from "./libraryDiscovery.ts";
 import { el } from "./screen.ts";
@@ -35,7 +36,7 @@ export function discoveryView(route: LibraryRoute, state: DiscoveryState, handle
     if (state.mode === "Browse") {
         const page = browsePage(route, state, handlers);
         fitCaptions(page.content);
-        return { name: `library:${route.library.id}`, content: page.content, zones: page.zones, focus: panelFocus(state) ?? { zone: "controls", key: "sort" }, back: page.back ?? handlers.pop, ready: state.snapshot !== undefined };
+        return { name: `library:${route.library.id}`, content: page.content, zones: page.zones, focus: panelFocus(state, route.library.type) ?? { zone: "controls", key: "sort" }, back: page.back ?? handlers.pop, ready: state.snapshot !== undefined };
     }
     const name = route.library.name;
     const ownedPage = (page: HTMLElement, label: string): void => {
@@ -50,12 +51,13 @@ export function discoveryView(route: LibraryRoute, state: DiscoveryState, handle
     if (state.mode === "Recommended" && state.data === undefined) {
         ownedPage(recommendedLoading(name), translate("library.loadingNamed", { name }));
     } else if (state.mode === "Recommended" && rows.length === 0 && state.data !== undefined) {
-        // TVLibraryBrowseView.emptyHint (:95-118).
-        const symbol: StateSymbol = state.data.scoped !== true && route.library.type === "series" ? "tv" : state.data.scoped !== true && route.library.type === "audiobooks" ? "book.closed" : "film.stack";
+        // TVLibraryBrowseView.emptyHint (:95-118) with the bottom incomplete note (:85-90).
+        const symbol: StateSymbol = state.data.scoped !== true && route.library.type === "series" ? "tv" : state.data.scoped !== true && browseMediaType(route.library.type) === "audiobook" ? "book.closed" : "film.stack";
         const title = translate(state.data.incomplete === true ? "library.error.someShelvesTitle" : state.data.scoped === true ? "library.noTitlesForTab" : "library.emptyNamed", { name });
         const page = el("div", "library-recommended-state");
         page.append(emptyState(symbol, title, translate(state.data.scoped === true ? "library.noTitlesForTabBody" : "library.emptyNamedBody")));
         ownedPage(page, translate("library.emptyNamed", { name }));
+        if (state.data.incomplete === true) content.push(el("p", "library-incomplete", translate("library.error.someShelvesOpenBrowse")));
     } else if (state.mode === "Collections" && (route.failure !== undefined || state.data === undefined || collectionCount(state.data.collections) === 0)) {
         // TVLibraryCollectionsView.emptyContent (:139-158): a clear area while loading, and the empty state for none or a failed read.
         const page = el("div", "library-collections-state");
