@@ -5860,12 +5860,15 @@ test("Stats reads CURRENT_BANDWIDTH through FakeAVPlay, omits invalid values, an
 
     duringSeek = true;
     r.controller.seekToSeconds(60);
+    r.avplay.listener?.onbufferingstart();
+    r.avplay.tick(r.avplay.positionMs + 1000);
     assert.equal(getterCallsDuringSeek, 0, "never calls getStreamingProperty while seekTo is outstanding");
     assert.equal(throughput(), undefined);
     duringSeek = false;
     r.avplay.streamingProperties = { CURRENT_BANDWIDTH: "15393984" };
     r.avplay.finishSeek();
     await r.h.clock.advance(0);
+    r.avplay.listener?.onbufferingcomplete();
     assert.equal(throughput(), "15.4 Mbps");
 
     for (const invalid of ["0", "", "nan", "-500"]) {
