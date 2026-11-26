@@ -1271,8 +1271,6 @@
  "watchParty.episodes.empty": "本季没有剧集",
  "watchParty.episodes.line": "第{season}季 · 第{episode}集",
  "watchParty.episodes.loading": "正在加载剧集",
- "watchParty.episodes.noneBody": "本季没有可播放的内容。",
- "watchParty.episodes.noneTitle": "没有剧集",
  "watchParty.episodes.numbered": "{number}. {title}",
  "watchParty.episodes.reload": "重新加载剧集",
  "watchParty.error.codeRequired": "请输入Watch Party代码或邀请链接。",

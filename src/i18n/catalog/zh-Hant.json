@@ -1271,8 +1271,6 @@
  "watchParty.episodes.empty": "這一季沒有任何集數",
  "watchParty.episodes.line": "S{season} · E{episode}",
  "watchParty.episodes.loading": "正在載入集數",
- "watchParty.episodes.noneBody": "這一季沒有可播放的內容。",
- "watchParty.episodes.noneTitle": "沒有集數",
  "watchParty.episodes.numbered": "{number}. {title}",
  "watchParty.episodes.reload": "重新載入集數",
  "watchParty.error.codeRequired": "請輸入 Watch Party 代碼或邀請連結。",

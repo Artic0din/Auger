@@ -1271,8 +1271,6 @@
  "watchParty.episodes.empty": "Ingen afsnit i denne sæson",
  "watchParty.episodes.line": "S{season} · A{episode}",
  "watchParty.episodes.loading": "Indlæser afsnit",
- "watchParty.episodes.noneBody": "Intet i denne sæson kan afspilles.",
- "watchParty.episodes.noneTitle": "Ingen afsnit",
  "watchParty.episodes.numbered": "{number}. {title}",
  "watchParty.episodes.reload": "Genindlæs afsnit",
  "watchParty.error.codeRequired": "Indtast en festkode eller et invitationslink.",

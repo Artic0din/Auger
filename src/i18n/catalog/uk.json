@@ -1271,8 +1271,6 @@
  "watchParty.episodes.empty": "У цьому сезоні немає епізодів",
  "watchParty.episodes.line": "С{season} · Е{episode}",
  "watchParty.episodes.loading": "Завантаження епізодів",
- "watchParty.episodes.noneBody": "У цьому сезоні немає нічого доступного для відтворення.",
- "watchParty.episodes.noneTitle": "Немає епізодів",
  "watchParty.episodes.numbered": "{number}. {title}",
  "watchParty.episodes.reload": "Перезавантажити епізоди",
  "watchParty.error.codeRequired": "Введіть код Watch Party або посилання-запрошення.",

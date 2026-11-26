@@ -1271,8 +1271,6 @@
  "watchParty.episodes.empty": "Nema epizoda u ovoj sezoni",
  "watchParty.episodes.line": "S{season} · E{episode}",
  "watchParty.episodes.loading": "Učitavanje epizoda",
- "watchParty.episodes.noneBody": "Ništa u ovoj sezoni nije dostupno za reprodukciju.",
- "watchParty.episodes.noneTitle": "Nema epizoda",
  "watchParty.episodes.numbered": "{number}. {title}",
  "watchParty.episodes.reload": "Ponovno učitaj epizode",
  "watchParty.error.codeRequired": "Unesite kôd partyja ili poveznicu pozivnice.",

@@ -1271,8 +1271,6 @@
  "watchParty.episodes.empty": "Geen afleveringen in dit seizoen",
  "watchParty.episodes.line": "S{season} · A{episode}",
  "watchParty.episodes.loading": "Afleveringen laden",
- "watchParty.episodes.noneBody": "Niets in dit seizoen kan worden afgespeeld.",
- "watchParty.episodes.noneTitle": "Geen afleveringen",
  "watchParty.episodes.numbered": "{number}. {title}",
  "watchParty.episodes.reload": "Afleveringen opnieuw laden",
  "watchParty.error.codeRequired": "Voer een partycode of uitnodigingslink in.",

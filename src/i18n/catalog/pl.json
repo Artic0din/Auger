@@ -1271,8 +1271,6 @@
  "watchParty.episodes.empty": "Brak odcinków w tym sezonie",
  "watchParty.episodes.line": "S{season} · O{episode}",
  "watchParty.episodes.loading": "Ładowanie odcinków",
- "watchParty.episodes.noneBody": "W tym sezonie nie ma nic do odtworzenia.",
- "watchParty.episodes.noneTitle": "Brak odcinków",
  "watchParty.episodes.numbered": "{number}. {title}",
  "watchParty.episodes.reload": "Wczytaj odcinki ponownie",
  "watchParty.error.codeRequired": "Wpisz kod Watch Party lub link z zaproszeniem.",

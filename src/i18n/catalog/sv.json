@@ -1271,8 +1271,6 @@
  "watchParty.episodes.empty": "Inga avsnitt i den här säsongen",
  "watchParty.episodes.line": "S{season} · A{episode}",
  "watchParty.episodes.loading": "Läser in avsnitt",
- "watchParty.episodes.noneBody": "Inget i den här säsongen kan spelas upp.",
- "watchParty.episodes.noneTitle": "Inga avsnitt",
  "watchParty.episodes.numbered": "{number}. {title}",
  "watchParty.episodes.reload": "Läs in avsnitt igen",
  "watchParty.error.codeRequired": "Ange en kod eller inbjudningslänk för Watch Party.",

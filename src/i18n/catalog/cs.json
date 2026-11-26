@@ -1271,8 +1271,6 @@
  "watchParty.episodes.empty": "V této řadě nejsou žádné díly",
  "watchParty.episodes.line": "Ř{season} · D{episode}",
  "watchParty.episodes.loading": "Načítání dílů",
- "watchParty.episodes.noneBody": "V této řadě není nic k přehrání.",
- "watchParty.episodes.noneTitle": "Žádné díly",
  "watchParty.episodes.numbered": "{number}. {title}",
  "watchParty.episodes.reload": "Znovu načíst díly",
  "watchParty.error.codeRequired": "Zadejte kód Watch Party nebo odkaz na pozvánku.",

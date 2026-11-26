@@ -1271,8 +1271,6 @@
  "watchParty.episodes.empty": "Bu sezonda bölüm yok",
  "watchParty.episodes.line": "S{season} · B{episode}",
  "watchParty.episodes.loading": "Bölümler yükleniyor",
- "watchParty.episodes.noneBody": "Bu sezonda oynatılabilecek bir şey yok.",
- "watchParty.episodes.noneTitle": "Bölüm yok",
  "watchParty.episodes.numbered": "{number}. {title}",
  "watchParty.episodes.reload": "Bölümleri yeniden yükle",
  "watchParty.error.codeRequired": "Bir parti kodu veya davet bağlantısı girin.",

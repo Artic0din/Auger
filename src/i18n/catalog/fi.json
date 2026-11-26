@@ -1271,8 +1271,6 @@
  "watchParty.episodes.empty": "Tällä kaudella ei ole jaksoja",
  "watchParty.episodes.line": "K{season} · J{episode}",
  "watchParty.episodes.loading": "Ladataan jaksoja…",
- "watchParty.episodes.noneBody": "Mitään tämän kauden jaksoa ei voi toistaa.",
- "watchParty.episodes.noneTitle": "Ei jaksoja",
  "watchParty.episodes.numbered": "{number}. {title}",
  "watchParty.episodes.reload": "Lataa jaksot uudelleen",
  "watchParty.error.codeRequired": "Anna Watch Party -koodi tai kutsulinkki.",

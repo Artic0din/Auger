@@ -1271,8 +1271,6 @@
  "watchParty.episodes.empty": "Keine Folgen in dieser Staffel",
  "watchParty.episodes.line": "S{season} · F{episode}",
  "watchParty.episodes.loading": "Folgen werden geladen",
- "watchParty.episodes.noneBody": "In dieser Staffel ist nichts abspielbar.",
- "watchParty.episodes.noneTitle": "Keine Folgen",
  "watchParty.episodes.numbered": "{number}. {title}",
  "watchParty.episodes.reload": "Folgen neu laden",
  "watchParty.error.codeRequired": "Gib einen Code der Watch Party oder einen Einladungslink ein.",

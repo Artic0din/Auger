@@ -1271,8 +1271,6 @@
  "watchParty.episodes.empty": "No hay episodios en esta temporada",
  "watchParty.episodes.line": "T{season} · E{episode}",
  "watchParty.episodes.loading": "Cargando episodios",
- "watchParty.episodes.noneBody": "No hay nada disponible para reproducir en esta temporada.",
- "watchParty.episodes.noneTitle": "No hay episodios",
  "watchParty.episodes.numbered": "{number}. {title}",
  "watchParty.episodes.reload": "Volver a cargar episodios",
  "watchParty.error.codeRequired": "Escribe un código de Watch Party o un enlace de invitación.",

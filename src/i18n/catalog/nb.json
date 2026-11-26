@@ -1271,8 +1271,6 @@
  "watchParty.episodes.empty": "Ingen episoder i denne sesongen",
  "watchParty.episodes.line": "S{season} · E{episode}",
  "watchParty.episodes.loading": "Laster inn episoder",
- "watchParty.episodes.noneBody": "Ingenting i denne sesongen kan spilles av.",
- "watchParty.episodes.noneTitle": "Ingen episoder",
  "watchParty.episodes.numbered": "{number}. {title}",
  "watchParty.episodes.reload": "Last inn episodene på nytt",
  "watchParty.error.codeRequired": "Skriv inn en Watch Party-kode eller en invitasjonslenke.",
