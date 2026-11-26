@@ -474,6 +474,7 @@ audiobookTest("a truncated About shows MORE and opens the scrollable full descri
     await tv.eventually(async () => await tv.page.locator(".audiobook-about-more").isVisible(), "MORE pill reveals for clamped overview");
     await tv.remote(40);
     assert.equal(await tv.focused(), "about", "Down from the actions enters About");
+    assert.equal(await tv.page.locator('[data-focus="about"] .audiobook-about, [data-focus="about"] .audiobook-facts').count(), 0, "overview and facts live outside the button subtree");
     assert.equal(await tv.page.locator('[data-focus="about"]').evaluate(node => getComputedStyle(node).backgroundColor), "rgba(0, 0, 0, 0)");
     await tv.page.keyboard.press("Enter");
     await showing(tv, "audiobook:audiobook:fresh:description");
@@ -488,4 +489,17 @@ audiobookTest("a truncated About shows MORE and opens the scrollable full descri
     await tv.remote(BACK);
     await showing(tv, "audiobook:audiobook:fresh");
     assert.equal(await tv.focused(), "about");
+});
+
+audiobookTest("near-end progress with played=false syncs the Finished toggle and state to finished", async (tv, catalog) => {
+    catalog.progress.set("audiobook:hail", 10797);
+    await tv.page.locator('[data-section="shelf"] [data-focus="audiobook:hail"]').click();
+    await showing(tv, "audiobook:audiobook:hail");
+    assert.equal(await tv.page.locator('[data-focus="play"]').innerText(), "Play Again");
+    const finished = tv.page.locator('[data-focus="finished"]');
+    assert.equal(await finished.getAttribute("aria-pressed"), "true");
+    assert.equal(await finished.locator("svg").getAttribute("data-symbol"), "checkmark.circle.fill");
+    await finished.focus();
+    await tv.page.keyboard.press("Enter");
+    await tv.eventually(async () => catalog.mutations.includes("DELETE /watched/audiobook%3Ahail"), "toggling near-end finished sends DELETE /watched");
 });

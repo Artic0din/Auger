@@ -4,7 +4,7 @@ import { shufflePick } from "../player/nextShuffle.ts";
 import type { RequestSpec } from "../api/http.ts";
 import { detailOperations, RELATED_LIMIT, type PersonalAction } from "../api/detailOperations.ts";
 import { operations } from "../api/operations.ts";
-import type { Audiobook } from "../contracts/v2/audiobooks.ts";
+import { isFinished, type Audiobook } from "../contracts/v2/audiobooks.ts";
 import type { Card, ItemDetail, LocalExtra } from "../contracts/v2/catalog.ts";
 import { playChoices, type PlayRequest } from "./browseModel.ts";
 import type { Clock } from "../api/clock.ts";
@@ -44,6 +44,7 @@ function seasonWatchedFailed(): DetailsAlert {
 }
 
 export function audiobookItemDetail(book: Audiobook): ItemDetail {
+    const finished = isFinished(book.played, book.position, book.duration);
     return {
         id: book.id,
         type: "audiobook",
@@ -62,10 +63,10 @@ export function audiobookItemDetail(book: Audiobook): ItemDetail {
         seasonNumber: undefined,
         episodeNumber: undefined,
         playContentId: undefined,
-        played: book.played,
+        played: finished,
         videos: [],
         versions: [],
-        watch: { played: book.played, positionSeconds: book.position, lastFileId: undefined },
+        watch: { played: finished, positionSeconds: book.position, lastFileId: undefined },
     };
 }
 /** ShuffleLauncher.failureMessage under the shuffle.failedTitle alert. */

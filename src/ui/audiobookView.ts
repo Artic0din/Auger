@@ -89,8 +89,8 @@ function favoriteButton(details: DetailsState | undefined): FocusItem {
 }
 
 /** TVAudiobookDetailView.swift:373-385 — reuses Details circle button and watched state. */
-function finishedButton(book: Audiobook, details: DetailsState | undefined): FocusItem {
-    const value = details?.values.get("watched") ?? book.played;
+function finishedButton(page: AudiobookPage, details: DetailsState | undefined): FocusItem {
+    const value = details?.values.get("watched") ?? page.state.kind === "finished";
     const change = details?.changes.get("watched");
     const pressed = change?.pending ? change.target : value;
     const item = actionButton("finished", translate(pressed ? "detail.audiobook.markNotFinished" : "detail.audiobook.markFinished"), () => {
@@ -165,7 +165,7 @@ function sections(page: AudiobookPage, handlers: AudiobookHandlers): { content: 
     const content: HTMLElement[] = [];
     const zones: Zone[] = [];
     if (body.about !== undefined || body.facts.length > 0) {
-        // TVAudiobookDetailSections.aboutSection: heading sits above a single full-width focus stop holding clamped overview + facts.
+        // TVAudiobookDetailSections.aboutSection: keep overview and facts as semantic siblings of the focus control so screen readers preserve paragraph/dl navigation.
         const block = el("section", "audiobook-section");
         block.append(sectionTitle(translate("detail.audiobook.about")));
         let overviewNode: HTMLElement | undefined;
@@ -177,9 +177,12 @@ function sections(page: AudiobookPage, handlers: AudiobookHandlers): { content: 
         stop.element.classList.add("audiobook-about-stop");
         stop.element.setAttribute("aria-label", translate("detail.audiobook.about"));
         const columns = el("div", "audiobook-about-columns");
+        const describedBy: string[] = [];
         if (body.about !== undefined) {
             const overviewCol = el("div", "audiobook-about-overview");
             overviewNode = el("p", "audiobook-about", body.about);
+            overviewNode.id = "audiobook-about-overview";
+            describedBy.push(overviewNode.id);
             moreTag = el("span", "audiobook-about-more", translate("detail.overviewMore"));
             moreTag.hidden = true;
             overviewCol.append(overviewNode, moreTag);
@@ -191,11 +194,14 @@ function sections(page: AudiobookPage, handlers: AudiobookHandlers): { content: 
                 if (cut) {
                     stop.element.dataset.truncated = "true";
                     stop.element.setAttribute("aria-haspopup", "dialog");
+                    stop.element.setAttribute("aria-label", `${translate("detail.audiobook.about")}: ${translate("detail.overviewMore")}`);
                 }
             });
         }
         if (body.facts.length > 0) {
             const list = el("dl", body.about === undefined ? "audiobook-facts audiobook-facts-alone" : "audiobook-facts");
+            list.id = "audiobook-about-facts";
+            describedBy.push(list.id);
             for (const fact of body.facts) {
                 const row = el("div", "audiobook-fact");
                 row.append(
@@ -206,8 +212,10 @@ function sections(page: AudiobookPage, handlers: AudiobookHandlers): { content: 
             }
             columns.append(list);
         }
-        stop.element.append(columns);
-        block.append(stop.element);
+        if (describedBy.length > 0) stop.element.setAttribute("aria-describedby", describedBy.join(" "));
+        const card = el("div", "audiobook-about-card");
+        card.append(stop.element, columns);
+        block.append(card);
         content.push(block);
         zones.push({ id: "about", layout: "column", spatial: true, items: [stop] });
     }
@@ -276,7 +284,7 @@ function detailView(book: Audiobook, page: AudiobookPage, handlers: AudiobookHan
     if (page.showsChapters) actions.push(pill("chapters", translate("detail.audiobook.chapters"), "chapters", () => handlers.setPicker(true), "secondary"));
     if (page.resumeSeconds !== undefined) actions.push(pill("start-over", translate("detail.startOver"), "restart", undefined, "secondary"));
     if (details?.personalSupported !== false) actions.push(favoriteButton(details));
-    actions.push(finishedButton(book, details));
+    actions.push(finishedButton(page, details));
 
     const identity = el("div", "audiobook-identity");
     const eyebrow = el("p", "audiobook-eyebrow");

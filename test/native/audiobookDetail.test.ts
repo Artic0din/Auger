@@ -209,7 +209,10 @@ test("descriptionPassages splits paragraphs and bounds chunks near 420 character
     assert.ok(passages.length >= 4);
     assert.equal(passages[0]?.startsParagraph, true);
     assert.equal(passages[1]?.startsParagraph, false);
-    const secondParaStart = passages.find(p => p.text.includes("xxx"));
-    assert.equal(secondParaStart?.startsParagraph, true);
+    const secondParaStart = passages.findIndex(p => p.text.includes("xxx"));
+    assert.ok(secondParaStart > 0);
+    assert.equal(passages[secondParaStart]?.startsParagraph, true);
+    assert.equal(passages.slice(0, secondParaStart).map(p => p.text).join(" "), longPara);
+    assert.equal(passages.slice(secondParaStart).map(p => p.text).join(""), overlongToken);
     for (const passage of passages) assert.ok(passage.text.length <= DESCRIPTION_PASSAGE_TARGET, `chunk too long: ${passage.text.length}`);
 });

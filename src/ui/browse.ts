@@ -1690,8 +1690,9 @@ export function mountBrowse(root: HTMLElement, options: BrowseOptions): Browse {
                     if (previous !== undefined && quiet && detailWork === previous && previous.changes.size > 0) {
                         const offline = cache.isOffline(operations.getAudiobook(current.id));
                         const nextBook = offline ? current.data!.book : book;
-                        previous.acceptDetail(audiobookItemDetail(nextBook));
-                        if (nextBook.played !== undefined) previous.values.set("watched", nextBook.played);
+                        const nextDetail = audiobookItemDetail(nextBook);
+                        previous.acceptDetail(nextDetail);
+                        if (nextDetail.played !== undefined) previous.values.set("watched", nextDetail.played);
                         current.data = { book: nextBook, details: previous };
                         if (had) return host.focused() ?? current.focus;
                         return;
