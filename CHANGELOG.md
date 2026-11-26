@@ -6,6 +6,12 @@ All notable changes to this project are documented in this file.
 
 <!-- changelog:releases -->
 
+## [0.11.0] - 2026-11-26
+
+### Features
+
+- **TV**: Ship remaining Wave 5 player, subtitle, and Watch Party updates ([#922](https://github.com/Artic0din/Auger-Tizen/pull/922), [`c534ca92`](https://github.com/Artic0din/Auger-Tizen/commit/c534ca92))
+
 ## [0.10.0] - 2026-11-26
 
 ### Features
