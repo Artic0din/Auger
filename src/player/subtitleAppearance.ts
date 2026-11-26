@@ -249,3 +249,18 @@ export function resultDetail(result: { readonly language: string; readonly downl
     if (result.hearingImpaired) parts.push(translate("subtitleSearch.hearingImpaired"));
     return parts.join(" • ");
 }
+
+/** SubtitleAppearance.swift:434-448: true when subtitles risk unreadability due to faint opacity or dark unprotected fill. */
+export function isLowLegibilitySubtitleAppearance(appearance: SubtitleAppearance): boolean {
+    if (appearance.textOpacity < 30) return true;
+    if (appearance.backgroundStyle === "box" && appearance.backgroundOpacity !== 0) return false;
+    if (appearance.textOutline || appearance.backgroundStyle === "outline") return false;
+    const trimmed = appearance.fontColor.startsWith("#") ? appearance.fontColor.slice(1) : appearance.fontColor;
+    if (!/^[0-9a-f]{6}$/i.test(trimmed)) return false;
+    const value = Number.parseInt(trimmed, 16);
+    const red = (value >> 16) & 0xff;
+    const green = (value >> 8) & 0xff;
+    const blue = value & 0xff;
+    const luminance = (0.2126 * red) + (0.7152 * green) + (0.0722 * blue);
+    return luminance / 255 < 0.25;
+}

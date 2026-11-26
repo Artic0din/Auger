@@ -7,6 +7,7 @@ import { mkdir } from "node:fs/promises";
 import { after, before, test } from "node:test";
 import type { Browser, Route } from "playwright";
 import { FakeAudiobooks } from "../native/support/fakeAudiobooks.ts";
+import { problem } from "../native/support/fakeSilo.ts";
 import { selectLibraryMode } from "./support/library.ts";
 import { launchBrowser, openTv, type Tv } from "./support/tv.ts";
 
@@ -45,6 +46,13 @@ function audiobookTest(name: string, body: (tv: Tv, catalog: FakeAudiobooks) => 
 
 const view = (tv: Tv): Promise<string | null> => tv.page.evaluate(() => document.querySelector(".browse")?.getAttribute("data-view") ?? null);
 const showing = (tv: Tv, name: string): Promise<void> => tv.eventually(async () => (await view(tv)) === name, `the ${name} view`);
+/** Reads a computed style or CSS custom property in one page turn so a background repaint cannot detach a handle mid-check. */
+const readStyle = (tv: Tv, selector: string, property: string): Promise<string> => tv.page.evaluate(({ sel, prop }) => {
+    const node = document.querySelector(sel);
+    if (node === null) throw new Error(`missing ${sel}`);
+    const style = getComputedStyle(node);
+    return prop.startsWith("--") ? style.getPropertyValue(prop).trim() : style.getPropertyValue(prop);
+}, { sel: selector, prop: property });
 
 async function shoot(tv: Tv, name: string): Promise<void> {
     const dir = process.env.EVIDENCE_DIR;
@@ -83,7 +91,7 @@ audiobookTest("Home draws an all-audiobook row square, keeps Continue Listening 
     await showing(tv, "audiobook:audiobook:dune");
 });
 
-audiobookTest("the audiobook detail shows the cover, credits, state and a Play button that does nothing yet", async tv => {
+audiobookTest("the audiobook detail shows the cover, hero height, action pills, circle buttons, and state", async tv => {
     await tv.page.locator(`[data-section="shelf"] [data-focus="${TIDE}"]`).click();
     await showing(tv, `audiobook:${TIDE}`);
     assert.equal(await tv.page.locator(".audiobook-title").innerText(), "The Tide Owes");
@@ -93,11 +101,37 @@ audiobookTest("the audiobook detail shows the cover, credits, state and a Play b
     assert.equal(await tv.page.locator(".audiobook-state-line").innerText(), "Chapter 2 · What the Tide Owes");
     assert.equal(await tv.page.locator(".audiobook-state-detail").innerText(), "8:32 into the chapter · 1h 51m left in the book");
     assert.equal(await tv.page.locator(".audiobook-ring-label").innerText(), "38%");
-    const cover = await tv.page.locator(".audiobook-cover").evaluate(node => { const box = node.getBoundingClientRect(); return [box.width, box.height]; });
+    await tv.page.locator('[data-focus="favorite"][aria-pressed]').waitFor();
+    const cover = await tv.page.evaluate(() => {
+        const box = document.querySelector(".audiobook-cover")?.getBoundingClientRect();
+        if (box === undefined) throw new Error("missing .audiobook-cover");
+        return [box.width, box.height];
+    });
     assert.deepEqual(cover, [460, 460]);
+    const heroHeight = await tv.page.evaluate(() => {
+        const hero = document.querySelector(".audiobook-hero");
+        if (hero === null) throw new Error("missing .audiobook-hero");
+        return Math.round(hero.getBoundingClientRect().height);
+    });
+    assert.equal(heroHeight, 860, "TVAudiobookDetailView.heroHeight is 860");
     const play = tv.page.locator('[data-focus="play"]');
+    const chapters = tv.page.locator('[data-focus="chapters"]');
+    const startOver = tv.page.locator('[data-focus="start-over"]');
     assert.equal(await play.innerText(), "Resume");
     assert.equal(await play.getAttribute("aria-disabled"), "true");
+    assert.equal(await play.evaluate(n => n.classList.contains("audiobook-pill-primary")), true);
+    assert.equal(await chapters.evaluate(n => n.classList.contains("audiobook-pill-secondary")), true);
+    assert.equal(await startOver.evaluate(n => n.classList.contains("audiobook-pill-secondary")), true);
+    assert.equal(await readStyle(tv, '[data-focus="play"]', "background-color"), "rgba(255, 255, 255, 0.7)");
+    assert.notEqual(await readStyle(tv, '[data-focus="play"]', "box-shadow"), "none");
+    assert.equal(await readStyle(tv, '[data-focus="chapters"]', "background-color"), "rgba(0, 0, 0, 0.52)");
+    assert.equal(await readStyle(tv, ".audiobook-actions", "column-gap"), "18px");
+    const pillGap = await tv.page.evaluate(() => {
+        const a = document.querySelector('[data-focus="play"]')?.getBoundingClientRect();
+        const b = document.querySelector('[data-focus="chapters"]')?.getBoundingClientRect();
+        return a === undefined || b === undefined ? -1 : Math.round(b.left - a.right);
+    });
+    assert.equal(pillGap, 18, "adjacent action pills are separated by 18 px, not extra margin");
     assert.equal(await tv.focused(), "play", "initial focus is the primary action, as on Apple");
     const before = tv.fake.requests.length;
     await tv.remote(ENTER);
@@ -108,6 +142,68 @@ audiobookTest("the audiobook detail shows the cover, credits, state and a Play b
     assert.equal(await tv.focused(), "chapters");
     await tv.remote(39);
     assert.equal(await tv.focused(), "start-over");
+    await tv.remote(39);
+    assert.equal(await tv.focused(), "favorite");
+    await tv.remote(39);
+    assert.equal(await tv.focused(), "finished");
+});
+
+audiobookTest("Start Over hides without resume progress, and Favorite and Finished circle buttons toggle state", async (tv, catalog) => {
+    await tv.page.locator('[data-section="shelf"] [data-focus="audiobook:hail"]').click();
+    await showing(tv, "audiobook:audiobook:hail");
+    assert.equal(await tv.page.locator('[data-focus="play"]').innerText(), "Play");
+    assert.equal(await tv.page.locator('[data-focus="start-over"]').count(), 0, "no Start Over without resume progress");
+
+    const favorite = tv.page.locator('[data-focus="favorite"]');
+    const finished = tv.page.locator('[data-focus="finished"]');
+    await tv.eventually(async () => await favorite.getAttribute("aria-pressed") === "false", "initial favorite membership read");
+    assert.equal(await finished.getAttribute("aria-pressed"), "false");
+
+    await favorite.focus();
+    assert.equal(await favorite.locator("svg").getAttribute("data-symbol"), "heart");
+    await tv.page.keyboard.press("Enter");
+    await tv.eventually(async () => await favorite.getAttribute("aria-pressed") === "true", "favorite added");
+    assert.equal(await favorite.locator("svg").getAttribute("data-symbol"), "heart.fill");
+    assert.equal(await tv.focused(), "favorite");
+    assert.ok(catalog.mutations.includes("PUT /favorites/audiobook%3Ahail"));
+    await tv.eventually(
+      async () => tv.fake.requests.filter(r => r.path.startsWith("/favorites/audiobook%3Ahail")).length >= 3,
+      "favorite write and readback settled",
+    );
+
+    await finished.focus();
+    assert.equal(await finished.locator("svg").getAttribute("data-symbol"), "checkmark.circle");
+    await tv.page.keyboard.press("Enter");
+    await tv.eventually(async () => catalog.mutations.includes("POST /watched/audiobook%3Ahail") && await finished.getAttribute("aria-pressed") === "true", "marked finished");
+    assert.equal(await finished.locator("svg").getAttribute("data-symbol"), "checkmark.circle.fill");
+    assert.equal(await readStyle(tv, '[data-focus="finished"]', "--icon-ink"), "#fff", "focused filled circle checkmark uses inverse ink");
+    assert.equal(await tv.focused(), "finished");
+});
+
+audiobookTest("personalSupported=false hides Favorite while keeping Finished, and write failures surface the alert", async (tv, catalog) => {
+    await tv.page.locator('[data-section="shelf"] [data-focus="audiobook:hail"]').click();
+    await showing(tv, "audiobook:audiobook:hail");
+    const finished = tv.page.locator('[data-focus="finished"]');
+    await finished.focus();
+    catalog.mutationFailure = problem(503, "unavailable", "Try again");
+    await tv.page.keyboard.press("Enter");
+    const alertDialog = tv.page.getByRole("alertdialog");
+    await alertDialog.waitFor();
+    await tv.page.getByRole("button", { name: "OK", exact: true }).click();
+    await tv.eventually(async () => await alertDialog.count() === 0, "alert dismissed");
+    await finished.focus();
+    await tv.page.keyboard.press("Enter");
+    await tv.eventually(async () => await finished.getAttribute("aria-pressed") === "true", "retry marked finished");
+
+    catalog.capability = false;
+    await tv.remote(BACK);
+    await showing(tv, "home");
+    await tv.page.evaluate(() => { window.browseHarness.clearResponseCache(); window.browseHarness.destroy(); window.browseHarness.mount(); });
+    await showing(tv, "home");
+    await tv.page.locator('[data-section="shelf"] [data-focus="audiobook:hail"]').click();
+    await showing(tv, "audiobook:audiobook:hail");
+    await tv.eventually(async () => await tv.page.locator('[data-focus="favorite"]').count() === 0, "Favorite hidden when personal lists unavailable");
+    assert.equal(await tv.page.locator('[data-focus="finished"]').count(), 1, "Finished remains available");
 });
 
 const DUNE = "audiobook:dune";
@@ -135,6 +231,7 @@ audiobookTest("an audiobook opens on Apple's loading frame, painted from its car
     assert.match(await page.locator(".audiobook-loading-year").innerText(), /^1965$/);
     assert.match(await page.locator(".audiobook-cover img").getAttribute("src") ?? "", /audiobook%3Adune|audiobook:dune/, "the card's cover");
     assert.deepEqual(await page.locator(".audiobook-cover").evaluate(node => { const box = node.getBoundingClientRect(); return [box.width, box.height]; }), [460, 460]);
+    assert.equal(await page.evaluate(n => Math.round(n.getBoundingClientRect().height), await page.elementHandle()), 860, "loading frame uses 860 hero height");
     assert.equal(await tv.page.locator('[data-focus="play"]').count(), 0, "no action until the book is read");
     await shoot(tv, "audiobook-loading");
     release();
@@ -193,14 +290,21 @@ audiobookTest("Chapters opens a picker on the current chapter and Back returns t
     assert.equal(await tv.focused(), "chapters");
 });
 
-audiobookTest("below the fold the detail lists narrations and rails, and a selection opens that book", async tv => {
+audiobookTest("below the fold the detail lists About facts, narrations and rails, strips series prefixes, and opens a selection", async tv => {
     await tv.page.locator(`[data-section="shelf"] [data-focus="${TIDE}"]`).click();
     await showing(tv, `audiobook:${TIDE}`);
     assert.equal(await tv.page.locator(".audiobook-about").innerText(), "The war for Roshar reaches its last turn, and the oaths that bound the Radiants are tested one more time.");
-    assert.equal(await tv.page.locator(".audiobook-static-credits").innerText(), "Written by Brandon Sanderson · Narrated by Michael Kramer & Kate Reading · Tor Books · 2024");
+    assert.equal(await tv.page.locator(".audiobook-about-more").isVisible(), false, "short overview hides MORE badge");
+    const factLabels = await tv.page.locator(".audiobook-fact-label").allInnerTexts();
+    const factValues = await tv.page.locator(".audiobook-fact-value").allInnerTexts();
+    assert.deepEqual(factLabels, ["AUTHOR", "NARRATORS", "PUBLISHER", "RELEASED", "LENGTH", "FORMAT"]);
+    assert.deepEqual(factValues, ["Brandon Sanderson", "Michael Kramer & Kate Reading", "Tor Books", "December 6, 2024", "3h", "AAC · M4B"]);
+    assert.equal(await tv.page.locator('[data-focus="narration:audiobook:fresh"] [data-symbol="person.wave.2"]').count(), 1);
     assert.deepEqual(await tv.page.locator(".audiobook-section-title").allInnerTexts(), ["About", "Narrations", "The Stormlight Archive", "More by Author", "Related"]);
     assert.equal(await tv.page.locator(".audiobook-rail .browse-card-square").count(), 16);
+    assert.equal(await tv.page.locator('.audiobook-section', { hasText: 'The Stormlight Archive' }).locator('.browse-card-title').first().innerText(), "The Way of Kings", "series prefix is stripped on series rail cards");
     assert.equal(await tv.page.locator(".audiobook-rail .browse-card-subtitle").first().innerText(), "Book 1");
+    assert.equal(await tv.page.locator('.audiobook-section', { hasText: 'More by Author' }).locator('.browse-card-subtitle').first().innerText(), "2006");
     await tv.page.locator('[data-focus="narration:audiobook:fresh"]').click();
     await showing(tv, "audiobook:audiobook:fresh");
     await tv.remote(BACK);
@@ -211,23 +315,39 @@ audiobookTest("the remote reaches About, narrations and every rail card, and a l
     await tv.page.locator(`[data-section="shelf"] [data-focus="${TIDE}"]`).click();
     await showing(tv, `audiobook:${TIDE}`);
     const down = 40;
+    const up = 38;
     await tv.remote(down);
     assert.equal(await tv.focused(), "about", "Down from the actions reaches the About text");
-    const focused = await tv.page.locator('[data-focus="about"]').evaluate(node => getComputedStyle(node).backgroundColor);
+    const focused = await readStyle(tv, '[data-focus="about"]', "background-color");
     assert.match(focused, /rgba\(0, 0, 0, 0\)|transparent/, "focus keeps the text readable: no white fill");
     await tv.remote(down);
     assert.equal(await tv.focused(), "narration:audiobook:fresh");
+    assert.equal(await readStyle(tv, '[data-focus="narration:audiobook:fresh"]', "border-radius"), "8px");
+    assert.notEqual(await readStyle(tv, '[data-focus="narration:audiobook:fresh"]', "box-shadow"), "none");
     await tv.remote(down);
     assert.match(await tv.focused() ?? "", /^audiobook:/, "Down enters the first rail");
     await tv.remote(down); await tv.remote(down);
-    const related = tv.page.locator(".audiobook-section", { hasText: "Related" }).locator(".audiobook-rail");
+    const railGap = await tv.page.evaluate(() => {
+        const section = [...document.querySelectorAll(".audiobook-section")].find(node => node.textContent?.includes("Related"));
+        const cards = section?.querySelectorAll<HTMLElement>(".audiobook-rail .browse-card") ?? [];
+        if (cards.length < 2) return -1;
+        return Math.round(cards[1]!.getBoundingClientRect().left - cards[0]!.getBoundingClientRect().right);
+    });
+    assert.equal(railGap, 40, "rail cards use a 40 px horizontal gap");
     for (let step = 0; step < 11; step++) await tv.remote(39);
     assert.equal(await tv.focused(), "audiobook:similar11");
-    const inside = await tv.page.locator('[data-focus="audiobook:similar11"]').evaluate((card, row) => {
+    const inside = await tv.page.evaluate(() => {
+        const section = [...document.querySelectorAll(".audiobook-section")].find(node => node.textContent?.includes("Related"));
+        const row = section?.querySelector(".audiobook-rail");
+        const card = document.querySelector('[data-focus="audiobook:similar11"]');
+        if (row === null || row === undefined || card === null) return false;
         const box = card.getBoundingClientRect(), bounds = row.getBoundingClientRect();
         return box.left >= bounds.left && box.right <= bounds.right;
-    }, await related.elementHandle());
+    });
     assert.equal(inside, true, "the last card is revealed inside its row");
+    for (let step = 0; step < 5; step++) await tv.remote(up);
+    assert.equal(await tv.focused(), "play", "Up returns to primary pill");
+    assert.equal(await tv.page.evaluate(() => document.querySelector(".browse")?.scrollTop ?? -1), 0, "returning to hero actions restores top scroll");
 });
 
 audiobookTest("the Audiobooks Browse page offers no video Shuffle even when the server advertises it", async tv => {
@@ -322,6 +442,36 @@ audiobookTest("the Audiobooks library Browse grid queries by library alone and o
     assert.deepEqual(await tv.page.locator('.browse-sort-panel [data-focus^="sort:"]').evaluateAll(nodes => nodes.map(node => node.getAttribute("data-focus"))), ["sort:title", "sort:added_at", "sort:release_date", "sort:year", "sort:runtime", "sort:bitrate", "sort:progress", "sort:date_viewed", "sort:plays", "sort:author", "sort:narrator", "sort:series"]);
 });
 
+audiobookTest("the Audiobooks library Browse grid offers only audiobook filter facets and lowers them to rules", async tv => {
+    await tv.page.route("**/api/v2/catalog/filters**", route => route.fulfill({
+        json: {
+            genres: ["Fantasy"], studios: ["Tor"], networks: ["HBO"], countries: ["US"], original_languages: ["en"], content_ratings: ["R"],
+            authors: ["Brandon Sanderson"], narrators: ["Michael Kramer"], series: ["Stormlight"],
+            technical: { resolutions: ["2160p"], audio_languages: ["en"], subtitle_languages: ["en"] },
+        },
+    }));
+    await showAudiobooks(tv);
+    await tv.page.locator('[data-focus="audiobooks"]').click();
+    await showing(tv, "library:14");
+    await selectLibraryMode(tv, "Browse");
+    await tv.page.locator('.browse-grid .browse-card-square').first().waitFor();
+    await tv.page.locator('[data-focus="filter"]').click();
+    await tv.page.locator('[data-focus="facet:author"]').waitFor();
+    assert.deepEqual(
+        await tv.page.locator('.browse-filter-panel [data-focus^="facet:"]').evaluateAll(nodes => nodes.map(node => node.getAttribute("data-focus"))),
+        ["facet:genre", "facet:author", "facet:narrator", "facet:series", "facet:decade", "facet:watchStatus"],
+    );
+    await tv.page.locator('[data-focus="facet:author"]').click();
+    assert.equal(await tv.focused(), "value:Brandon Sanderson");
+    await tv.page.locator('[data-focus="value:Brandon Sanderson"]').click();
+    await tv.remote(BACK);
+    await tv.page.locator('[data-focus="done"]').click();
+    await tv.eventually(async () => tv.fake.requests.some(request => request.path.startsWith("/catalog/query") && JSON.stringify(request.body?.groups ?? []).includes('"author"')), "author filter query sent");
+    const query = tv.fake.requests.filter(request => request.path.startsWith("/catalog/query") && request.body?.library_id === "14").at(-1);
+    assert.equal(query?.body?.type, undefined);
+    assert.deepEqual(query?.body?.groups, [{ match: "any", rules: [{ field: "author", op: "is", value: "Brandon Sanderson" }] }]);
+});
+
 audiobookTest("with Show Audiobooks off, Search offers no Audiobooks filter and keeps to a video scope", async tv => {
     await tv.page.locator('[data-focus="search"]').click();
     assert.equal(await tv.page.locator("#browse-search").getAttribute("placeholder"), "Search movies and series...", "search.fieldPrompt.video");
@@ -365,47 +515,44 @@ audiobookTest("reopening a book from its own rail starts at Play and Back restor
     await tv.eventually(async () => (await tv.focused()) === TIDE, "the outer page's rail card");
 });
 
-audiobookTest("an oversized About scrolls with Down and Up before focus leaves it, and every line is shown", async tv => {
+audiobookTest("a truncated About shows MORE and opens the scrollable full description overlay; Back returns to About", async tv => {
     await tv.page.locator(`[data-section="shelf"] [data-focus="audiobook:fresh"]`).click();
     await showing(tv, "audiobook:audiobook:fresh");
     await tv.eventually(async () => (await tv.focused()) === "play", "the primary action");
-    const viewport = await tv.page.locator(".browse").evaluate(node => node.clientHeight);
-    const about = () => tv.page.locator(".audiobook-about-stop").evaluate(node => {
-        const page = document.querySelector<HTMLElement>(".browse");
-        const box = node.getBoundingClientRect();
-        return { top: box.top, bottom: box.bottom, height: box.height, scroll: page?.scrollTop ?? -1, focused: document.activeElement === node };
-    });
-    assert.ok((await about()).height > viewport, "the fixture is taller than the viewport");
+    await tv.eventually(async () => await tv.page.locator(".audiobook-about-more").isVisible(), "MORE pill reveals for clamped overview");
     await tv.remote(40);
-    let state = await about();
-    assert.ok(state.focused, "Down from the actions enters About");
-    assert.ok(state.top >= 0, `the first line is visible on entry: ${JSON.stringify(state)}`);
-    let presses = 0;
-    while (state.bottom > viewport + 1) {
-        const before = state.scroll;
-        await tv.remote(40);
-        state = await about();
-        assert.ok(state.focused, `Down keeps focus on About while text remains: ${JSON.stringify(state)}`);
-        assert.ok(state.scroll > before && state.scroll - before < viewport, `each step scrolls less than a screen: ${before} -> ${state.scroll}`);
-        assert.ok(++presses < 20, "the end is reached");
-    }
-    assert.ok(presses > 0, "reading needed at least one scroll step");
-    assert.ok(state.bottom <= viewport + 1, "the last line is visible");
-    await tv.remote(40);
-    assert.equal(await tv.focused(), "narration:audiobook:fresh", "the next Down leaves for the next zone");
-    await tv.remote(38);
-    state = await about();
-    assert.ok(state.focused, "Up returns to About");
-    while (state.top < -1) {
-        const before = state.scroll;
-        await tv.remote(38);
-        state = await about();
-        assert.ok(state.focused, `Up keeps focus on About while text remains above: ${JSON.stringify(state)}`);
-        assert.ok(state.scroll < before && before - state.scroll < viewport, `each step scrolls less than a screen: ${before} -> ${state.scroll}`);
-        assert.ok(++presses < 40, "the start is reached");
-    }
-    await tv.remote(38);
-    assert.equal(await tv.focused(), "play", "the next Up returns to the actions");
+    assert.equal(await tv.focused(), "about", "Down from the actions enters About");
+    assert.equal(await tv.page.locator('[data-focus="about"] .audiobook-about, [data-focus="about"] .audiobook-facts').count(), 0, "overview and facts live outside the button subtree");
+    assert.equal(await tv.page.locator('[data-focus="about"]').getAttribute("aria-describedby"), null, "About button does not recite the full overview or facts on focus");
+    assert.equal(await tv.page.locator('[data-focus="about"]').getAttribute("aria-haspopup"), "dialog");
+    assert.equal(await tv.page.locator('[data-focus="about"]').getAttribute("aria-label"), "About: MORE");
+    assert.equal(await readStyle(tv, '[data-focus="about"]', "background-color"), "rgba(0, 0, 0, 0)");
+    await tv.page.keyboard.press("Enter");
+    await showing(tv, "audiobook:audiobook:fresh:description");
+    assert.equal(await tv.page.locator('.audiobook-description[role="dialog"]').count(), 1);
+    assert.equal(await tv.focused(), "passage:0");
+    const count = await tv.page.locator(".audiobook-passage").count();
+    assert.ok(count >= 6, `split across passages, got ${count}`);
+    for (let step = 0; step < count - 1; step++) await tv.remote(40);
+    assert.equal(await tv.focused(), `passage:${count - 1}`);
+    const bodyScroll = await tv.page.locator(".audiobook-description-body").evaluate(node => node.scrollTop);
+    assert.ok(bodyScroll > 0, `passages scrolled description body: ${bodyScroll}`);
+    await tv.remote(BACK);
+    await showing(tv, "audiobook:audiobook:fresh");
+    assert.equal(await tv.focused(), "about");
+});
+
+audiobookTest("near-end progress with played=false syncs the Finished toggle and state to finished", async (tv, catalog) => {
+    catalog.progress.set("audiobook:hail", 10797);
+    await tv.page.locator('[data-section="shelf"] [data-focus="audiobook:hail"]').click();
+    await showing(tv, "audiobook:audiobook:hail");
+    assert.equal(await tv.page.locator('[data-focus="play"]').innerText(), "Play Again");
+    const finished = tv.page.locator('[data-focus="finished"]');
+    assert.equal(await finished.getAttribute("aria-pressed"), "true");
+    assert.equal(await finished.locator("svg").getAttribute("data-symbol"), "checkmark.circle.fill");
+    await finished.focus();
+    await tv.page.keyboard.press("Enter");
+    await tv.eventually(async () => catalog.mutations.includes("DELETE /watched/audiobook%3Ahail"), "toggling near-end finished sends DELETE /watched");
 });
 
 audiobookTest("audiobook detail rail cards open no card menu on long-press or right-click", async (tv, catalog) => {

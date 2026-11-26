@@ -1,13 +1,15 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
 import { requestOperations as operations } from "../../src/api/requestOperations.ts";
-import { decodeDiscover, decodeMediaRequest, decodeMyRequests, decodeRequestsCapability, decodeRequestTitle, decodeRequestPage } from "../../src/contracts/v2/requests.ts";
+import { decodeDiscover, decodeMediaRequest, decodeMyRequests, decodeRequestsCapability, decodeRequestTitle, decodeRequestPage, mergeDiscoverSections } from "../../src/contracts/v2/requests.ts";
 import { FakeRequests } from "./support/fakeRequests.ts";
 import { decodeCatalogSearchCapabilities } from "../../src/contracts/v2/discovery.ts";
 import { fixture } from "./support/fakeSilo.ts";
 import { decodePeople } from "../../src/contracts/v2/details.ts";
 import { detailOperations } from "../../src/api/detailOperations.ts";
 import { searchRequestCatalogId } from "../../src/ui/globalSearch.ts";
+import { canFollowRequest } from "../../src/ui/requests.ts";
+import { requestProgress } from "../../src/ui/requestProgress.ts";
 import { artworkUrl, requestPosterUrl } from "../../src/ui/browseModel.ts";
 import { errorHeadline, errorMessage, errorState, unconfirmedWriteMessage, writeFailureMessage, writeMayHaveApplied } from "../../src/ui/browseRoutes.ts";
 import { ApiError } from "../../src/api/errors.ts";
@@ -79,6 +81,10 @@ test("Request records retain the local-date instant and quality target summary f
     const record = decodeMediaRequest({ ...fake.record, created_at: "2026-01-02T12:00:00Z", targets: [{ quality: "1080p", status: "queued" }, { quality: "4K", status: "completed" }] });
     assert.equal(record.createdAt, 1767355200000);
     assert.deepEqual(record.targets, [{ quality: "1080p", status: "queued" }, { quality: "4K", status: "completed" }]);
+    assert.equal(decodeMediaRequest({ ...fake.record, last_error: "quota_exceeded" }).lastError, "quota_exceeded");
+    assert.equal(decodeMediaRequest({ ...fake.record, last_error: null }).lastError, undefined);
+    assert.equal(decodeMediaRequest(fake.record).lastError, undefined);
+    assert.throws(() => decodeMediaRequest({ ...fake.record, last_error: 42 }));
     assert.throws(() => decodeMediaRequest({ ...fake.record, created_at: "not a date" }));
     assert.throws(() => decodeMediaRequest({ ...fake.record, targets: [{ quality: 42, status: "queued" }] }));
 });
@@ -105,8 +111,20 @@ test("Requests contract consumes capability, ordered discovery, detail and curso
     const section = { key: "custom", title: "Custom", page: 1, total_pages: 9, next_page: 4, results: [fake.title()] };
     assert.equal(decodeRequestPage(section).nextPage, 4);
     assert.deepEqual(decodeDiscover({ items: [section], row_order: [{ key: "future", type: "future" }, { key: "custom", type: "tmdb_list" }] }).map(row => row.key), ["custom"]);
-    assert.deepEqual(decodeDiscover({ items: [] }), [], "Apple's models do not read row_order");
-    assert.deepEqual(decodeDiscover({ items: [section] }).map(row => row.key), ["custom"], "without row_order the server's order stands");
+    assert.deepEqual(decodeDiscover({ items: [] }), [], "empty items yield no carousels");
+
+    const trendingMovies = { key: "trending_movies", title: "Trending Movies", page: 1, total_pages: 2, results: [fake.title(), { ...fake.title(), tmdb_id: 1001, title: "Shared" }] };
+    const trendingSeries = { key: "trending_series", title: "Trending Series", page: 1, total_pages: 2, results: [{ ...fake.title(), media_type: "series", tmdb_id: 2001, title: "Show One" }, { ...fake.title(), tmdb_id: 1001, title: "Shared" }] };
+    const popularMovies = { key: "popular_movies", title: "Popular Movies", page: 1, total_pages: 1, results: [{ ...fake.title(), tmdb_id: 3001, title: "Crowd Movie" }] };
+    for (const rowOrder of [undefined, null, []]) {
+        const body = rowOrder === undefined ? { items: [trendingMovies, trendingSeries, popularMovies, section] } : { items: [trendingMovies, trendingSeries, popularMovies, section], row_order: rowOrder };
+        const merged = decodeDiscover(body);
+        assert.deepEqual(merged.map(row => [row.key, row.titleKey, row.results.map(item => `${item.mediaType}:${item.tmdbId}`)]), [
+            ["trending", "requests.discover.trendingNow", ["movie:949", "series:2001", "movie:1001"]],
+            ["popular", "requests.discover.crowdFavorites", ["movie:3001"]],
+        ]);
+    }
+    assert.deepEqual(mergeDiscoverSections([]), []);
 });
 test("Requests writes have no automatic transport replay; paths and bodies match native API", () => {
     const title = decodeRequestTitle(new FakeRequests().title());
@@ -165,4 +183,53 @@ test("errorState follows Apple's ErrorState copy and ErrorView headline", () => 
         const shown = errorState(error);
         assert.deepEqual({ headline: errorHeadline(shown), message: errorMessage(shown), signIn: shown.signIn }, expected);
     }
+});
+
+test("decodeRequestState allows omitted or null requested_by_viewer and rejects non-boolean values", () => {
+    const fake = new FakeRequests();
+    const base = fake.title().request as Record<string, unknown>;
+    const omitted = { ...base };
+    delete omitted.requested_by_viewer;
+    assert.equal(decodeRequestTitle({ ...fake.title(), request: omitted }).request.requestedByViewer, undefined);
+    assert.equal(decodeRequestTitle({ ...fake.title(), request: { ...base, requested_by_viewer: null } }).request.requestedByViewer, undefined);
+    assert.throws(() => decodeRequestTitle({ ...fake.title(), request: { ...base, requested_by_viewer: "false" } }));
+});
+
+test("canFollowRequest requires follow capability, already_requested, explicit requestedByViewer=false, and pending/onTheWay", () => {
+    const makeTitle = (requestPatch: Record<string, unknown>, availability = "missing") =>
+        decodeRequestTitle({
+            ...new FakeRequests().title(),
+            availability,
+            request: {
+                requestable: false,
+                following: false,
+                requested_by_viewer: false,
+                request_id: "r1",
+                state: "pending",
+                reason: "already_requested",
+                ...requestPatch,
+            },
+        });
+    const cap = (follow: boolean) => ({ enabled: true, follow, removeFailed: false });
+
+    for (const state of ["pending", "approved", "processing", "partially_available"]) {
+        const title = makeTitle({ state });
+        assert.equal(canFollowRequest(cap(true), title, requestProgress(title)), true, state);
+    }
+
+    assert.equal(canFollowRequest(cap(false), makeTitle({}), requestProgress(makeTitle({}))), false, "capability off");
+    for (const reason of [undefined, "quota_exceeded", "already_available"]) {
+        const title = makeTitle({ reason });
+        assert.equal(canFollowRequest(cap(true), title, requestProgress(title)), false, `reason=${String(reason)}`);
+    }
+    for (const requestedByViewer of [true, undefined]) {
+        const title = makeTitle({ requested_by_viewer: requestedByViewer });
+        assert.equal(canFollowRequest(cap(true), title, requestProgress(title)), false, `requestedByViewer=${String(requestedByViewer)}`);
+    }
+    for (const [state, outcome] of [["available", "available"], ["failed", "missing"], ["declined", "missing"], ["cancelled", "missing"]] as const) {
+        const title = makeTitle({ state }, outcome);
+        assert.equal(canFollowRequest(cap(true), title, requestProgress(title)), false, `state=${state}`);
+    }
+    const requestableTitle = makeTitle({ requestable: true, state: undefined, reason: "already_requested" });
+    assert.equal(canFollowRequest(cap(true), requestableTitle, requestProgress(requestableTitle)), false, "no progress");
 });

@@ -53,6 +53,8 @@
     color: var(--silo-secondary);
 }
 
+.signin-alert-text.signin-error { margin-bottom: 12px; color: var(--silo-error-ink); }
+
 .signin-alert .signin-actions {
     display: flex;
     justify-content: space-between;

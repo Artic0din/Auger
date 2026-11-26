@@ -6,6 +6,57 @@ All notable changes to this project are documented in this file.
 
 <!-- changelog:releases -->
 
+## [0.14.7] - 2026-11-26
+
+### Fixes
+
+- **Browse**: Port Browse and the library grid from the tvOS source ([#927](https://github.com/Artic0din/Auger-Tizen/pull/927), [`a451d470`](https://github.com/Artic0din/Auger-Tizen/commit/a451d470))
+
+## [0.14.6] - 2026-11-26
+
+### Fixes
+
+- **Settings**: Add Server Support and Sync Source sections to General ([#935](https://github.com/Artic0din/Auger-Tizen/pull/935), [`00974c30`](https://github.com/Artic0din/Auger-Tizen/commit/00974c30))
+- **Audiobooks**: Port Audiobook detail layout, actions, facts, and description from tvOS ([#945](https://github.com/Artic0din/Auger-Tizen/pull/945), [`8a35d063`](https://github.com/Artic0din/Auger-Tizen/commit/8a35d063))
+- **Settings**: Add subtitle low-legibility warning and Font Family live preview ([#937](https://github.com/Artic0din/Auger-Tizen/pull/937), [`7033ad82`](https://github.com/Artic0din/Auger-Tizen/commit/7033ad82))
+- **Requests**: Port Requests hub preview, carousel merge, poster radius, and card labels ([#928](https://github.com/Artic0din/Auger-Tizen/pull/928), [`4771fab6`](https://github.com/Artic0din/Auger-Tizen/commit/4771fab6))
+
+## [0.14.5] - 2026-11-26
+
+### Fixes
+
+- **Sign-In**: Port Sign-in from the tvOS source ([#939](https://github.com/Artic0din/Auger-Tizen/pull/939), [`458014c4`](https://github.com/Artic0din/Auger-Tizen/commit/458014c4))
+
+## [0.14.4] - 2026-11-26
+
+### Fixes
+
+- **Requests**: Port Requests detail actions and loading state from tvOS ([#926](https://github.com/Artic0din/Auger-Tizen/pull/926), [`2e5e8646`](https://github.com/Artic0din/Auger-Tizen/commit/2e5e8646))
+
+## [0.14.3] - 2026-11-26
+
+### Fixes
+
+- **Settings**: Use centred alert dialogs for playback and subtitle resets ([#932](https://github.com/Artic0din/Auger-Tizen/pull/932), [`8be4ea7f`](https://github.com/Artic0din/Auger-Tizen/commit/8be4ea7f))
+
+## [0.14.2] - 2026-11-26
+
+### Fixes
+
+- **Lists**: Port Watchlist, Favorites and History from the tvOS source ([#938](https://github.com/Artic0din/Auger-Tizen/pull/938), [`0e2126b5`](https://github.com/Artic0din/Auger-Tizen/commit/0e2126b5))
+
+## [0.14.1] - 2026-11-26
+
+### Fixes
+
+- **Playback**: Port the Info, Stats and Chapters tabs from the tvOS source ([#942](https://github.com/Artic0din/Auger-Tizen/pull/942), [`26c5e922`](https://github.com/Artic0din/Auger-Tizen/commit/26c5e922))
+
+## [0.14.0] - 2026-11-26
+
+### Features
+
+- **Diagnostics**: Record reconnect errors and refine auto-report policy ([#943](https://github.com/Artic0din/Auger-Tizen/pull/943), [`da7cb6d5`](https://github.com/Artic0din/Auger-Tizen/commit/da7cb6d5))
+
 ## [0.13.3] - 2026-11-26
 
 ### Fixes

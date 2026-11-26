@@ -57,7 +57,7 @@ function usesLandscapeRail(type: string | undefined): boolean {
     return isSeriesType(value) || value === "season" || value === "episode";
 }
 
-export function detailsLoadingView(route: LoadingRoute, context: ViewContext, back: () => void): View {
+export function detailsLoadingView(route: LoadingRoute, context: Pick<ViewContext, "baseUrl" | "spoilers" | "posterScale" | "titleArt">, back: () => void, name = "item:loading"): View {
     const seed = route.seed;
     const settings = context.spoilers?.() ?? { hidesImages: false, hidesOverviews: false };
     const watch = seed?.episodeWatch;
@@ -128,7 +128,7 @@ export function detailsLoadingView(route: LoadingRoute, context: ViewContext, ba
     page.setAttribute("aria-label", title === undefined ? translate("detail.loadingDetails") : translate("detail.loadingDetailsFor", { title }));
     page.append(hero, rail);
     return {
-        name: "item:loading",
+        name,
         content: [wash, page],
         zones: [{ id: "loading", layout: "row", items: [{ key: "loading", element: page }] }],
         focus: { zone: "loading", key: "loading" },

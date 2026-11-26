@@ -10,8 +10,10 @@ The hub reads My Requests in 50-record pages, with a 100-page bound and advancin
 It groups active requests before attention states and landed titles, sorts newest first within each group, and omits unavailable or cancelled records.
 Your requests appears first when nonempty, followed by Discover and horizontal discovery shelves.
 The two reads answer together, as on Apple TV: either failing shows the error page while the hub has no rows, and a failed refresh silently keeps the rows already shown.
-A discovery answer without `row_order` keeps the server's item order.
+A discovery answer without `row_order`, or with an empty `row_order`, merges `trending_movies` + `trending_series` into Trending now (`requests.discover.trendingNow`) and `popular_movies` + `popular_series` into Crowd favorites (`requests.discover.crowdFavorites`), round-robin interleaved and deduplicated with empty rows omitted.
 The passive hero previews the focused request using already loaded data; focus performs no API reads.
+Unrequestable discover titles omit progress bars from the hub preview; own-request hub previews append `· reason` when failed or declined (`last_error`) and `· targets` for multi-target in-flight requests.
+Hub rail posters use a `12 px` corner radius, and request card spoken labels read `title, year, status` with localized year digits and omit missing parts.
 Its copy stays anchored above the row band as title and synopsis heights change.
 A wrapped title reduces the synopsis to two lines; available provider ratings stay on the metadata line.
 Two-line titles fill the first line as Apple TV does, never leave one word alone on the second, and keep the server's title text unchanged.
@@ -43,6 +45,7 @@ The primary action is one focusable pill that morphs in place, so focus stays on
 Request shows a small spinner and Requesting… in the secondary pill style, and presses are ignored until the read answers.
 Cancel disappears while it runs, and focus rests on the status pill beside it.
 A failed detail read with nothing to show is Apple's ErrorView, using the hub's error page with Try Again focused.
+While the first detail read is pending, the page shows Apple's item-detail loading view (`detailsLoadingView`) with passive page focus and Back.
 A 403 or 404 offers Go Back first, a 401 offers Sign In Again first, and otherwise Back is the remote's.
 Up and Down do nothing on that page because a pushed detail has no top bar.
 Apple keeps a provisional page built from the tapped card or record when a first read fails; this client has no provisional page, so it shows the error page for every first-read failure.

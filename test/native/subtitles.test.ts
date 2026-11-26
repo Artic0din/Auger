@@ -2,6 +2,7 @@ import assert from "node:assert/strict";
 import { test } from "node:test";
 import { decodeAppearance, decodeCues, DEFAULT_APPEARANCE } from "../../src/contracts/v2/subtitles.ts";
 import { playbackContext } from "../../src/player/capabilities.ts";
+import { isLowLegibilitySubtitleAppearance } from "../../src/player/subtitleAppearance.ts";
 
 test("subtitle preferences merge sparse profile values and reject unsafe or invalid styles", () => {
     const body = (value: unknown) => ({ profile_id: "p1", effective_value: JSON.stringify(value) });
@@ -32,4 +33,19 @@ test("text subtitles retain source timing, overlap and safe plain text without e
     assert.equal(caps?.subtitles.sidecar_text, true);
     assert.equal(caps?.subtitles.embedded_bitmap, false);
     assert.equal(caps?.subtitles.ass_styling, false);
+});
+
+test("isLowLegibilitySubtitleAppearance matches tvOS contrast and opacity gates", () => {
+    assert.equal(isLowLegibilitySubtitleAppearance(DEFAULT_APPEARANCE), false);
+    assert.equal(isLowLegibilitySubtitleAppearance({ ...DEFAULT_APPEARANCE, textOpacity: 25 }), true);
+    assert.equal(isLowLegibilitySubtitleAppearance({ ...DEFAULT_APPEARANCE, textOpacity: 30 }), false);
+    assert.equal(isLowLegibilitySubtitleAppearance({ ...DEFAULT_APPEARANCE, fontColor: "#000000", backgroundStyle: "none" }), true);
+    assert.equal(isLowLegibilitySubtitleAppearance({ ...DEFAULT_APPEARANCE, fontColor: "#000000", backgroundStyle: "shadow" }), true);
+    assert.equal(isLowLegibilitySubtitleAppearance({ ...DEFAULT_APPEARANCE, fontColor: "#000000", backgroundStyle: "box", backgroundOpacity: 0 }), true);
+    assert.equal(isLowLegibilitySubtitleAppearance({ ...DEFAULT_APPEARANCE, fontColor: "#000000", backgroundStyle: "box", backgroundOpacity: 25 }), false);
+    assert.equal(isLowLegibilitySubtitleAppearance({ ...DEFAULT_APPEARANCE, fontColor: "#000000", backgroundStyle: "none", textOutline: true }), false);
+    assert.equal(isLowLegibilitySubtitleAppearance({ ...DEFAULT_APPEARANCE, fontColor: "#000000", backgroundStyle: "outline" }), false);
+    assert.equal(isLowLegibilitySubtitleAppearance({ ...DEFAULT_APPEARANCE, fontColor: "#3f3f3f", backgroundStyle: "none" }), true);
+    assert.equal(isLowLegibilitySubtitleAppearance({ ...DEFAULT_APPEARANCE, fontColor: "#404040", backgroundStyle: "none" }), false);
+    assert.equal(isLowLegibilitySubtitleAppearance({ ...DEFAULT_APPEARANCE, fontColor: "invalid", backgroundStyle: "none" }), false);
 });

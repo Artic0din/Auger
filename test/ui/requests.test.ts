@@ -495,7 +495,7 @@ test("Requests artwork spans discover, rows, mine and both details with accessib
         };
         await openRequests(tv);
         await check('[data-focus="movie:949"]');
-        await tv.page.getByRole("button", { name: "Heat · Not requested", exact: true }).waitFor();
+        await tv.page.getByRole("button", { name: "Heat", exact: true }).waitFor();
         assert.equal(await button(tv, "more").count(), 0, "a paginated row has no See all tile, as on Apple TV");
         await button(tv, "movie:949").click(); await view(tv, "media");
         await tv.page.locator('.requests-detail-hero .skyline-backdrop').waitFor();
@@ -599,13 +599,13 @@ test("follow and unfollow never replay lost answers; refresh reconciles create",
         await openRequests(tv); await button(tv, "movie:949").click(); await button(tv, "follow").waitFor();
         await button(tv, "follow").click();
         await tv.eventually(async () => !fake.following, "unfollowed");
-        await tv.page.getByRole("button", { name: "Follow", exact: true }).waitFor();
+        await tv.page.getByRole("button", { name: "Notify Me", exact: true }).waitFor();
         await button(tv, "follow").click();
-        await tv.page.getByRole("button", { name: "Unfollow", exact: true }).waitFor();
+        await tv.page.getByRole("button", { name: "Stop Notifying Me", exact: true }).waitFor();
         assert.equal(tv.fake.paths().filter(path => path === "PUT /requests/follows/movie/949").length, 1);
         // A different viewer's request remains followable after unfollowing.
         fake.following = true; await tv.remote(10009); await view(tv, "hub"); await button(tv, "movie:949").click();
-        await tv.page.getByRole("button", { name: "Unfollow", exact: true }).waitFor();
+        await tv.page.getByRole("button", { name: "Stop Notifying Me", exact: true }).waitFor();
         tv.fake.script("/requests/detail/movie/949", { status: 400, text: "bad" });
         tv.fake.dropNextAnswer("/requests/follows/movie/949"); await button(tv, "follow").click();
         await tv.page.getByText("Could not confirm the change. Refresh before trying again.").waitFor();
@@ -876,13 +876,13 @@ test("a settled write refreshes the retained Requests hub", async () => {
         await button(tv, "create").click();
         await tv.eventually(async () => fake.created, "write processed");
         fake.created = false; await tv.remote(10009); await view(tv, "hub");
-        await tv.page.getByRole("button", { name: "Heat · Not requested" }).waitFor();
+        await tv.page.getByRole("button", { name: "Heat" }).waitFor();
         await leaveRequests(tv); await button(tv, "home").click(); await tv.page.locator('.browse[data-view="home"]').waitFor();
         fake.created = true;
         const answered = tv.page.waitForResponse(response => response.request().method() === "POST" && new URL(response.url()).pathname.endsWith("/requests"));
         held.release(); await answered; await tv.jump(1);
         await openRequests(tv); await view(tv, "hub");
-        await tv.page.getByRole("button", { name: "Heat · Pending" }).last().waitFor();
+        await tv.page.getByRole("button", { name: "Heat, Pending" }).last().waitFor();
     } finally { await tv.page.context().close(); }
 });
 
@@ -2208,16 +2208,448 @@ test("another request cannot be cancelled or removed while one removal is in fli
 
 // TVPillButtonStyle(.compact) at silo-apple dce56e3c (TVDetailActions.swift:737-771): focus 1.025, Select presses to 0.98 of that, easeOut 0.12 s.
 for (const reduced of [false, true]) {
-    for (const key of ["create", "follow"]) {
+    for (const key of ["create", "follow", "cancel"]) {
         test(`Request detail ${key} pill: held Select presses it to 0.98 of its focus scale (reduced motion: ${reduced})`, async () => {
             const tv = await openTv(browser, { app: "browse" });
             try {
                 await tv.page.emulateMedia({ reducedMotion: reduced ? "reduce" : "no-preference" });
                 const fake = await start(tv);
                 if (key === "follow") { fake.following = true; fake.requestedByOther = true; }
-                await openRequests(tv); await button(tv, "movie:949").click(); await button(tv, key).waitFor();
+                if (key === "cancel") fake.created = true;
+                await openRequests(tv);
+                await button(tv, key === "cancel" ? "request-one" : "movie:949").click();
+                await button(tv, key).waitFor();
                 await assertPressedLook(tv, button(tv, key), { focusScale: 1.025, heldScale: 1.025 * 0.98, heldOpacity: 1, animates: "scale" }, reduced);
             } finally { await tv.page.context().close(); }
         });
     }
 }
+
+test("Notify Me uses bell icons, enforces tvOS visibility rules, and keeps focus during writes", async () => {
+    const tv = await openTv(browser, { app: "browse" });
+    try {
+        const fake = await start(tv);
+        const baseTitle = fake.title.bind(fake);
+        let followSupported = true;
+        let state: string = "pending";
+        let reason: string | undefined = "already_requested";
+        let requestedByViewer: boolean | undefined = false;
+        const route = fake.route.bind(fake);
+        fake.route = (method, path, profileId, body) => {
+            if (path === "/requests/status") {
+                return { status: 200, body: { requests_enabled: true, allowed: true, state: "available", follow_supported: followSupported, remove_failed_supported: true } };
+            }
+            if (path.startsWith("/requests/detail/")) {
+                return {
+                    status: 200,
+                    body: {
+                        ...baseTitle(),
+                        availability: state === "available" ? "available" : "missing",
+                        request: {
+                            requestable: false,
+                            following: fake.following,
+                            ...(requestedByViewer === undefined ? {} : { requested_by_viewer: requestedByViewer }),
+                            request_id: fake.record.id,
+                            state,
+                            ...(reason === undefined ? {} : { reason }),
+                        },
+                    },
+                };
+            }
+            return route(method, path, profileId, body);
+        };
+
+        await openRequests(tv);
+        await button(tv, "movie:949").click();
+        await button(tv, "follow").waitFor();
+        assert.equal(await button(tv, "follow").textContent(), "Notify Me");
+        assert.equal(await button(tv, "follow").getAttribute("aria-label"), "Notify Me");
+        assert.equal(await button(tv, "follow").locator("svg.requests-secondary-icon path").count(), 2);
+
+        const heldFollow = tv.fake.hold("/requests/follows/movie/949", true);
+        await button(tv, "follow").focus();
+        await tv.page.keyboard.press("Enter");
+        await tv.eventually(async () => tv.fake.paths().includes("PUT /requests/follows/movie/949"), "follow write held");
+        assert.equal(await tv.focused(), "follow", "Notify Me keeps focus while saving");
+        assert.equal(await button(tv, "follow").getAttribute("aria-disabled"), "true");
+        assert.equal(await button(tv, "follow").evaluate(node => (node as HTMLButtonElement).disabled), false);
+        await tv.page.keyboard.press("Enter");
+        heldFollow.release();
+        await tv.eventually(async () => fake.following && await button(tv, "follow").textContent() === "Stop Notifying Me", "toggled to Stop Notifying Me");
+        assert.equal(tv.fake.paths().filter(p => p === "PUT /requests/follows/movie/949").length, 1, "inert press did not resend");
+        assert.equal(await tv.focused(), "follow");
+        assert.equal(await button(tv, "follow").locator("svg.requests-secondary-icon path").count(), 5, "bell.slash icon");
+
+        // Unfollow write keeps focus on the button as well and ignores duplicate presses.
+        const heldUnfollow = tv.fake.hold("/requests/follows/movie/949", true);
+        await tv.page.keyboard.press("Enter");
+        await tv.eventually(async () => tv.fake.paths().includes("DELETE /requests/follows/movie/949"), "unfollow write held");
+        assert.equal(await tv.focused(), "follow", "Stop Notifying Me keeps focus while saving");
+        assert.equal(await button(tv, "follow").getAttribute("aria-disabled"), "true");
+        await tv.page.keyboard.press("Enter");
+        heldUnfollow.release();
+        await tv.eventually(async () => !fake.following && await button(tv, "follow").textContent() === "Notify Me", "toggled back to Notify Me");
+        assert.equal(tv.fake.paths().filter(p => p === "DELETE /requests/follows/movie/949").length, 1);
+        assert.equal(await tv.focused(), "follow");
+
+        // Visible for on-the-way state as well.
+        state = "processing";
+        await tv.remote(10009); await button(tv, "movie:949").click(); await button(tv, "follow").waitFor();
+
+        // Hidden for every failing tvOS condition.
+        for (const patch of [
+            () => { state = "pending"; followSupported = false; },
+            () => { followSupported = true; reason = undefined; },
+            () => { reason = "quota_exceeded"; },
+            () => { reason = "already_requested"; requestedByViewer = undefined; },
+            () => { requestedByViewer = true; },
+            () => { requestedByViewer = false; state = "available"; },
+            () => { state = "failed"; },
+            () => { state = "declined"; },
+            () => { state = "cancelled"; },
+        ]) {
+            patch();
+            await tv.remote(10009); await view(tv, "hub");
+            await button(tv, "movie:949").click(); await view(tv, "media");
+            await tv.eventually(async () => await tv.page.locator('[data-view="requests:loading"]').count() === 0, "detail settled");
+            assert.equal(await button(tv, "follow").count(), 0);
+        }
+    } finally { await tv.page.context().close(); }
+});
+
+test("Cancel Request shows xmark icon and ended own requests offer Request Again", async () => {
+    const tv = await openTv(browser, { app: "browse" });
+    try {
+        const fake = new FakeRequests();
+        fake.created = true;
+        await start(tv, fake);
+        await openRequests(tv);
+        await button(tv, "request-one").click();
+        await button(tv, "cancel").waitFor();
+        assert.equal(await button(tv, "cancel").textContent(), "Cancel Request");
+        assert.equal(await button(tv, "cancel").getAttribute("aria-label"), "Cancel Request");
+        assert.equal(await button(tv, "cancel").locator("svg.requests-secondary-icon").count(), 1);
+        await tv.remote(10009);
+        await view(tv, "hub");
+
+        // Failed own request with requestable title shows Request Again.
+        const origTitle = fake.title.bind(fake);
+        fake.title = () => ({ ...origTitle(), request: { requestable: true, following: false, requested_by_viewer: false } });
+        Object.assign(fake.record, { state: "failed", status: "approved", outcome: "failed" });
+        await revisitRequests(tv);
+        await button(tv, "request-one").click();
+        await button(tv, "create").waitFor();
+        assert.equal(await button(tv, "create").textContent(), "Request Again");
+        assert.equal(await button(tv, "create").getAttribute("aria-label"), "Request Again");
+
+        // Declined own request also shows Request Again.
+        Object.assign(fake.record, { state: "declined", status: "approved", outcome: "declined" });
+        await tv.remote(10009);
+        await button(tv, "request-one").click();
+        await button(tv, "create").waitFor();
+        assert.equal(await button(tv, "create").textContent(), "Request Again");
+        fake.title = origTitle;
+        Object.assign(fake.record, { state: "pending", status: "pending", outcome: "active" });
+        fake.created = false;
+        await button(tv, "create").click();
+        await tv.eventually(async () => fake.created && await button(tv, "create").count() === 0, "Request Again submits");
+
+        // Cancelled own request shows Request, not Request Again.
+        await tv.remote(10009);
+        Object.assign(fake.record, { state: "cancelled", status: "approved", outcome: "cancelled" });
+        fake.created = false;
+        fake.cancelled = true;
+        await openRequests(tv);
+        await button(tv, "movie:949").click();
+        await button(tv, "create").waitFor();
+        assert.equal(await button(tv, "create").textContent(), "Request");
+    } finally { await tv.page.context().close(); }
+});
+
+test("Request detail loading uses TVItemDetailLoadingView with passive focus and no plain text", async () => {
+    const tv = await openTv(browser, { app: "browse" });
+    try {
+        const fake = new FakeRequests();
+        fake.created = true;
+        await start(tv, fake);
+        await openRequests(tv);
+        await button(tv, "request-one").waitFor();
+
+        const heldRecord = tv.fake.hold("/requests/request-one", true);
+        await button(tv, "request-one").click();
+        const loading = tv.page.locator(".details-loading-page");
+        await loading.waitFor();
+        assert.equal(await loading.getAttribute("aria-label"), "Loading details");
+        assert.equal(await loading.getAttribute("aria-busy"), "true");
+        assert.equal(await tv.page.getByText("Loading requests…").count(), 0);
+        assert.equal(await tv.page.locator('[data-focus="refresh"], [data-focus="back"]').count(), 0);
+        assert.equal(await tv.page.evaluate(() => document.activeElement?.classList.contains("details-loading-page")), true);
+        assert.deepEqual(await focusedHighlight(tv), ["none", "none"]);
+
+        await tv.remote(10009);
+        await view(tv, "hub");
+        heldRecord.release();
+        await button(tv, "movie:949").waitFor();
+
+        const heldMedia = tv.fake.hold("/requests/detail/movie/949", true);
+        await button(tv, "movie:949").click();
+        await loading.waitFor();
+        assert.equal(await tv.page.getByText("Loading requests…").count(), 0);
+        heldMedia.release();
+        await button(tv, "status").waitFor();
+    } finally { await tv.page.context().close(); }
+});
+
+test("request route shows Notify Me for another profile and Request when ended id differs", async () => {
+    const tv = await openTv(browser, { app: "browse" });
+    try {
+        const fake = new FakeRequests();
+        fake.created = true;
+        Object.assign(fake.record, { state: "pending", status: "pending", outcome: "active", requested_by_profile_id: "profile-other" });
+        const origTitle = fake.title.bind(fake);
+        let detailRequest: Record<string, unknown> = {
+            requestable: false,
+            following: false,
+            requested_by_viewer: false,
+            request_id: fake.record.id,
+            state: "pending",
+            reason: "already_requested",
+        };
+        fake.title = () => ({ ...origTitle(), request: detailRequest });
+        const route = fake.route.bind(fake);
+        fake.route = (method, path, profileId, body) => {
+            if (path === "/requests/status") {
+                return { status: 200, body: { requests_enabled: true, allowed: true, state: "available", follow_supported: true, remove_failed_supported: true } };
+            }
+            if (method === "PUT" && path === "/requests/follows/movie/949") {
+                detailRequest = { ...detailRequest, following: true };
+            }
+            return route(method, path, profileId, body);
+        };
+        await start(tv, fake);
+        await openRequests(tv);
+        await button(tv, "request-one").click();
+        await button(tv, "follow").waitFor();
+        assert.equal(await button(tv, "follow").textContent(), "Notify Me");
+        await button(tv, "follow").click();
+        await tv.eventually(async () => await button(tv, "follow").textContent() === "Stop Notifying Me", "request route toggled Notify Me");
+
+        await tv.remote(10009);
+        await view(tv, "hub");
+        Object.assign(fake.record, { requested_by_profile_id: "profile-a", state: "failed", status: "approved", outcome: "failed" });
+        detailRequest = { requestable: true, following: false, requested_by_viewer: false, request_id: "different-request-id" };
+        await revisitRequests(tv);
+        await button(tv, "request-one").click();
+        await button(tv, "create").waitFor();
+        assert.equal(await button(tv, "create").textContent(), "Request");
+    } finally { await tv.page.context().close(); }
+});
+
+test("request route hides Notify Me when closed record id differs from newer pending media request", async () => {
+    const tv = await openTv(browser, { app: "browse" });
+    try {
+        const fake = new FakeRequests();
+        fake.created = true;
+        Object.assign(fake.record, { state: "failed", status: "approved", outcome: "failed" });
+        const origTitle = fake.title.bind(fake);
+        fake.title = () => ({
+            ...origTitle(),
+            request: {
+                requestable: false,
+                following: false,
+                requested_by_viewer: false,
+                request_id: "newer-pending-request-id",
+                state: "pending",
+                reason: "already_requested",
+            },
+        });
+        const route = fake.route.bind(fake);
+        fake.route = (method, path, profileId, body) => path === "/requests/status"
+            ? { status: 200, body: { requests_enabled: true, allowed: true, state: "available", follow_supported: true, remove_failed_supported: true } }
+            : route(method, path, profileId, body);
+        await start(tv, fake);
+        await openRequests(tv);
+        await button(tv, "request-one").click();
+        await button(tv, "status").waitFor();
+        assert.equal(await button(tv, "follow").count(), 0);
+        assert.equal(await tv.page.getByRole("button", { name: "Notify Me", exact: true }).count(), 0);
+    } finally { await tv.page.context().close(); }
+});
+
+test("request route shows and toggles Notify Me for an active record when media detail omits request_id", async () => {
+    const tv = await openTv(browser, { app: "browse" });
+    try {
+        const fake = new FakeRequests();
+        fake.created = true;
+        Object.assign(fake.record, { requested_by_profile_id: "profile-a", state: "pending", status: "pending", outcome: "active" });
+        const origTitle = fake.title.bind(fake);
+        let detailRequest: Record<string, unknown> = {
+            requestable: false,
+            following: false,
+            requested_by_viewer: false,
+            state: "pending",
+            reason: "already_requested",
+        };
+        fake.title = () => ({ ...origTitle(), request: detailRequest });
+        const route = fake.route.bind(fake);
+        fake.route = (method, path, profileId, body) => {
+            if (path === "/requests/status") {
+                return { status: 200, body: { requests_enabled: true, allowed: true, state: "available", follow_supported: true, remove_failed_supported: true } };
+            }
+            if (method === "PUT" && path === "/requests/follows/movie/949") {
+                detailRequest = { ...detailRequest, following: true };
+            }
+            return route(method, path, profileId, body);
+        };
+        await start(tv, fake);
+        await openRequests(tv);
+        await button(tv, "request-one").click();
+        await button(tv, "follow").waitFor();
+        assert.equal(await button(tv, "follow").textContent(), "Notify Me");
+        await button(tv, "follow").click();
+        await tv.eventually(async () => await button(tv, "follow").textContent() === "Stop Notifying Me", "toggled Notify Me without request_id");
+    } finally { await tv.page.context().close(); }
+});
+
+test("hub preview drops unavailable discover progress, appends reason or targets for own requests, and uses 12px card radius", async () => {
+    const tv = await openTv(browser, { app: "browse" });
+    try {
+        const fake = new FakeRequests();
+        fake.created = true;
+        const origTitle = fake.title.bind(fake);
+        const route = fake.route.bind(fake);
+        fake.route = (method, path, profileId, body) => {
+            if (method === "GET" && path.startsWith("/requests/mine")) {
+                return {
+                    status: 200,
+                    body: {
+                        items: [
+                            { ...fake.record, id: "failed-reason", title: "Failed Reason", state: "failed", status: "approved", outcome: "failed", last_error: "quota_exceeded" },
+                            { ...fake.record, id: "failed-custom", title: "Failed Custom", state: "declined", status: "approved", outcome: "declined", last_error: "indexer_timeout" },
+                            { ...fake.record, id: "failed-long", title: "Failed Long Title", state: "failed", status: "approved", outcome: "failed", last_error: Array(20).fill("upstream failure detail").join(" ") },
+                            { ...fake.record, id: "multi-target", title: "Multi Target", state: "processing", status: "downloading", outcome: "active", targets: [{ quality: "1080p", status: "downloading" }, { quality: "4K", status: "queued" }] },
+                            { ...fake.record, id: "single-target", title: "Single Target", state: "processing", status: "downloading", outcome: "active", targets: [{ quality: "1080p", status: "downloading" }] },
+                        ],
+                        page: { has_more: false },
+                    },
+                };
+            }
+            if (method === "GET" && path === "/requests/discover") {
+                return {
+                    status: 200,
+                    body: {
+                        items: [{
+                            key: "trending_movies",
+                            title: "Trending Movies",
+                            page: 1,
+                            total_pages: 1,
+                            results: [
+                                { ...origTitle(), tmdb_id: 950, title: "Unrequestable Film", year: 2024, request: { requestable: false, following: false, requested_by_viewer: false, reason: "requests_disabled" } },
+                                { ...origTitle(), tmdb_id: 951, title: "Plain Yearless", year: 0, request: { requestable: true, following: false, requested_by_viewer: false } },
+                                { ...origTitle(), tmdb_id: 952, title: "Requested Film", year: 2021, request: { requestable: false, following: false, requested_by_viewer: false, state: "pending", reason: "already_requested" } },
+                            ],
+                        }],
+                        row_order: [{ key: "trending_movies", title: "Trending Movies", type: "tmdb_chart" }],
+                    },
+                };
+            }
+            return route(method, path, profileId, body);
+        };
+
+        await start(tv, fake);
+        await openRequests(tv);
+        await button(tv, "failed-reason").waitFor();
+
+        // Poster radius is 12px on hub rail cards.
+        assert.equal(await tv.page.locator(".requests-rail .browse-art").first().evaluate(node => getComputedStyle(node).borderRadius), "12px");
+
+        // Own-request hub preview statuses append reason or multi-target phases.
+        await button(tv, "failed-reason").focus();
+        await tv.eventually(async () => await tv.page.locator(".requests-preview .requests-status-label").textContent() === "Request failed · Request limit reached", "known last_error token appended");
+        await button(tv, "failed-custom").focus();
+        await tv.eventually(async () => await tv.page.locator(".requests-preview .requests-status-label").textContent() === "Declined · Indexer Timeout", "humanized last_error token appended");
+        await button(tv, "failed-long").focus();
+        await tv.eventually(async () => await tv.page.locator(".requests-preview .requests-hero-title").textContent() === "Failed Long Title", "previewed verbose failure title");
+        const longStatusLayout = await tv.page.evaluate(() => {
+            const label = document.querySelector(".requests-preview .requests-status-label")?.getBoundingClientRect();
+            const title = document.querySelector(".requests-preview .requests-hero-title")?.getBoundingClientRect();
+            const copy = document.querySelector(".requests-hero-copy")?.getBoundingClientRect();
+            const progress = document.querySelector(".requests-preview .requests-progress")?.getBoundingClientRect();
+            return {
+                labelHeight: label?.height ?? 0,
+                titleTop: title?.top ?? -1,
+                fitsWidth: Boolean(copy && progress && progress.right <= copy.right + 1),
+            };
+        });
+        assert.equal(longStatusLayout.fitsWidth, true, "long failure status stays inside the hero copy width");
+        assert.ok(longStatusLayout.labelHeight <= 55, `expected preview status height <= 55px, got ${longStatusLayout.labelHeight}`);
+        assert.ok(longStatusLayout.titleTop >= 0, `expected hero title to stay in viewport, got top=${longStatusLayout.titleTop}`);
+        await button(tv, "multi-target").focus();
+        await tv.eventually(async () => await tv.page.locator(".requests-preview .requests-status-label").textContent() === "Downloading · 1080p downloading · 4K queued", "multi-target summary appended");
+        const fitsCopy = await tv.page.evaluate(() => {
+            const copy = document.querySelector(".requests-hero-copy")?.getBoundingClientRect();
+            const progress = document.querySelector(".requests-preview .requests-progress")?.getBoundingClientRect();
+            return copy !== undefined && progress !== undefined && progress.right <= copy.right + 1;
+        });
+        assert.equal(fitsCopy, true, "preview progress stays inside the hero copy width");
+        await button(tv, "single-target").focus();
+        await tv.eventually(async () => await tv.page.locator(".requests-preview .requests-status-label").textContent() === "Downloading", "single-target summary omitted");
+
+        // Unrequestable discover title hides .requests-progress in hub preview; requested discover title shows it.
+        await button(tv, "movie:950").focus();
+        await tv.eventually(async () => await tv.page.locator(".requests-preview .requests-hero-title").textContent() === "Unrequestable Film", "previewed unrequestable title");
+        assert.equal(await tv.page.locator(".requests-preview .requests-progress").count(), 0);
+        await button(tv, "movie:952").focus();
+        await tv.eventually(async () => await tv.page.locator(".requests-preview .requests-status-label").textContent() === "Waiting for approval", "requested discover title shows progress");
+
+        // Card spoken labels match "title, year, short" without "Not requested" or zero years, and zero year stays hidden visually.
+        assert.equal(await button(tv, "movie:950").getAttribute("aria-label"), "Unrequestable Film, 2024, Unavailable");
+        assert.equal(await button(tv, "movie:951").getAttribute("aria-label"), "Plain Yearless");
+        assert.equal(await button(tv, "movie:951").locator(".browse-card-subtitle").textContent(), "");
+        await button(tv, "movie:951").focus();
+        await tv.eventually(async () => await tv.page.locator(".requests-preview .requests-hero-title").textContent() === "Plain Yearless", "previewed yearless title");
+        assert.equal(await tv.page.locator(".requests-preview .requests-meta").textContent(), "Movie");
+        assert.equal(await button(tv, "movie:952").getAttribute("aria-label"), "Requested Film, 2021, Pending");
+        assert.equal(await button(tv, "multi-target").getAttribute("aria-label"), "Multi Target, Downloading");
+    } finally { await tv.page.context().close(); }
+});
+
+test("hub merges legacy Trending now and Crowd favorites carousels when row_order is absent or empty", async () => {
+    const tv = await openTv(browser, { app: "browse" });
+    try {
+        const fake = new FakeRequests();
+        const origTitle = fake.title.bind(fake);
+        let rowOrder: unknown[] | undefined;
+        const route = fake.route.bind(fake);
+        fake.route = (method, path, profileId, body) => {
+            if (method === "GET" && path === "/requests/discover") {
+                return {
+                    status: 200,
+                    body: {
+                        items: [
+                            { key: "trending_movies", title: "Trending Movies", page: 1, total_pages: 1, results: [{ ...origTitle(), tmdb_id: 1, title: "TM1" }, { ...origTitle(), tmdb_id: 2, title: "Dup" }] },
+                            { key: "trending_series", title: "Trending Shows", page: 1, total_pages: 1, results: [{ ...origTitle(), media_type: "series", tmdb_id: 10, title: "TS1" }, { ...origTitle(), tmdb_id: 2, title: "Dup" }] },
+                            { key: "popular_movies", title: "Popular Movies", page: 1, total_pages: 1, results: [{ ...origTitle(), tmdb_id: 20, title: "PM1" }] },
+                        ],
+                        ...(rowOrder === undefined ? {} : { row_order: rowOrder }),
+                    },
+                };
+            }
+            return route(method, path, profileId, body);
+        };
+
+        await start(tv, fake);
+        await openRequests(tv);
+        await tv.page.locator('[data-section="row:trending"]').waitFor();
+        assert.deepEqual(await tv.page.locator(".requests-heading").allInnerTexts(), ["Trending now", "Crowd favorites"]);
+        assert.deepEqual(
+            await tv.page.locator('[data-section="row:trending"] .requests-card').evaluateAll(nodes => nodes.map(node => node.getAttribute("data-focus"))),
+            ["movie:1", "series:10", "movie:2"],
+        );
+
+        rowOrder = [];
+        await revisitRequests(tv);
+        await tv.page.locator('[data-section="row:trending"]').waitFor();
+        assert.deepEqual(await tv.page.locator(".requests-heading").allInnerTexts(), ["Trending now", "Crowd favorites"]);
+    } finally { await tv.page.context().close(); }
+});

@@ -126,7 +126,7 @@ export class CredentialVault {
 
     async drain(): Promise<void> { await this.queue; }
 
-    load(): Promise<VaultLoad> {
+    load(_signal?: AbortSignal): Promise<VaultLoad> {
         return this.serialize(() => this.loadNow());
     }
 

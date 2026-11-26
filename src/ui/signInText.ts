@@ -6,7 +6,6 @@ import { isolated } from "../i18n/direction.ts";
 import { type MessageKey, translate, translateTv } from "../i18n/translate.ts";
 import type { ServerUrlProblem } from "../api/serverUrl.ts";
 import type { ConnectResult } from "../session/core.ts";
-import type { VaultClear } from "../session/credentialVault.ts";
 import type { DeviceLoginState } from "../session/deviceLogin.ts";
 import type { LogoutResult, RestoreResult } from "../session/session.ts";
 
@@ -64,12 +63,6 @@ export const serverNotReadyBody = (): string => translate("notReady.body");
 export const setupNeeded = (): string => translate("notReady.badge");
 export const stillNeedsSetup = (): string => translate("notReady.still");
 export const setupUnreachable = (): string => translate("notReady.unreachable");
-
-export function forgetResult(result: VaultClear): string {
-    return result === "failed"
-        ? "This TV could not remove the saved sign-in. Try again."
-        : "Removed this server's saved sign-in from this TV.";
-}
 
 export function restoreNotice(restore: RestoreResult): string | undefined {
     switch (restore) {

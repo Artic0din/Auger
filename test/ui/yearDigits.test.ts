@@ -143,7 +143,8 @@ test("in Arabic an audiobook's credits line and its narration rows read their ye
         await tv.page.locator('[data-view="home"]').waitFor();
         await tv.page.locator('[data-section="shelf"] [data-focus="audiobook:tide"]').click();
         await tv.page.locator('[data-view="audiobook:audiobook:tide"]').waitFor();
-        assert.match(await tv.page.locator(".audiobook-static-credits").innerText(), / ٢٠٢٤$/, "the credits line ends with the book's year");
+        const facts = await tv.page.locator(".audiobook-fact-value").allInnerTexts();
+        assert.ok(facts.some(value => /٢٠٢٤/.test(value)), `the Released fact uses Arabic-Indic digits: ${facts.join(" | ")}`);
         assert.equal(await tv.page.locator('[data-focus="narration:audiobook:fresh"] .audiobook-row-detail').innerText(), "٢٠٢٥");
         assert.deepEqual(tv.console, []);
     } finally { await tv.page.context().close(); }
