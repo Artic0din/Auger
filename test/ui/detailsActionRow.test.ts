@@ -175,7 +175,7 @@ test("Back from the action row leaves Details for the card that opened it", () =
     assert.equal(await tv.focused(), "movie:m0001");
 }));
 
-test("a series reads Loading episodes… on a disabled Play, holds passive focus, then Play claims focus", async () => {
+test("a series reads Loading episodes… on a disabled Play, focuses Watchlist, then Play claims focus once live", async () => {
     const tv = await openTv(browser, { app: "browse" });
     tv.fake.catalog = new FakeDetails();
     try {
@@ -192,7 +192,7 @@ test("a series reads Loading episodes… on a disabled Play, holds passive focus
         await primary.waitFor();
         assert.equal(await primary.getAttribute("aria-label"), "Loading episodes…");
         assert.equal(await primary.getAttribute("aria-disabled"), "true");
-        assert.equal(await tv.focused(), "loading", "entry must stay passive while Play is disabled");
+        assert.equal(await tv.focused(), "watchlist", "Watchlist takes opening focus while episodes load");
         for (const hold of holds) hold.release();
         await tv.eventually(async () => /^(Play|Resume) S1:E1$/.test(await primary.getAttribute("aria-label") ?? ""), "episode label");
         await tv.eventually(async () => await tv.focused() === "next-episode", "Play claims focus once it is live");

@@ -52,5 +52,5 @@ Settings shares `FocusHost` across the category rail, control pane, and pickers 
 - **General:** TV User, Profile at Launch ([profile-launch.md](profile-launch.md)), App Language ([translation.md](../translation.md)), Title Pages ([title-art.md](title-art.md)), Theme Music, Cards & Posters (Show Advisory Age, Poster Size), and Show Audiobooks.
 - **Playback:** [saved playback defaults](../playback/playback-quality.md#saved-playback-settings) (Resolution, Maximum Bitrate, Lower quality when buffering, conditional Learned limit, Connection speed, Audio Language, HDR, Episodes controls, Spoilers, Video/Audiobooks skip intervals, Reset).
 - **Subtitles:** Language, Behavior, Show Forced Subtitles, conditional Metadata Language, and Appearance ([subtitle-appearance.md](../playback/subtitle-appearance.md)).
-- **Server:** Active Server info, [Accounts](change-account.md), Restore All Libraries (when `ui.disabled_library_ids` is nonempty), About, and Extra Features ([watch-party.md](watch-party.md)).
+- **Server:** Active Server info, [Accounts](change-account.md), About, and Extra Features ([watch-party.md](watch-party.md)).
 - See [docs/settings.md](../settings.md) for the complete Settings contract, styling, and AVPlay exclusions, and [docs/evidence/simulator-evidence.md](../evidence/simulator-evidence.md) for signed `.wgt` and Apple TV comparison gates.

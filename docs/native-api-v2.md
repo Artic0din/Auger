@@ -152,7 +152,6 @@ Retry is the `RetryPolicy` in code: `safe` or `never`.
 `discoverServer` (`src/api/discovery.ts`) runs before any credential is sent.
 It calls `GET /system/info`, then `GET /system/identity`.
 It reports `not_silo_v2` when `api_major` is not 2, when the answer is not a valid v2 body, or when the status is 404 or 410.
-It reports `origin_mismatch` when `request_origin` differs from the entered origin.
 It reports `unreachable` for network errors and timeouts, and `server_error` for any other failure.
 The `serverId` it returns is self-asserted and never authorizes anything on its own.
 

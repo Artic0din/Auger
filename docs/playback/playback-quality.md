@@ -142,7 +142,6 @@ For the Settings rows, learned-limit display, and Reset action, see [docs/settin
 ## Saved Playback settings
 
 Profile menu > Settings > Playback manages Resolution, Maximum Bitrate, Audio Language, Skip Back/Forward, Lower quality when buffering, Connection speed, HDR, Episodes controls, Spoilers, and Reset; see [docs/settings.md](../settings.md) for the complete row list, styling, and AVPlay exclusions.
-Hidden Libraries restores via Settings > Server > Restore All Libraries (writing `[]` and refreshing Browse on exit).
 
 - Explicit profile defaults, this TV's `profile_device` overrides, and effective values remain separate (`Audio Language`, `Resolution`, and `Maximum Bitrate` use `profile_device` when advertised; seek intervals remain profile-only).
 - `No limit` writes JSON `null`; `Use Profile Setting` deletes only the device row; `Use inherited default` deletes only the profile row. Deprecated `Original` and unfamiliar stored values display without rewriting on read.

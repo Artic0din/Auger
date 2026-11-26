@@ -1631,16 +1631,37 @@ test("Settings uses category, row and picker Back focus with no requests on focu
     } finally { await tv.page.context().close(); }
 });
 
-test("legacy hidden libraries can be cleared without a hidden-library editor", async () => {
+test("Server pane omits Restore All Libraries even when hidden libraries exist (#773)", async () => {
+    for (const hidden of [[15, 999], undefined] as const) {
+        const { tv, settings } = await setup();
+        if (hidden !== undefined) settings.profile().set(HIDDEN_KEY, [...hidden]);
+        try {
+            await openSettings(tv);
+            await tv.page.locator('[data-focus="server"]').click();
+            await tv.page.locator('[data-focus="privacy"]').waitFor();
+            assert.equal(await tv.page.locator('[data-focus="hidden"], [data-focus="restore-libraries"]').count(), 0);
+            assert.equal(await tv.page.getByText("Restore All Libraries", { exact: true }).count(), 0);
+            assert.equal(tv.fake.requests.filter(r => r.method === "PUT" || r.method === "DELETE").length, 0);
+            assert.deepEqual(tv.console, []);
+        } finally { await tv.page.context().close(); }
+    }
+});
+
+test("changing Metadata Language invalidates catalogs on Settings Back", async () => {
     const { tv, settings } = await setup();
-    settings.profile().set(HIDDEN_KEY, [15, 999]);
+    settings.remainingRows = true;
+    tv.fake.extraRoutes.push((method, path) => method === "GET" && path.startsWith("/capabilities/metadata-ai")
+        ? { status: 200, body: { revision: "test", allowed: true, state: "available", on_view: "button" } }
+        : undefined);
     try {
         await openSettings(tv);
-        await tv.page.locator('[data-focus="server"]').click();
-        assert.equal(await tv.page.locator('[data-focus="hidden"]').count(), 0);
-        await tv.page.locator('[data-focus="restore-libraries"]').click();
-        await tv.eventually(async () => JSON.stringify(settings.profile().get(HIDDEN_KEY)) === "[]", "restored library visibility");
-        await tv.page.locator('[data-focus="restore-libraries"]').waitFor({ state: "detached" });
+        await tv.page.locator('[data-focus="subtitles"]').click();
+        await tv.page.getByRole("button", { name: /Metadata Language/ }).click();
+        await tv.page.getByRole("radio", { name: "fr", exact: true }).click();
+        await tv.eventually(async () => settings.profile().get("catalog.metadata_language") === "fr", "metadata write");
+        await tv.page.locator('[data-focus="metadata-language"]').waitFor();
+        await tv.page.getByText("Saving…", { exact: true }).waitFor({ state: "detached" });
+        await tv.remote(10009);
         await tv.remote(10009);
         await tv.eventually(async () => tv.fake.requests.filter(r => r.path === "/user/libraries").length === 2, "catalog refreshed");
         assert.equal(await tv.focused(), "home", "catalog invalidation returns to the refreshed Home route");
@@ -1687,31 +1708,6 @@ test("settings refusal is retryable by reload, and a late answer cannot outlive 
         assert.equal(await tv.page.locator(".settings").count(), 0);
         assert.equal(tv.fake.requests.filter(request => request.method === "PUT" || request.method === "DELETE").length, 0);
         assert.deepEqual(tv.console, []);
-    } finally { await tv.page.context().close(); }
-});
-
-test("library visibility recovery keeps authority and offers Retry after refusal", async () => {
-    const { tv, settings } = await setup();
-    settings.profile().set(HIDDEN_KEY, [12]);
-    try {
-        await openSettings(tv); await tv.page.locator('[data-focus="server"]').click();
-        tv.fake.script("/settings/values/" + HIDDEN_KEY + "?scope=profile", problem(403, "permission_denied", "Denied"));
-        await tv.page.locator('[data-focus="restore-libraries"]').click();
-        await tv.page.getByRole("alert").waitFor();
-        assert.deepEqual(settings.profile().get(HIDDEN_KEY), [12]);
-        assert.equal(await tv.focused(), "restore-libraries");
-        await tv.page.getByRole("button", { name: "Reload settings", exact: true }).click();
-        await tv.page.locator('[data-focus="restore-libraries"]').click();
-        await tv.eventually(async () => JSON.stringify(settings.profile().get(HIDDEN_KEY)) === "[]", "recovery retry");
-    } finally { await tv.page.context().close(); }
-});
-
-test("no hidden value leaves no recovery action or mutation", async () => {
-    const { tv } = await setup();
-    try {
-        await openSettings(tv); await tv.page.locator('[data-focus="server"]').click();
-        assert.equal(await tv.page.locator('[data-focus="hidden"], [data-focus="restore-libraries"]').count(), 0);
-        assert.equal(tv.fake.requests.filter(r => r.method === "PUT" || r.method === "DELETE").length, 0);
     } finally { await tv.page.context().close(); }
 });
 

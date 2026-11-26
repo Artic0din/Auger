@@ -2,13 +2,15 @@ import assert from "node:assert/strict";
 import { after, before, test } from "node:test";
 import type { Browser } from "playwright";
 import { FakeDetails } from "../native/support/fakeDetails.ts";
-import { afterPaint, launchBrowser, openTv, pauseTvClock, readLive, type Tv } from "./support/tv.ts";
+import { afterPaint, jumpUntil, launchBrowser, openTv, pauseTvClock, readLive, type Tv } from "./support/tv.ts";
 
 let browser: Browser;
 before(async () => { browser = await launchBrowser(); });
 after(async () => { await browser.close(); });
 
 const YOUTUBE = { kind: "trailer", site: "YouTube", site_key: "abc_def-1", name: "Official Trailer", is_official: true };
+const LOCAL_TRAILER = { content_id: "extra:1", file_id: 42, kind: "trailer", title: "Official Trailer", duration_seconds: 95, still_url: "/art/trailer.svg" };
+const LOCAL_FEATURETTE = { content_id: "extra:2", file_id: 43, kind: "featurette", title: "Making Of", duration_seconds: 90, still_url: "/art/extra.svg" };
 
 for (const personId of ['7', undefined]) trailerTest(`duplicate cast focus survives trailer refresh reordering with person id ${personId}`, async (tv, catalog) => {
     const body = catalog.route('GET', '/catalog/items/movie%3Am0001', 'p-owner')?.body as Record<string, unknown>;
@@ -20,7 +22,7 @@ for (const personId of ['7', undefined]) trailerTest(`duplicate cast focus survi
     ];
     let refreshed = false;
     await tv.page.route('**/api/v2/catalog/items/movie%3Am0001/trailers/refresh', route => { refreshed = true; return route.fulfill({ status: 202, json: { status: 'queued' } }); });
-    await tv.page.route('**/api/v2/catalog/items/movie%3Am0001?**', route => route.fulfill({ json: { ...body, cast: refreshed ? [credits[2], credits[3], credits[1], credits[0]] : credits, videos: refreshed ? [YOUTUBE] : [] } }));
+    await tv.page.route('**/api/v2/catalog/items/movie%3Am0001?**', route => route.fulfill({ json: { ...body, cast: refreshed ? [credits[2], credits[3], credits[1], credits[0]] : credits, extras: refreshed ? [LOCAL_TRAILER] : [] } }));
     await tv.page.locator('[data-section="recently_added"] [data-focus="movie:m0001"]').first().click();
     await tv.page.locator('[data-focus="more"]').click();
     await tv.page.locator('[data-focus="find-trailers"]').click();
@@ -44,7 +46,7 @@ trailerTest("singleton cast focus stays put when a duplicate credit appears", as
     ];
     let refreshed = false;
     await tv.page.route("**/api/v2/catalog/items/movie%3Am0001/trailers/refresh", route => { refreshed = true; return route.fulfill({ status: 202, json: { status: "queued" } }); });
-    await tv.page.route("**/api/v2/catalog/items/movie%3Am0001?**", route => route.fulfill({ json: { ...body, cast: refreshed ? withDuplicate : solo, videos: refreshed ? [YOUTUBE] : [] } }));
+    await tv.page.route("**/api/v2/catalog/items/movie%3Am0001?**", route => route.fulfill({ json: { ...body, cast: refreshed ? withDuplicate : solo, extras: refreshed ? [LOCAL_TRAILER] : [] } }));
     await tv.page.locator('[data-section="recently_added"] [data-focus="movie:m0001"]').first().click();
     await tv.page.locator('[data-focus="more"]').click();
     await tv.page.locator('[data-focus="find-trailers"]').click();
@@ -65,7 +67,7 @@ trailerTest("discovered trailers survive a late watched season readback", async 
     let heldEpisodes = false;
     await tv.page.route("**/api/v2/catalog/items/series%3As1/trailers/refresh", route => route.fulfill({ status: 202, json: { status: "queued" } }));
     await tv.page.route("**/api/v2/catalog/items/series%3As1?**", route => route.fulfill({
-        json: { ...body, user_data: { played: catalog.watched }, videos: found ? [YOUTUBE] : [] },
+        json: { ...body, user_data: { played: catalog.watched }, extras: found ? [LOCAL_TRAILER] : [], videos: found ? [YOUTUBE] : [] },
     }));
     await tv.page.route("**/api/v2/catalog/series/series%3As1/seasons/*/episodes?**", async route => {
         if (holdEpisodes) {
@@ -84,7 +86,8 @@ trailerTest("discovered trailers survive a late watched season readback", async 
     await tv.eventually(async () => heldEpisodes, "watched readback awaits season episodes");
     found = true;
     await tv.jump(3000);
-    await tv.eventually(async () => await tv.page.locator('[data-focus="remote:YouTube:abc_def-1"]').count() === 1, "discovery publishes while watched readback is held");
+    await tv.eventually(async () => await tv.page.locator('[data-focus="extra:extra:1"]').count() === 1, "discovery publishes while watched readback is held");
+    assert.equal(await tv.page.locator('[data-focus^="remote:"]').count(), 0);
     holdEpisodes = false;
     releaseEpisodes?.();
     await tv.jump(0);
@@ -93,7 +96,7 @@ trailerTest("discovered trailers survive a late watched season readback", async 
     await alert.waitFor();
     await alert.getByRole("button", { name: "OK", exact: true }).click();
     await alert.waitFor({ state: "detached" });
-    assert.equal(await tv.page.locator('[data-focus="remote:YouTube:abc_def-1"]').count(), 1, "late watched assignment must not wipe discovered trailers");
+    assert.equal(await tv.page.locator('[data-focus="extra:extra:1"]').count(), 1, "late watched assignment must not wipe discovered trailers");
 });
 
 for (const path of ['playback', 'watched then navigate']) trailerTest(`interrupted trailer discovery survives ${path} owner replacement`, async (tv, catalog) => {
@@ -108,7 +111,7 @@ for (const path of ['playback', 'watched then navigate']) trailerTest(`interrupt
             heldWatchRead = true;
             await new Promise<void>(resolve => watchWaiters.push(resolve));
         }
-        return route.fulfill({ json: { ...body, user_data: { played: catalog.watched }, videos: found ? [YOUTUBE] : [] } });
+        return route.fulfill({ json: { ...body, user_data: { played: catalog.watched }, extras: found ? [LOCAL_TRAILER] : [], videos: found ? [YOUTUBE] : [] } });
     });
     await tv.page.locator('[data-section="recently_added"] [data-focus="movie:m0001"]').first().click();
     await tv.page.locator('[data-focus="more"]').click();
@@ -135,7 +138,7 @@ for (const path of ['playback', 'watched then navigate']) trailerTest(`interrupt
     assert.equal(await tv.page.locator('.details-extras').count(), 0, 'return read precedes trailer arrival');
     found = true;
     await tv.jump(3000);
-    await tv.eventually(async () => await tv.page.locator('[data-focus="remote:YouTube:abc_def-1"]').count() === 1, 'trailer arriving after return is published');
+    await tv.eventually(async () => await tv.page.locator('[data-focus="extra:extra:1"]').count() === 1, 'trailer arriving after return is published');
     assert.equal(posts, 1);
     if (path !== 'playback') assert.equal(catalog.watched, true);
 });
@@ -159,11 +162,43 @@ function trailerTest(name: string, body: (tv: Tv, catalog: FakeDetails) => Promi
     });
 }
 
-trailerTest("a movie with only a YouTube video shows Trailers & More and leaves playback alone", async (tv, catalog) => {
+trailerTest("a movie with only remote videos hides Trailers & More", async (tv, catalog) => {
+    catalog.extras = [];
+    catalog.videos = [YOUTUBE, { kind: "trailer", site: "vimeo", site_key: "v1", is_official: false }];
+    await tv.page.locator('[data-section="recently_added"] [data-focus="movie:m0001"]').first().click();
+    await tv.page.locator(".details-people [data-focus]").first().waitFor();
+    await tv.page.locator(".details-related-placeholder").first().waitFor({ state: "hidden" });
+    assert.equal(await tv.page.locator(".details-extras").count(), 0);
+    assert.equal(await tv.page.locator('[data-focus^="remote:"]').count(), 0);
+    assert.equal(await tv.page.getByRole("heading", { name: "Trailers & More", exact: true }).count(), 0);
+});
+
+trailerTest("Find Trailers reports No playable trailers here when discovery returns only YouTube videos", async (tv, catalog) => {
+    const body = catalog.route("GET", "/catalog/items/movie%3Am0001", "p-owner")?.body as Record<string, unknown>;
+    let found = false;
+    let queued = false;
+    await tv.page.route("**/api/v2/catalog/items/movie%3Am0001/trailers/refresh", route => { queued = true; return route.fulfill({ status: 202, json: { status: "queued" } }); });
+    await tv.page.route("**/api/v2/catalog/items/movie%3Am0001?**", route => route.fulfill({
+        json: { ...body, extras: [], videos: found ? [YOUTUBE] : [] },
+    }));
+    await tv.page.locator('[data-section="recently_added"] [data-focus="movie:m0001"]').first().click();
+    await tv.page.locator('[data-focus="more"]').click();
+    await tv.page.locator('[data-focus="find-trailers"]').click();
+    await tv.page.locator(".details-trailer-status").waitFor();
+    await tv.eventually(async () => queued && tv.pendingReplies === 0, "refresh queued");
+    await pauseTvClock(tv);
+    found = true;
+    await jumpUntil(tv, 500, () => tv.page.evaluate(() => document.querySelector(".details-trailer-status")?.textContent === "ⓘNo playable trailers here"), "unplayable trailer feedback");
+    assert.equal(await tv.page.locator(".details-extras").count(), 0);
+    await jumpUntil(tv, 500, async () => await tv.page.locator(".details-trailer-status").count() === 0, "unplayable message clears after 3s");
+});
+
+trailerTest("a movie with a local trailer shows Trailers & More geometry without focus-move fetches", async (tv, catalog) => {
+    catalog.extras = [LOCAL_TRAILER];
     catalog.videos = [YOUTUBE, { kind: "trailer", site: "vimeo", site_key: "v1", is_official: false }];
     await tv.page.locator('[data-section="recently_added"] [data-focus="movie:m0001"]').first().click();
     await tv.page.locator(".details-extras").waitFor();
-    assert.deepEqual(await tv.page.locator(".details-extras [data-focus]").evaluateAll(nodes => nodes.map(node => node.getAttribute("data-focus"))), ["remote:YouTube:abc_def-1"]);
+    assert.deepEqual(await tv.page.locator(".details-extras [data-focus]").evaluateAll(nodes => nodes.map(node => node.getAttribute("data-focus"))), ["extra:extra:1"]);
     // The section after the row can paint later, and the caption gap is measured to it.
     await tv.page.locator(".details-extras + *").waitFor();
     const metrics = await readLive(tv, () => {
@@ -196,9 +231,9 @@ trailerTest("a movie with only a YouTube video shows Trailers & More and leaves 
             captionText: caption.textContent,
             badge: badge.getBoundingClientRect().width,
         };
-    }, null, value => value.titleText === "Official Trailer" && value.captionText === "YouTube" && Math.abs(value.gap - 76) < 1 && Math.abs(value.stillWidth - 470) < 1 && Math.abs(value.stillHeight - 264) < 1 && value.radius === "18px" && Math.abs(value.titleGap - 14) < 1 && Math.abs(value.captionGap - 5) < 1 && value.titleSize === "20.3385px" && value.titleWeight === "600" && value.titleColor === "rgba(237, 237, 237, 0.92)" && value.captionSize === "16.4645px" && value.captionWeight === "500" && value.captionColor === "rgba(237, 237, 237, 0.6)" && value.badge === 60, "trailer card geometry");
+    }, null, value => value.titleText === "Official Trailer" && value.captionText === "1:35" && Math.abs(value.gap - 76) < 1 && Math.abs(value.stillWidth - 470) < 1 && Math.abs(value.stillHeight - 264) < 1 && value.radius === "18px" && Math.abs(value.titleGap - 14) < 1 && Math.abs(value.captionGap - 5) < 1 && value.titleSize === "20.3385px" && value.titleWeight === "600" && value.titleColor === "rgba(237, 237, 237, 0.92)" && value.captionSize === "16.4645px" && value.captionWeight === "500" && value.captionColor === "rgba(237, 237, 237, 0.6)" && value.badge === 60, "trailer card geometry");
     assert.equal(metrics.titleText, "Official Trailer");
-    assert.equal(metrics.captionText, "YouTube");
+    assert.equal(metrics.captionText, "1:35");
     assert.ok(Math.abs(metrics.gap - 76) < 1, JSON.stringify(metrics));
     assert.ok(Math.abs(metrics.stillWidth - 470) < 1, JSON.stringify(metrics));
     assert.ok(Math.abs(metrics.stillHeight - 264) < 1, JSON.stringify(metrics));
@@ -232,11 +267,8 @@ trailerTest("a movie with only a YouTube video shows Trailers & More and leaves 
     const before = tv.fake.requests.length;
     await tv.page.locator(".details-people [data-focus]").first().focus();
     await tv.remote(40);
-    assert.equal(await tv.focused(), "remote:YouTube:abc_def-1");
+    assert.equal(await tv.focused(), "extra:extra:1");
     assert.equal(tv.fake.requests.length, before, `moving onto the rail must not fetch (${JSON.stringify(tv.fake.requests.slice(before).map(r => r.path))})`);
-    await tv.page.locator('[data-focus="remote:YouTube:abc_def-1"]').click();
-    assert.equal(await tv.focused(), "remote:YouTube:abc_def-1");
-    assert.equal(tv.fake.requests.filter(request => request.path.includes("/playback/") || request.path.includes("/versions")).length, 0);
     assert.equal(await readLive(tv, () => {
         const node = document.querySelector(".details-extra:focus .browse-still");
         if (node === null || !node.isConnected) return null;
@@ -244,25 +276,26 @@ trailerTest("a movie with only a YouTube video shows Trailers & More and leaves 
     }, null, value => value === "none", "focused trailer still"), "none");
 });
 
-trailerTest("a series with a YouTube video shows the rail and hides it when the list is empty", async (tv, catalog) => {
+trailerTest("a series with a local trailer shows the rail and hides it when local extras become empty", async (tv, catalog) => {
+    catalog.extras = [LOCAL_TRAILER];
     catalog.videos = [YOUTUBE];
     await tv.page.locator('[data-section="recently_added"] [data-focus="series:s1"]').first().click();
     await tv.page.locator(".details-extras").waitFor();
     assert.equal(await tv.page.getByRole("heading", { name: "Trailers & More", exact: true }).count(), 1);
     await pauseTvClock(tv);
-    catalog.videos = [];
+    catalog.extras = [];
     await tv.remote(10009);
     const fresh = tv.fake.hold("/catalog/items/series%3As1", true);
     await tv.page.locator('[data-section="recently_added"] [data-focus="series:s1"]').first().click();
     await tv.page.locator('[data-focus="next-episode"]').waitFor();
     assert.equal(await tv.page.locator(".details-extras").count(), 1, "the cached rail remains while the fresh read is pending");
     fresh.release();
-    await tv.eventually(async () => await tv.page.locator(".details-extras").count() === 0, "fresh empty videos remove the cached rail");
+    await tv.eventually(async () => await tv.page.locator(".details-extras").count() === 0, "fresh empty extras remove the cached rail");
     assert.equal(await tv.page.locator(".details-extras").count(), 0);
 });
 
-trailerTest("local extras stay ahead of YouTube cards and keep a 48px gap", async (tv, catalog) => {
-    catalog.extras = [{ content_id: "extra:1", file_id: 42, kind: "featurette", title: "Making Of", duration_seconds: 90, still_url: "/art/extra.svg" }];
+trailerTest("local extras exclude remote YouTube cards and keep a 48px gap", async (tv, catalog) => {
+    catalog.extras = [LOCAL_TRAILER, LOCAL_FEATURETTE];
     catalog.videos = [YOUTUBE];
     await tv.page.locator('[data-section="recently_added"] [data-focus="movie:m0001"]').first().click();
     await tv.page.locator(".details-extras").waitFor();
@@ -271,8 +304,8 @@ trailerTest("local extras stay ahead of YouTube cards and keep a 48px gap", asyn
         caption: node.querySelector(".browse-card-subtitle")?.textContent,
     })));
     assert.deepEqual(cards, [
-        { key: "extra:extra:1", caption: "1:30" },
-        { key: "remote:YouTube:abc_def-1", caption: "YouTube" },
+        { key: "extra:extra:1", caption: "1:35" },
+        { key: "extra:extra:2", caption: "1:30" },
     ]);
     // A Details repaint can replace the row between resolving a locator and reading it, and a detached row measures 0.
     const gap = await readLive(tv, () => {
@@ -286,7 +319,7 @@ trailerTest("local extras stay ahead of YouTube cards and keep a 48px gap", asyn
 });
 
 trailerTest("down from cast always enters Trailers & More on the first card", async (tv, catalog) => {
-    catalog.extras = [{ content_id: "extra:1", file_id: 42, kind: "featurette", title: "Making Of", duration_seconds: 90, still_url: "/art/extra.svg" }];
+    catalog.extras = [LOCAL_TRAILER, LOCAL_FEATURETTE];
     catalog.videos = [YOUTUBE];
     await tv.page.locator('[data-section="recently_added"] [data-focus="movie:m0001"]').first().click();
     await tv.page.locator(".details-extras").waitFor();
@@ -296,7 +329,7 @@ trailerTest("down from cast always enters Trailers & More on the first card", as
     await tv.remote(40);
     assert.equal(await tv.focused(), "extra:extra:1");
     await tv.remote(39);
-    assert.equal(await tv.focused(), "remote:YouTube:abc_def-1");
+    assert.equal(await tv.focused(), "extra:extra:2");
     await tv.remote(38);
     assert.equal(await tv.focused(), firstCast);
     await tv.remote(40);
