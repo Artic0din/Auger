@@ -6,6 +6,12 @@ All notable changes to this project are documented in this file.
 
 <!-- changelog:releases -->
 
+## [0.14.16] - 2026-11-26
+
+### Fixes
+
+- **Watch Party**: Size Watch Party text as Apple does ([#955](https://github.com/Artic0din/Auger-Tizen/pull/955), [`66070668`](https://github.com/Artic0din/Auger-Tizen/commit/66070668))
+
 ## [0.14.15] - 2026-11-26
 
 ### Fixes
