@@ -627,8 +627,11 @@
 .requests-detail-actions .browse-button { min-width: 360px; height: 74px; padding: 18px 40px; border-radius: 50px; font-size: 28px; line-height: 34px; }
 /* TVPillButtonStyle at rest: secondary black .52, interactive primary white .10. */
 .requests-detail-actions .browse-button { background: rgba(0,0,0,.52); }
-.requests-detail-actions .requests-primary-action:not(:focus) { color: #fff; }
-.requests-detail-actions .requests-primary-action { display: inline-flex; align-items: center; justify-content: center; gap: 14px; min-width: 0; height: 76px; padding: 0 80px; border: 0; font-weight: 600; }
+.requests-detail-actions :is(.requests-primary-action, .requests-secondary-action) { display: inline-flex; align-items: center; justify-content: center; min-width: 0; height: 76px; border: 0; font-weight: 600; }
+.requests-detail-actions :is(.requests-primary-action, .requests-secondary-action):not(:focus) { color: #fff; }
+.requests-detail-actions .requests-primary-action { gap: 14px; padding: 0 80px; }
+.requests-detail-actions .requests-secondary-action { gap: 16px; padding: 0 40px; border-radius: 38px; font-size: calc(26px * var(--silo-sf-cap-scale)); line-height: 31px; }
+.requests-secondary-icon { flex: 0 0 28px; width: 28px; height: 28px; fill: none; stroke: currentColor; stroke-width: 2.2; stroke-linecap: round; stroke-linejoin: round; }
 .browse .requests-detail-actions .browse-button:focus { transform: scale(1.025); box-shadow: 0 4px 20px rgba(0,0,0,.24); }
 .requests-action-spinner { flex: 0 0 32px; width: 32px; height: 32px; color: var(--silo-secondary); animation: search-spin 1s steps(8) infinite; }
 .requests-action-spinner svg { display: block; width: 32px; height: 32px; }
@@ -740,6 +743,8 @@
 /* ThumbhashImage scaledToFill under the loading image; it stays when the image is missing. */
 .browse-art-thumbhash { position: absolute; inset: 0; width: 100%; height: 100%; object-fit: cover; }
 .browse-art-thumbhash + .browse-art-image { position: relative; }
+.browse-art-surface-missing { position: absolute; inset: 0; display: flex; align-items: center; justify-content: center; pointer-events: none; }
+.browse-art-surface-glyph { width: 34.8px; height: auto; color: var(--silo-secondary-faint); }
 
 /*
  * silo-apple DefaultArtwork (tvOS). The glow radii are fractions of the longer side, so the box is a size
@@ -970,7 +975,7 @@
 .navigation-avatar-fallback { font-size: calc(var(--avatar-size) * .34); font-weight: 600; }
 .navigation-avatar-person { width: calc(var(--avatar-size) * .297); height: calc(var(--avatar-size) * .323); fill: currentColor; color: var(--silo-secondary); }
 .navigation-avatar-emoji .navigation-avatar-fallback { font-size: calc(var(--avatar-size) * .45); font-weight: 400; }
-.skyline-menu-header { padding: 8px 16px 10px; color: rgba(255,255,255,.38); font-family: monospace; font-size: 14px; line-height: 18px; letter-spacing: 3.64px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+:is(.skyline-selector, .skyline-selector-leaving) .skyline-menu-header, .skyline-menu-header { padding: 8px 16px 10px; color: rgba(255,255,255,.38); font-family: var(--silo-mono); font-size: 14px; line-height: 18px; letter-spacing: 3.64px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .skyline-menu-icon { width: 30px; height: 24px; flex-shrink: 0; }
 /* navigationIcon.ts menuIcon: a filled glyph keeps the line icon's box but may overrun it, as SF Symbols overrun their frame. */
 .skyline-menu-icon-filled { overflow: visible; }
@@ -1059,8 +1064,8 @@
 .browse-section:has(.discovery-collection-grid) { margin-bottom: 44px; }
 .browse-section:has(.discovery-collection-grid):last-child { margin-bottom: 0; }
 /* TVLibraryCollectionsView.swift:79-92: one regular-weight line, 20 above its cards (the grid adds no padding).
-   Monospaced text keeps Apple's 22pt, as .details-track-popover's header does. */
-.collection-group-title { margin: 0 0 20px; overflow: hidden; font-family: ui-monospace, monospace; font-size: 22px; font-weight: 400; letter-spacing: 5.72px; color: rgba(237,237,237,.38); text-transform: uppercase; white-space: nowrap; text-overflow: ellipsis; }
+   Monospaced text keeps Apple's 22pt, using the bundled Roboto Mono token. */
+.collection-group-title { margin: 0 0 20px; overflow: hidden; font-family: var(--silo-mono); font-size: 22px; font-weight: 400; letter-spacing: 5.72px; color: rgba(237,237,237,.38); text-transform: uppercase; white-space: nowrap; text-overflow: ellipsis; }
 .collection-group-title + .discovery-collection-grid { padding-top: 0; }
 .browse .catalog-grid .collection-poster { width: calc(260px * var(--poster-scale, 1)); height: auto; padding: 0; border: 0; border-radius: 0; background: none; }
 .browse .catalog-grid .collection-poster:focus { transform: none; background: none; box-shadow: none; }
@@ -1124,6 +1129,16 @@ svg.library-empty-icon { width: auto; }
    the layers around it, with their masks, be drawn again each time: three to four draws of the same hero per swap (#310). */
 .skyline-home :is(.skyline-marquee-art, .skyline-wash-bitmap, .hero-art-surface .skyline-backdrop) { will-change: opacity; }
 .skyline-home .skyline-hero-backdrop { will-change: transform; }
+/* TVRootHeroBackdrop framed cover fallback (253.3x380 or 380x380, top 170, trailing 150, radius 14). */
+.skyline-home .skyline-hero-cover { position: fixed; inset: 0; z-index: -2; pointer-events: none; will-change: transform; }
+.skyline-home .skyline-cover-frame { position: fixed; top: 170px; inset-inline-end: 150px; width: calc(380px * 2 / 3); height: 380px; border-radius: 14px; overflow: hidden; background: var(--silo-surface-variant); }
+.skyline-home .skyline-cover-frame[data-aspect="square"] { width: 380px; }
+.skyline-home .skyline-cover-thumbhash, .skyline-home .skyline-cover-image { position: absolute; inset: 0; width: 100%; height: 100%; object-fit: cover; }
+.skyline-home .skyline-cover-image { opacity: 0; will-change: opacity; }
+.skyline-home .skyline-cover-frame[data-art="loaded"] .skyline-cover-image { opacity: 1; transition: opacity var(--silo-fast) ease-out; }
+.skyline-home .skyline-cover-frame[data-art="cached"] .skyline-cover-image { opacity: 1; }
+:root[dir="rtl"] .skyline-home .skyline-cover-frame .hero-art-missing, .skyline-home .skyline-cover-frame .hero-art-missing { mask-image: none; }
+@media (prefers-reduced-motion: reduce) { .skyline-home .skyline-cover-frame[data-art="loaded"] .skyline-cover-image { transition: none; } }
 .skyline-hero-scrim { position: fixed; top: 0; left: 0; width: 1920px; height: 190px; z-index: -1; pointer-events: none; background: linear-gradient(rgba(0,0,0,.5), transparent); }
 .skyline-home .skyline-hero-backdrop .skyline-art-frame { inset-inline-start: 0; }
 .skyline-home .skyline-tint-wash { position: absolute; inset: 0; background: #000; }
@@ -1279,6 +1294,10 @@ svg.library-empty-icon { width: auto; }
 .home-section .browse-card-title { width: calc(100% + 2px); margin: 22px -2px 0 0; font-size: calc(24px * var(--silo-sf-cap-scale)); letter-spacing: 0; font-weight: 500; color: rgba(237,237,237,.45); }
 .home-section .browse-card-subtitle { margin: 4px 0 0; font-size: calc(20px * var(--silo-sf-cap-scale)); letter-spacing: 0; font-weight: 400; color: rgba(237,237,237,.32); }
 .home-section .skyline-continue .browse-card-title { margin-top: 14px; }
+/* TVCollectionPosterCard: Home and library Recommended collection cards use 16px spacing and centred captions. */
+.home-section .browse-card.collection-poster { --card-caption-gap: 16px; }
+.home-section .collection-poster .browse-card-title { width: 100%; margin: 16px 0 0; text-align: center; }
+.home-section .collection-poster .browse-card-subtitle { text-align: center; }
 /* SectionExploreAllCard.swift:72 strokes white .08 at 0.5pt, half of it outside the tile. A 1px CSS border on this
    1920-wide surface is twice that line, so it carries half the opacity for the same ink. */
 .home-section .skyline-explore .skyline-explore-tile, .box-set-row .skyline-explore .skyline-explore-tile { display: flex; flex-direction: column; align-items: center; justify-content: center; padding: 0 8px; border: 1px solid rgba(255,255,255,.04); background: #15171c; color: #ededed; }
@@ -1398,7 +1417,7 @@ svg.library-empty-icon { width: auto; }
 .browse .signin-alert { z-index: 21; }
 /* The page under the alert at .55 opacity (dialog-behind-dimmed), as a layer so cached page nodes stay untouched. */
 .details-alert-dim { position: fixed; inset: 0; z-index: 20; background: rgba(0,0,0,.45); }
-.browse .signin-alert .signin-actions .browse-button { flex: 1; height: 66px; margin: 0; padding: 0 32px; border: 2px solid transparent; border-radius: 40px; background: var(--silo-selected); color: #ededed; font-size: 30px; box-shadow: none; }
+.browse .signin-alert .signin-actions .browse-button { flex: 1; min-height: 66px; height: auto; margin: 0; padding: 12px 32px; border: 2px solid transparent; border-radius: 40px; background: var(--silo-selected); color: #ededed; font-size: 30px; line-height: 1.2; text-align: center; box-shadow: none; }
 .browse .signin-alert .signin-actions .browse-button:focus { background: #fff; color: #000; }
 /* tvOS stacks a two-button alert: the destructive Discard Held Change in system red above OK. */
 .browse .signin-alert .signin-actions:has(> .skyline-destructive) { flex-direction: column; gap: 16px; }

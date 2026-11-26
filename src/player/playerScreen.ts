@@ -42,7 +42,7 @@ import { mountSeekThumbnail } from "./seekThumbnailView.ts";
 import { mountSubtitles } from "./subtitleView.ts";
 import { withEndTime } from "./endTime.ts";
 import { fillHUDPane, fillVideoPane, videoPickerFor } from "./hudPanes.ts";
-import { currentChapter, statLabel } from "./playerHUD.ts";
+import { chapterTitle, currentChapter, statLabel } from "./playerHUD.ts";
 import { chapterTickFractions, markerBands } from "./scrubberMarkers.ts";
 import { heading } from "./headings.ts";
 
@@ -789,8 +789,9 @@ export function mountPlayerScreen(root: HTMLElement, controls: PlayerControls, c
         for (const row of view.hud?.stats.nowPlaying ?? []) stream.appendChild(infoRow(statLabel(row.label), row.value));
         const hud = view.hud;
         if (hud !== undefined) {
-            const chapter = hud.chapters[currentChapter(hud.chapters, view.positionSeconds)];
-            if (chapter !== undefined) stream.appendChild(infoRow(translate("player.hud.chapter"), chapter.title));
+            const chapterIndex = currentChapter(hud.chapters, view.positionSeconds);
+            const chapter = hud.chapters[chapterIndex];
+            if (chapter !== undefined) stream.appendChild(infoRow(translate("player.hud.chapter"), chapterTitle(chapter, chapterIndex)));
             if (hud.chapterState === "loading") stream.appendChild(el("p", "player-menu-note", "Loading chapters"));
             if (hud.chapterState === "failed") {
                 stream.appendChild(el("p", "player-menu-note", "Couldn't load chapters."));
@@ -839,7 +840,7 @@ export function mountPlayerScreen(root: HTMLElement, controls: PlayerControls, c
         const lockedByReport = tracks.reporting === true && !subtitlePick && (name === "Audio" || qualityAction || id.startsWith("ai-"));
         // A direct-play subtitle switch keeps the subtitle rows choosable: the controller applies a choice made meanwhile when it settles.
         const subtitleSwitch = tracks.change.state === "changing" && tracks.change.kind === "subtitle" && subtitlePick && (id === OFF || tracks.subtitles.some(track => track.id === id));
-        const blocked = !aiPanel && (tracks.change.state === "changing" && !subtitleSwitch || lockedByReport || (id === "auto-next" && hud?.busy === true) || (aiAction && tracks.ai?.busy === true) || aiDimmed || (toolBusy && id.startsWith("subtitle-") && !videoOption && id !== `subtitle-result:${downloading ?? ""}`) || (subtitlePick && tracks.subtitles.some((track) => track.id === id && track.unavailable === true)) || (id.startsWith("secondary:") && tracks.secondary?.choices.some((track) => `secondary:${track.id}` === id && track.unavailable === true) === true) || (id.startsWith("ai-result:") && tracks.ai?.results.some((result) => `ai-result:${result.id}` === id && result.unavailable === true) === true));
+        const blocked = !aiPanel && (button.dataset.unavailable === "true" || tracks.change.state === "changing" && !subtitleSwitch || lockedByReport || (id === "auto-next" && hud?.busy === true) || (aiAction && tracks.ai?.busy === true) || aiDimmed || (toolBusy && id.startsWith("subtitle-") && !videoOption && id !== `subtitle-result:${downloading ?? ""}`) || (subtitlePick && tracks.subtitles.some((track) => track.id === id && track.unavailable === true)) || (id.startsWith("secondary:") && tracks.secondary?.choices.some((track) => `secondary:${track.id}` === id && track.unavailable === true) === true) || (id.startsWith("ai-result:") && tracks.ai?.results.some((result) => `ai-result:${result.id}` === id && result.unavailable === true) === true));
         button.setAttribute("aria-disabled", String(blocked));
     };
     const drawMenu = (tracks: TrackView): void => {

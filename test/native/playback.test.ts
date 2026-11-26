@@ -6341,7 +6341,7 @@ test("a progress 404 after an earlier recovery counts its replacement in the new
     r.controller.destroy();
 });
 
-test("a replacement start refused after a progress 404 ends as exhausted recovery without an invented HTTP status (#873)", async () => {
+test("a replacement start refused after a progress 404 records the observed HTTP status and exhausted reconnect (#873, #923)", async () => {
     const r = await rig();
     const id = await playMovie(r);
     r.avplay.tick(20000);
@@ -6352,15 +6352,211 @@ test("a replacement start refused after a progress 404 ends as exhausted recover
     await r.h.clock.advance(0);
     assert.equal(bodies(r.h, "/start").length, 2, "one replacement start");
     const view = last(r.views);
-    assert.ok(view.phase === "error" && view.error.kind === "network", JSON.stringify(view));
+    assert.ok(view.phase === "error");
+    assert.deepEqual(view.error, { kind: "network" });
     const trace = r.controller.incidentTrace();
     assert.ok(trace !== undefined && trace.exhausted);
     const incident = playbackIncident(trace, view.error);
     assert.ok(incident !== undefined);
-    assert.deepEqual([incident.op, incident.stage, incident.code, incident.fs, incident.fc, incident.http], ["progress_report", "progress", "http_404", "reconnect", "network_unreachable", undefined]);
+    assert.deepEqual([incident.op, incident.stage, incident.code, incident.fs, incident.fc, incident.http], ["progress_report", "progress", "http_404", "reconnect", "http_400", 400]);
     assert.deepEqual(incident.rec, { n: 0, c: 1, r: "exhausted" });
-    assert.ok(incidentAutoEligible(incident), "recovery ran out, so this is not ordinary connectivity");
+    assert.ok(incidentAutoEligible(incident), "observed HTTP 400 on exhausted reconnect is auto-eligible");
     r.controller.destroy();
+});
+
+async function exhaustReconnect(r: Rig, maxSeconds = 400): Promise<Extract<PlaybackView, { phase: "error" }>> {
+    for (let waited = 0; waited < maxSeconds && last(r.views).phase !== "error"; waited++) {
+        await r.h.clock.advance(1000);
+    }
+    const view = last(r.views);
+    assert.equal(view.phase, "error", `expected reconnect exhaustion error, got ${view.phase}`);
+    if (view.phase !== "error") throw new Error("unreachable");
+    return view;
+}
+
+test("exhausting reconnect replans on HTTP 503, 429, or 409 replan_in_progress records fs reconnect, HTTP status, and stays on Connection lost (#923)", async () => {
+    for (const [status, reply] of [
+        [503, { status: 503, body: {} }],
+        [429, problem(429, "rate_limited", "Rate limited")],
+        [409, problem(409, "replan_in_progress", "Replan in progress")],
+    ] as const) {
+        const r = await rig();
+        const id = await playMovie(r);
+        r.h.fake.script(`/playback/${id}/replan`, ...Array.from({ length: 12 }, () => reply));
+        r.avplay.listener?.onerror("PLAYER_ERROR_CONNECTION_FAILED");
+        const view = await exhaustReconnect(r);
+        assert.deepEqual(view.error, { kind: "network" }, `HTTP ${status} keeps Connection lost on screen`);
+        const trace = r.controller.incidentTrace();
+        assert.ok(trace !== undefined && trace.exhausted);
+        const incident = playbackIncident(trace, view.error);
+        assert.ok(incident !== undefined);
+        assert.deepEqual([incident.fs, incident.http, incident.fc, incident.rec.r], ["reconnect", status, `http_${status}`, "exhausted"]);
+        assert.equal(incidentAutoEligible(incident), true, `HTTP ${status} reconnect exhaustion is auto-eligible`);
+        r.controller.destroy();
+    }
+});
+
+test("exhausting reconnect replans on client timeout records no_response in diagnostics while keeping Connection lost on screen (#923)", async () => {
+    const r = await rig();
+    const id = await playMovie(r);
+    for (let i = 0; i < 12; i++) r.h.fake.hold(`/playback/${id}/replan`);
+    r.avplay.listener?.onerror("PLAYER_ERROR_CONNECTION_FAILED");
+    const view = await exhaustReconnect(r);
+    assert.deepEqual(view.error, { kind: "network" });
+    const trace = r.controller.incidentTrace();
+    assert.ok(trace !== undefined && trace.exhausted);
+    const incident = playbackIncident(trace, view.error);
+    assert.ok(incident !== undefined);
+    assert.deepEqual([incident.fs, incident.http, incident.fc, incident.rec.r], ["reconnect", undefined, "no_response", "exhausted"]);
+    assert.equal(incidentAutoEligible(incident), false);
+    r.controller.destroy();
+});
+
+test("exhausting reconnect replans on pure network drops records fs reconnect, network_unreachable, and stays manual (#923)", async () => {
+    const r = await rig();
+    const id = await playMovie(r);
+    for (let i = 0; i < 12; i++) r.h.fake.dropNextAnswer(`/playback/${id}/replan`);
+    r.avplay.listener?.onerror("PLAYER_ERROR_CONNECTION_FAILED");
+    const view = await exhaustReconnect(r);
+    assert.deepEqual(view.error, { kind: "network" });
+    const trace = r.controller.incidentTrace();
+    assert.ok(trace !== undefined && trace.exhausted);
+    const incident = playbackIncident(trace, view.error);
+    assert.ok(incident !== undefined);
+    assert.deepEqual([incident.fs, incident.http, incident.fc, incident.rec.r], ["reconnect", undefined, "network_unreachable", "exhausted"]);
+    assert.equal(incidentAutoEligible(incident), false);
+    r.controller.destroy();
+});
+
+test("mixed reconnect failures clear stale HTTP statuses so only the final failing attempt governs http, fc, and auto-eligibility (#923)", async () => {
+    {
+        const r = await rig();
+        const id = await playMovie(r);
+        r.h.fake.script(`/playback/${id}/replan`, problem(404, "not_found", "Session gone"));
+        for (let i = 0; i < 12; i++) r.h.fake.dropNextAnswer("/playback/start");
+        r.avplay.listener?.onerror("PLAYER_ERROR_CONNECTION_FAILED");
+        const view = await exhaustReconnect(r);
+        assert.deepEqual(view.error, { kind: "network" });
+        const trace = r.controller.incidentTrace();
+        assert.ok(trace !== undefined && trace.exhausted);
+        const incident = playbackIncident(trace, view.error);
+        assert.ok(incident !== undefined);
+        assert.deepEqual([incident.fs, incident.http, incident.fc, incident.rec.r], ["reconnect", undefined, "network_unreachable", "exhausted"]);
+        assert.equal(incidentAutoEligible(incident), false);
+        assert.ok(incident.t.includes("reconnect:fallback:http_404"), JSON.stringify(incident.t));
+        r.controller.destroy();
+    }
+    {
+        const r = await rig();
+        const id = await playMovie(r);
+        r.h.fake.script(`/playback/${id}/replan`, { status: 503, body: {} });
+        r.avplay.listener?.onerror("PLAYER_ERROR_CONNECTION_FAILED");
+        await r.h.clock.advance(1000);
+        assert.equal(bodies(r.h, "/replan").length, 1, "first attempt answered 503");
+        for (let i = 0; i < 11; i++) r.h.fake.dropNextAnswer(`/playback/${id}/replan`);
+        const view = await exhaustReconnect(r);
+        assert.deepEqual(view.error, { kind: "network" });
+        const trace = r.controller.incidentTrace();
+        assert.ok(trace !== undefined && trace.exhausted);
+        const incident = playbackIncident(trace, view.error);
+        assert.ok(incident !== undefined);
+        assert.deepEqual([incident.fs, incident.http, incident.fc, incident.rec.r], ["reconnect", undefined, "network_unreachable", "exhausted"]);
+        assert.equal(incidentAutoEligible(incident), false);
+        assert.ok(incident.t.includes("reconnect:retry:http_503"), JSON.stringify(incident.t));
+        assert.ok(incident.t.includes("playing:fallback:PLAYER_ERROR_CONNECTION_FAILED"), JSON.stringify(incident.t));
+        r.controller.destroy();
+    }
+});
+
+test("exhausting replacement start on HTTP 502 vs timeout sets fs reconnect, final code, and auto-eligibility without changing screen error (#923)", async () => {
+    {
+        const r = await rig();
+        const id = await playMovie(r);
+        r.h.fake.script(`/playback/${id}/replan`, problem(404, "not_found", "Session gone"));
+        r.h.fake.script("/playback/start", ...Array.from({ length: 12 }, () => ({ status: 502, body: {} })));
+        r.avplay.listener?.onerror("PLAYER_ERROR_CONNECTION_FAILED");
+        const view = await exhaustReconnect(r);
+        assert.deepEqual(view.error, { kind: "network" });
+        const trace = r.controller.incidentTrace();
+        assert.ok(trace !== undefined && trace.exhausted);
+        const incident = playbackIncident(trace, view.error);
+        assert.ok(incident !== undefined);
+        assert.deepEqual([incident.fs, incident.http, incident.fc, incident.rec.r], ["reconnect", 502, "http_502", "exhausted"]);
+        assert.equal(incidentAutoEligible(incident), true);
+        r.controller.destroy();
+    }
+    {
+        const r = await rig();
+        const id = await playMovie(r);
+        r.h.fake.script(`/playback/${id}/replan`, problem(404, "not_found", "Session gone"));
+        for (let i = 0; i < 12; i++) r.h.fake.hold("/playback/start");
+        r.avplay.listener?.onerror("PLAYER_ERROR_CONNECTION_FAILED");
+        const view = await exhaustReconnect(r);
+        assert.deepEqual(view.error, { kind: "network" });
+        const trace = r.controller.incidentTrace();
+        assert.ok(trace !== undefined && trace.exhausted);
+        const incident = playbackIncident(trace, view.error);
+        assert.ok(incident !== undefined);
+        assert.deepEqual([incident.fs, incident.http, incident.fc, incident.rec.r], ["reconnect", undefined, "no_response", "exhausted"]);
+        assert.equal(incidentAutoEligible(incident), false);
+        r.controller.destroy();
+    }
+});
+
+test("a loss within 30 s of an attempt-12 recovery gives up immediately in stage reconnect without stale HTTP (#923)", async () => {
+    const r = await rig();
+    const id = await playMovie(r);
+    r.h.fake.script(`/playback/${id}/replan`, ...Array.from({ length: 11 }, () => ({ status: 503, body: {} })));
+    r.avplay.listener?.onerror("PLAYER_ERROR_CONNECTION_FAILED");
+    for (let waited = 0; waited < 200 && r.avplay.urls.length < 2; waited++) {
+        await r.h.clock.advance(1000);
+    }
+    assert.equal(r.avplay.urls.length, 2, "12th reconnect replan succeeded");
+    await finishReplacement(r);
+    r.avplay.tick(r.avplay.positionMs + 1000);
+    assert.equal(r.controller.incidentTrace()?.recovered, true);
+
+    await r.h.clock.advance(5000);
+    r.avplay.listener?.onerror("PLAYER_ERROR_CONNECTION_FAILED");
+    const view = last(r.views);
+    assert.ok(view.phase === "error");
+    assert.deepEqual(view.error, { kind: "network" });
+    const trace = r.controller.incidentTrace();
+    assert.ok(trace !== undefined && trace.exhausted);
+    const incident = playbackIncident(trace, view.error);
+    assert.ok(incident !== undefined);
+    assert.deepEqual([incident.fs, incident.http, incident.fc, incident.rec.r], ["reconnect", undefined, "network_unreachable", "exhausted"]);
+    assert.equal(incidentAutoEligible(incident), false);
+    r.controller.destroy();
+});
+
+test("terminal unanswered failure_recovery replan records HTTP 503 and timeout diagnostics through noteTransportUnanswered (#923)", async () => {
+    for (const [mode, setup] of [
+        ["http_503", (r: Rig, id: string) => r.h.fake.script(`/playback/${id}/replan`, ...Array.from({ length: 3 }, () => ({ status: 503, body: {} })))],
+        ["timeout", (r: Rig, id: string) => { for (let i = 0; i < 3; i++) r.h.fake.hold(`/playback/${id}/replan`); }],
+    ] as const) {
+        const r = await rig();
+        const id = await playMovie(r);
+        r.h.fake.script(`/playback/${id}/replan`, ...Array.from({ length: 11 }, () => ({ status: 503, body: {} })));
+        r.avplay.listener?.onerror("PLAYER_ERROR_CONNECTION_FAILED");
+        for (let waited = 0; waited < 200 && r.avplay.urls.length < 2; waited++) {
+            await r.h.clock.advance(1000);
+        }
+        assert.equal(r.avplay.urls.length, 2, `${mode}: 12th reconnect replan succeeded`);
+        setup(r, id);
+        r.avplay.finishPrepare("NotSupportedError");
+        const view = await exhaustReconnect(r, 120);
+        assert.deepEqual(view.error, { kind: "network" });
+        const trace = r.controller.incidentTrace();
+        assert.ok(trace !== undefined && trace.exhausted);
+        const incident = playbackIncident(trace, view.error);
+        assert.ok(incident !== undefined);
+        const expectedHttp = mode === "http_503" ? 503 : undefined;
+        const expectedFc = mode === "http_503" ? "http_503" : "no_response";
+        assert.deepEqual([incident.fs, incident.http, incident.fc, incident.rec.r], ["reconnect", expectedHttp, expectedFc, "exhausted"]);
+        assert.equal(incidentAutoEligible(incident), mode === "http_503");
+        r.controller.destroy();
+    }
 });
 
 test("a plan refused before adoption still describes the failed start (#873)", async () => {

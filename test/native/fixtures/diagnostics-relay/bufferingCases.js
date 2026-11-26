@@ -46,7 +46,7 @@ export const bufferingEvidence = {
 /** A lowering whose answer was lost, then a reconnect that ran out: the failed replan and the terminal outcome in one chain. */
 export const failedRecovery = {
   iv: 1, cat: "buffering", out: "failed", kind: "network", op: "replan_playback", stage: "quality_change", code: "no_answer",
-  fs: "reconnect", fc: "network_unreachable", done: "playing", open: true, shown: true, rs: 0, rec: { n: 0, c: 1, r: "exhausted" },
+  fs: "reconnect", fc: "http_400", http: 400, done: "playing", open: true, shown: true, rs: 0, rec: { n: 0, c: 1, r: "exhausted" },
   pl: { dl: "server_transcode_hls", pr: "hls", q: "auto", kbps: 24000, pos: 0, at: 1820 }, set: { q: "auto", cap: "none", hdr: true }, hp: "unavailable",
   req: { pos: "none", sub: "auto", aud: "default" },
   t: ["playing:ok", "quality_change:fail:no_answer", "reconnect:end:network"],
@@ -82,7 +82,7 @@ export const BUFFERING_CASES = [
       equal((await send(handleRequest, automaticOnly, report(failedRecovery, "auto", bufferingEvidence))).status, 201, "automatic created");
       const manual = manualOnly.created()[0].body;
       const automatic = automaticOnly.created()[0].body;
-      equal(manual.title, "Playback stalled after a quality step-down: no server answer", "failed recovery title");
+      equal(manual.title, "Playback stalled after a quality step-down: no server answer (HTTP 400)", "failed recovery title");
       equal(manual.title, automatic.title, "titles");
       equal(withoutSourceRow(manual.body), withoutSourceRow(automatic.body), "evidence");
       includes(manual.body, "| Submission source | Manual |", "manual source");
@@ -142,7 +142,7 @@ export const BUFFERING_CASES = [
       await send(handleRequest, gh, observed(forced, { precedingScreen: "library" }));
       await send(handleRequest, gh, observed(undefined, { precedingScreen: "search" }));
       const [failure, step, stalled, capped, bare] = gh.created().map((call) => call.body);
-      equal(failure.title, "Playback stalled after a quality step-down: no server answer", "failed recovery");
+      equal(failure.title, "Playback stalled after a quality step-down: no server answer (HTTP 400)", "failed recovery");
       equal(step.title, "Viewer reported buffering after quality was lowered", "successful step-down");
       equal(stalled.title, "Viewer reported buffering during playback", "repeated stalls");
       equal(bare.title, "Viewer reported a buffering or quality problem on Search", "no evidence falls back to the category");
@@ -227,6 +227,20 @@ export const BUFFERING_CASES = [
       equal((await send(handleRequest, gh, report(failedRecovery, "manual", bufferingEvidence))).json.issueNumber, gh.issues[0].number, "the current client's report joins the same issue");
       includes(gh.comments()[0].body.body, "### Buffering and quality", "new evidence rendered in follow-up");
       equal(gh.issues.length, 1, "one issue");
+    },
+  },
+  {
+    name: "an exhausted buffering reconnect without an HTTP status stays manual",
+    async run(handleRequest) {
+      const automatic = fakeGitHub();
+      for (const fc of ["network_unreachable", "no_response"]) {
+        const drop = { ...failedRecovery, http: undefined, fc };
+        const rejected = await send(handleRequest, automatic, report(drop, "auto", bufferingEvidence));
+        equal(rejected.status, 422, `${fc} automatic rejected`);
+        equal(rejected.json.error, "not_auto_reportable", `${fc} error code`);
+        equal((await send(handleRequest, fakeGitHub(), report(drop, "manual", bufferingEvidence))).status, 201, `${fc} manual accepted`);
+      }
+      equal(automatic.outbound.length, 0, "no GitHub writes for rejected automatic buffering drops");
     },
   },
 ];

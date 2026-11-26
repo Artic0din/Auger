@@ -98,8 +98,8 @@ test("the empty Watchlist, Favorites and History read in German", async () => {
     });
 });
 
-test("the loading state and the unavailable page read in German", async () => {
-    await inLanguage("de", async (tv, catalog) => {
+test("the loading state and Audiobooks empty state read in German without an unavailable page", async () => {
+    await inLanguage("de", async (tv) => {
         const held = tv.fake.hold("/watchlist", true);
         await tv.page.locator('[data-focus="for_you"]').focus();
         await tv.remote(DOWN);
@@ -109,9 +109,20 @@ test("the loading state and the unavailable page read in German", async () => {
         held.release();
         await tv.page.locator('[data-view="personal:watchlist"] .browse-card').first().waitFor();
         await tv.remote(10009);
-        catalog.unavailable = true;
-        await openList(tv, "favorites", ".personal-status");
-        assert.equal(await tv.page.locator(".personal-status").innerText(), "Favorites is unavailable.", "the unavailable sentence has no Apple key");
+        await tv.remote(10009);
+
+        await tv.page.locator('[data-focus="profiles"]').click();
+        await tv.page.locator('[data-focus="settings"]').click();
+        await tv.page.locator('[data-focus="show-audiobooks"]').click();
+        await tv.remote(10009);
+        await tv.remote(10009);
+        await tv.page.locator('[data-view="home"]').waitFor();
+
+        await openList(tv, "favorites");
+        assert.equal(await tv.page.locator('[data-focus="filter:audiobook"]').innerText(), text("personal.filter.audiobooks", "de"));
+        await tv.page.locator('[data-focus="filter:audiobook"]').click();
+        await tv.page.locator(".personal-section-empty").waitFor();
+        assert.equal(await tv.page.locator(".personal-section-title").innerText(), text("personal.favorites.noAudiobooks", "de"));
     });
 });
 

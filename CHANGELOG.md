@@ -6,6 +6,48 @@ All notable changes to this project are documented in this file.
 
 <!-- changelog:releases -->
 
+## [0.14.3] - 2026-11-26
+
+### Fixes
+
+- **Settings**: Use centred alert dialogs for playback and subtitle resets ([#932](https://github.com/Artic0din/Auger-Tizen/pull/932), [`8be4ea7f`](https://github.com/Artic0din/Auger-Tizen/commit/8be4ea7f))
+
+## [0.14.2] - 2026-11-26
+
+### Fixes
+
+- **Lists**: Port Watchlist, Favorites and History from the tvOS source ([#938](https://github.com/Artic0din/Auger-Tizen/pull/938), [`0e2126b5`](https://github.com/Artic0din/Auger-Tizen/commit/0e2126b5))
+
+## [0.14.1] - 2026-11-26
+
+### Fixes
+
+- **Playback**: Port the Info, Stats and Chapters tabs from the tvOS source ([#942](https://github.com/Artic0din/Auger-Tizen/pull/942), [`26c5e922`](https://github.com/Artic0din/Auger-Tizen/commit/26c5e922))
+
+## [0.14.0] - 2026-11-26
+
+### Features
+
+- **Diagnostics**: Record reconnect errors and refine auto-report policy ([#943](https://github.com/Artic0din/Auger-Tizen/pull/943), [`da7cb6d5`](https://github.com/Artic0din/Auger-Tizen/commit/da7cb6d5))
+
+## [0.13.3] - 2026-11-26
+
+### Fixes
+
+- **Home**: Port Home and the top bar from the tvOS source ([#933](https://github.com/Artic0din/Auger-Tizen/pull/933), [`55918adf`](https://github.com/Artic0din/Auger-Tizen/commit/55918adf))
+
+## [0.13.2] - 2026-11-26
+
+### Fixes
+
+- **Collections**: Port collection poster loading, failure states and group header font ([#930](https://github.com/Artic0din/Auger-Tizen/pull/930), [`81a71b27`](https://github.com/Artic0din/Auger-Tizen/commit/81a71b27))
+
+## [0.13.1] - 2026-11-26
+
+### Fixes
+
+- **Search**: Translate Search box-set card eyebrow from catalog ([#929](https://github.com/Artic0din/Auger-Tizen/pull/929), [`b224ccd4`](https://github.com/Artic0din/Auger-Tizen/commit/b224ccd4))
+
 ## [0.13.0] - 2026-11-26
 
 ### Features
