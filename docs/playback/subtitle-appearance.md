@@ -21,13 +21,10 @@ Its external subtitle path requires a local downloaded file.
 This implementation uses the app overlay rather than promising native AVPlay styling or changing TV-wide accessibility settings.
 Apple's `SubtitleAppearance.swift` at `1a7cceeaf3b2bfc4f889c00487d19b2c6f843940` and the pinned shared `subtitle-appearance.json` establish the stored vocabulary and sparse-default behavior.
 
-Episode subtitle menus expose an explicit action to keep the current track choice or Off for the series.
-`updateSubtitlePreference`, `PUT /subtitle-prefs/{series_id}`, stores the server's combined index, language, mode and available track signature, so later episodes can resolve the preference even when ordinals change.
-Playback choices remain transient unless this action is selected.
-Writes are never automatically repeated, and a failure leaves playback running with a visible message.
+In-player subtitle picks stay transient during playback (matching Apple TV's `SubtitlesPane`, which lists Off, tracks, and Secondary without a per-series save row); explicit per-series and per-movie subtitle preferences are saved from Details (`PUT /subtitle-prefs/{key}`).
 
 Text downloads use HTTPS (or HTTP only when the Server is HTTP), omit ambient credentials, reject redirects, enforce a 60-second idle timeout with no total timeout (`SUBTITLE_IDLE_TIMEOUT_MS` in `src/api/http.ts`), and stop at 4 MiB.
 Authority changes, new plans and teardown cancel stale loads; loading/failure notices appear in the subtitles menu.
 Caption text is assigned through `textContent`, never executable HTML.
-Desktop/native tests establish rendering, timing, safe text, preference validation, failure behavior and series-write requests.
+Desktop/native tests establish rendering, timing, safe text, preference validation, and failure behavior.
 Actual Samsung font metrics, browser/video compositing, signed WGT and physical-TV behavior remain hardware acceptance gates.

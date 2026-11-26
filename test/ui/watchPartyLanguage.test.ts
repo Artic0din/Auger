@@ -196,12 +196,14 @@ test("the picker and the confirmation page read in German", async () => {
         await button(tv, "choose").click();
         await view(tv, "watchParty:picker:shelves").waitFor();
         assert.equal(await tv.page.locator(".watch-party-picker-name").textContent(), text("watchParty.picker.select", "de"));
-        assert.equal(await button(tv, "picker-close").textContent(), text("watchParty.picker.close", "de"));
+        assert.equal(await button(tv, "picker-search").getAttribute("aria-label"), text("watchParty.picker.search", "de"));
+        assert.equal(await button(tv, "picker-close").getAttribute("aria-label"), text("watchParty.picker.close", "de"));
         const titles = await tv.page.locator(".watch-party-shelf .browse-section-title").allTextContents();
-        assert.ok(titles.length > 0 && titles.every(title => [text("watchParty.picker.continueTogether", "de"), text("watchParty.picker.watchlists", "de")].includes(title)), titles.join(" | "));
+        assert.ok(titles.includes(text("watchParty.picker.continueTogether", "de")) && titles.includes(text("watchParty.picker.watchlists", "de")) && titles.includes(text("watchParty.picker.recentMovies", "de")) && titles.includes(text("watchParty.picker.recentSeries", "de")), titles.join(" | "));
         await button(tv, "movie:m0004").click();
         await view(tv, "watchParty:choice").waitFor();
-        assert.equal(await tv.page.locator(".watch-party-choice .watch-party-eyebrow").textContent(), text("watchParty.picker.watchTogether", "de"));
+        assert.equal(await tv.page.locator(".watch-party-choice .watch-party-eyebrow").first().textContent(), text("watchParty.picker.watchTogether", "de"));
+        assert.equal(await tv.page.locator(".watch-party-who-seen .watch-party-eyebrow").textContent(), text("watchParty.whoSeen.title", "de"));
         assert.equal(await button(tv, "confirm").textContent(), text("watchParty.confirm.choose", "de"));
     });
     await inLanguage("de", async (tv, fake) => {
@@ -211,7 +213,7 @@ test("the picker and the confirmation page read in German", async () => {
         assert.equal(await tv.page.locator(".watch-party-picker-name").textContent(), text("watchParty.picker.suggest", "de"));
         await button(tv, "movie:m0004").click();
         await view(tv, "watchParty:choice").waitFor();
-        assert.equal(await tv.page.locator(".watch-party-choice .watch-party-eyebrow").textContent(), text("watchParty.picker.suggestToParty", "de"));
+        assert.equal(await tv.page.locator(".watch-party-choice .watch-party-eyebrow").first().textContent(), text("watchParty.picker.suggestToParty", "de"));
         assert.equal(await button(tv, "confirm").textContent(), text("watchParty.confirm.addSuggestion", "de"));
     });
 });
@@ -224,8 +226,7 @@ test("a series' episodes read in German: the eyebrow, Close, the numbered title 
         await button(tv, "series:s2").click();
         await view(tv, "watchParty:episodes").waitFor();
         await tv.page.locator(".watch-party-episode").first().waitFor();
-        assert.equal(await tv.page.locator(".watch-party-episodes-head .watch-party-eyebrow").textContent(), text("watchParty.eyebrow.chooseEpisode", "de"));
-        assert.equal(await button(tv, "episodes-close").textContent(), text("watchParty.picker.close", "de"));
+        assert.equal(await tv.page.locator(".watch-party-episodes > .watch-party-eyebrow").textContent(), text("watchParty.eyebrow.chooseEpisode", "de"));
         const first = tv.page.locator(".watch-party-episode").first();
         const title = (await first.locator(".watch-party-episode-title").textContent()) ?? "";
         assert.ok(title.startsWith(text("watchParty.episodes.numbered", "de", { number: "1", title: "" })), title);
@@ -258,9 +259,8 @@ test("an empty season and a failed read use Apple's words in German", async () =
         await button(tv, "series:s2").click();
         await view(tv, "watchParty:episodes").waitFor();
         await tv.page.locator(".watch-party-empty-title").waitFor();
-        assert.equal(await tv.page.locator(".watch-party-empty-title").textContent(), text("watchParty.episodes.noneTitle", "de"));
-        assert.equal(await tv.page.locator(".watch-party-episodes .watch-party-lead").textContent(), text("watchParty.episodes.noneBody", "de"));
-        assert.equal(await button(tv, "episodes-retry").textContent(), text("shell.errorView.tryAgain", "de"));
+        assert.equal(await tv.page.locator(".watch-party-empty-title").textContent(), text("watchParty.episodes.empty", "de"));
+        assert.equal(await button(tv, "episodes-retry").textContent(), text("watchParty.episodes.reload", "de"));
     }, fake => { fake.episodesReply = { status: 200, body: { items: [] } }; });
 });
 
@@ -285,9 +285,12 @@ test("the picker's shelf titles read English while German's file is on its way, 
         await enterRoom(tv, fake, "create", "en");
         await button(tv, "choose").click();
         await view(tv, "watchParty:picker:shelves").waitFor();
-        assert.deepEqual([...new Set(await tv.page.locator(".watch-party-shelf .browse-section-title").allTextContents())].sort(), [text("watchParty.picker.continueTogether", "en"), text("watchParty.picker.watchlists", "en")].sort());
+        assert.ok((await tv.page.locator(".watch-party-shelf .browse-section-title").allTextContents()).includes(text("watchParty.picker.continueTogether", "en")));
         release();
-        await tv.eventually(async () => (await tv.page.locator(".watch-party-shelf .browse-section-title").allTextContents()).every(title => [text("watchParty.picker.continueTogether", "de"), text("watchParty.picker.watchlists", "de")].includes(title)), "the shelves relabel in German");
+        await tv.eventually(async () => {
+            const titles = await tv.page.locator(".watch-party-shelf .browse-section-title").allTextContents();
+            return titles.includes(text("watchParty.picker.continueTogether", "de")) && titles.includes(text("watchParty.picker.recentMovies", "de"));
+        }, "the shelves relabel in German");
     }, () => undefined, async page => { await page.route("**/tv/catalog/de.js", async route => { await held; await route.fallback(); }); });
 });
 

@@ -34,6 +34,11 @@ export function arrowDownCircleIcon(): string {
     return svg(`<circle cx="12" cy="12" r="10" fill="currentColor"/><path fill="none" stroke="#000" stroke-opacity="0.85" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" d="M12 7v9m-4-4 4 4 4-4"/>`);
 }
 
+/** `arrow.down.circle`: the subtitle search result format symbol. */
+export function arrowDownCircleOutlineIcon(): string {
+    return svg(`<circle cx="12" cy="12" r="9.5" fill="none" stroke="currentColor" stroke-width="1.8"/><path fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" d="M12 7.5v8.5m-3.5-3.5L12 16l3.5-3.5"/>`);
+}
+
 /** `info.circle.fill`: the information tone's symbol. */
 export function infoCircleIcon(): string {
     return svg(`<circle cx="12" cy="12" r="10" fill="currentColor"/><path fill="none" stroke="#000" stroke-opacity="0.85" stroke-width="2" stroke-linecap="round" d="M12 11v6m0-9.4v.1"/>`);
@@ -42,6 +47,11 @@ export function infoCircleIcon(): string {
 /** `exclamationmark.triangle.fill`: the warning tone's symbol. */
 export function warningTriangleIcon(): string {
     return svg(`<path fill="currentColor" d="M10.3 3.6a2 2 0 0 1 3.4 0l8.2 14.3a2 2 0 0 1-1.7 3H3.8a2 2 0 0 1-1.7-3z"/><path fill="none" stroke="#000" stroke-opacity="0.85" stroke-width="2" stroke-linecap="round" d="M12 9.5v4.5m0 3v.1"/>`);
+}
+
+/** `exclamationmark.triangle`: the subtitle search warning and failure symbol. */
+export function warningTriangleOutlineIcon(): string {
+    return svg(`<path fill="none" stroke="currentColor" stroke-width="1.8" stroke-linejoin="round" d="M10.4 4.2a1.85 1.85 0 0 1 3.2 0l7.5 13a1.85 1.85 0 0 1-1.6 2.8H4.5a1.85 1.85 0 0 1-1.6-2.8z"/><path fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" d="M12 9.5v4.5"/><circle cx="12" cy="16.8" r="1" fill="currentColor"/>`);
 }
 
 /** `rectangle.inset.filled`: Up Next's Keep Watching symbol, a picture frame with the picture inset (semibold stroke). */
@@ -75,6 +85,16 @@ export function skipIcon(direction: "backward" | "forward", seconds: number): st
 /** `chevron.forward` at `HUDSettingRowLabel`'s 15pt bold: an 11x15 frame around 8x13 of ink, as in Apple's capture. */
 export function chevronForwardIcon(): string {
     return `<svg viewBox="0 0 11 15" focusable="false" aria-hidden="true"><path fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round" d="M2.7 2.2 8.3 7.5 2.7 12.8"/></svg>`;
+}
+
+/** `chevron.backward`: fallback navigation rows inside subtitle dialogs. */
+export function chevronBackwardIcon(): string {
+    return `<svg viewBox="0 0 11 15" focusable="false" aria-hidden="true"><path fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round" d="M8.3 2.2 2.7 7.5l5.6 5.3"/></svg>`;
+}
+
+/** `chevron.backward.circle`: non-focusable back hint in TVSubtitleDialog's footer. */
+export function chevronBackwardCircleIcon(): string {
+    return svg(`<circle cx="12" cy="12" r="9.5" fill="none" stroke="currentColor" stroke-width="1.8"/><path fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" d="M13.5 8 9.5 12l4 4"/>`);
 }
 
 /** `magnifyingglass`: the Search Subtitles row's symbol. */
@@ -111,12 +131,12 @@ export function uturnBackwardIcon(): string {
     return svg(`<path fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round" d="M8.5 4 4 8.5 8.5 13M4 8.5h10a5 5 0 0 1 0 10.5H9"/>`);
 }
 
-/** `forward.fill`: fast-forward double-arrow glyph. */
+/** `forward.fill`: fast-forward double-arrow glyph for scrubber rate chip and hold-seek indicator. */
 export function forwardFillIcon(): string {
     return `<svg viewBox="0 0 24 16" focusable="false" aria-hidden="true"><path fill="currentColor" d="M1.5 2.2A1 1 0 0 1 3 1.4l8.8 5.7a1 1 0 0 1 0 1.8L3 14.6a1 1 0 0 1-1.5-.8V2.2zm11 0A1 1 0 0 1 14 1.4l8.8 5.7a1 1 0 0 1 0 1.8L14 14.6a1 1 0 0 1-1.5-.8V2.2z"/></svg>`;
 }
 
-/** `backward.fill`: rewind double-arrow glyph. */
+/** `backward.fill`: rewind double-arrow glyph for scrubber rate chip and hold-seek indicator. */
 export function backwardFillIcon(): string {
     return `<svg viewBox="0 0 24 16" focusable="false" aria-hidden="true"><path fill="currentColor" d="M22.5 2.2A1 1 0 0 0 21 1.4l-8.8 5.7a1 1 0 0 0 0 1.8l8.8 5.7a1 1 0 0 0 1.5-.8V2.2zm-11 0A1 1 0 0 0 10 1.4L1.2 7.1a1 1 0 0 0 0 1.8L10 14.6a1 1 0 0 0 1.5-.8V2.2z"/></svg>`;
 }

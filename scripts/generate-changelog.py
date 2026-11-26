@@ -513,19 +513,31 @@ def parse_release_notes_section(section: Optional[str]) -> Optional[ParsedPrNote
 def check_pr_release_notes(title: str, body: str) -> list[str]:
     """Validate that a user-facing pull request supplies plain-language Release Notes."""
     cleaned = strip_comments_and_fences(body.replace("\r\n", "\n").replace("\r", "\n"))
-    entries = entries_for(CommitMessage(title, cleaned))
-    if not entries:
-        return []
+    commit = CommitMessage(title, cleaned)
+    bump = release.classify_commit(commit)
+    entries = entries_for(commit)
     parsed = parse_release_notes_section(release_notes_section(cleaned))
+    if bump == release.BumpLevel.NONE:
+        if parsed is not None and not parsed.suppressed:
+            return [
+                "Non-releasing PR titles do not publish a release; use `feat`, `fix`, `perf`, "
+                "`revert`, or `!` when shipping user-facing changes, or set `## Release Notes` to `None`."
+            ]
+        return []
+    if not entries:
+        if parsed is None or parsed.suppressed:
+            return []
     if parsed is None:
         return [
             "User-facing PRs (feat, fix, perf, revert, or breaking) must include a populated "
-            "`## Release Notes` section written in plain language for Samsung TV users "
-            "(optional subsections: `### Highlights`, `### Breaking Changes`, `### New`, "
-            "`### Improved`, `### Fixed`), or `None` for an internal-only fix."
+            "`## Release Notes` section with explicit category subheadings (`### Breaking Changes`, "
+            "`### New`, `### Improved`, `### Security`, or `### Fixed`, plus optional `### Highlights`) "
+            "written in plain language for Samsung TV users, or `None` for an internal-only fix."
         ]
-    is_breaking = any(entry.category == Category.BREAKING for entry in entries)
-    allows_none = not is_breaking and all(entry.category == Category.FIXES for entry in entries)
+    is_breaking = bump == release.BumpLevel.MAJOR
+    header = release.HEADER.fullmatch(title.strip())
+    kind = header.group("type").lower() if header else ""
+    allows_none = not is_breaking and (not entries or all(entry.category == Category.FIXES for entry in entries))
     if parsed.suppressed:
         if is_breaking:
             return [
@@ -539,6 +551,43 @@ def check_pr_release_notes(title: str, body: str) -> list[str]:
             ]
         return []
     errors: list[str] = []
+    sections = {section for section, section_items in parsed.sectioned if section_items}
+    if parsed.unsectioned or not sections:
+        errors.append(
+            "Group every bullet in `## Release Notes` under an explicit category subheading "
+            "(`### Breaking Changes`, `### New`, `### Improved`, `### Security`, or `### Fixed`) "
+            "so improvements and bug fixes are not misfiled under `## New`."
+        )
+    if is_breaking and UserSection.BREAKING not in sections:
+        errors.append(
+            "Breaking PRs must include a `### Breaking Changes` subsection inside `## Release Notes`."
+        )
+    if not is_breaking and UserSection.BREAKING in sections:
+        errors.append(
+            "Non-breaking PRs cannot include `### Breaking Changes` in `## Release Notes`; "
+            "mark the PR title with `!` or add a `BREAKING CHANGE:` footer so the SemVer bump matches."
+        )
+    if sections and not is_breaking:
+        if bump == release.BumpLevel.MINOR and not (sections & {UserSection.NEW, UserSection.IMPROVED}):
+            errors.append(
+                "`feat` PRs bump the minor version and must include `### New` or `### Improved` in "
+                "`## Release Notes` (or use `fix:` for bug-fix-only changes)."
+            )
+        elif bump == release.BumpLevel.PATCH:
+            if UserSection.NEW in sections:
+                errors.append(
+                    "Patch PRs (`fix`, `perf`, `revert`) cannot include `### New` in `## Release Notes`; "
+                    "use a `feat` PR title so new functionality bumps the minor version."
+                )
+            if kind == "perf" and UserSection.IMPROVED not in sections:
+                errors.append(
+                    "`perf` PRs must include `### Improved` in `## Release Notes`."
+                )
+            if kind != "perf" and not (sections & {UserSection.FIXED, UserSection.SECURITY}):
+                errors.append(
+                    "`fix` and `revert` PRs must include `### Fixed` or `### Security` in `## Release Notes` "
+                    "(or use `feat` when shipping enhancements without a bug fix)."
+                )
     items = [
         *parsed.highlights,
         *(item for _, section_items in parsed.sectioned for item in section_items),
@@ -763,7 +812,7 @@ def insert_entry(changelog: str, version: str, entry: str) -> Optional[str]:
     at: Optional[int] = None
     for heading in re.finditer(r"^## \[([^\]]+)\]", changelog[search_from:], re.MULTILINE):
         heading_text = heading.group(1)
-        if re.fullmatch(r"\d+\.\d+\.\d+", heading_text):
+        if release.VERSION.fullmatch(heading_text):
             if target_version > release.parse_version(heading_text):
                 at = search_from + heading.start()
                 break

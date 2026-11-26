@@ -1,23 +1,35 @@
+import { percentText } from "../i18n/format.ts";
+import { integerText } from "../i18n/numbers.ts";
 import { translate, translateTv } from "../i18n/translate.ts";
 import { el } from "../ui/screen.ts";
 import { heading } from "./headings.ts";
 import type { SubtitleAppearance } from "../contracts/v2/subtitles.ts";
 import type { TrackView } from "./controller.ts";
 import type { SyncTimingView } from "./subtitleSync.ts";
-import { chevronForwardIcon, magnifyingGlassIcon, uturnBackwardIcon, waveformIcon } from "./playerIcons.ts";
-import { appearanceSummary, BACKGROUND_COLORS, choiceLabel, choiceOptions, delayLabel, delayOptions, FONT_COLORS, FONT_FAMILIES, FONT_SIZES, opacityOptions, POSITIONS, providerLabel, resultDetail, STYLES } from "./subtitleAppearance.ts";
+import { arrowDownCircleOutlineIcon, chevronBackwardIcon, chevronForwardIcon, closeIcon, globeIcon, magnifyingGlassIcon, spinnerIcon, starFillIcon, uturnBackwardIcon, warningTriangleOutlineIcon, waveformIcon } from "./playerIcons.ts";
+import { appearanceSummary, BACKGROUND_COLORS, choiceLabel, choiceOptions, delayLabel, delayOptions, FONT_COLORS, FONT_FAMILIES, FONT_SIZES, type LabeledChoice, languageLabel, opacityOptions, POSITIONS, providerLabel, resultDetail, scoreTier, STYLES, type LanguageChoice } from "./subtitleAppearance.ts";
+import { renderSubtitleDialog } from "./subtitleDialog.ts";
+import type { SubtitleSearchView } from "./subtitleSearch.ts";
 
 /** The Subtitles pane's state. A picker floats over the pane it opened from, including Video's PICTURE and PLAYBACK rows. */
 export type SubtitlePane =
     | { readonly kind: "tracks" }
     | { readonly kind: "appearance" }
-    | { readonly kind: "picker"; readonly title: string; readonly field: string; readonly selected: string; readonly options: readonly { readonly id: string; readonly label: string }[]; readonly origin: { readonly pane: "tracks" | "appearance" | "video"; readonly focusId: string } };
+    | { readonly kind: "picker"; readonly title: string; readonly field: string; readonly selected: string; readonly options: readonly LabeledChoice[]; readonly origin: { readonly pane: "tracks" | "appearance" | "video"; readonly focusId: string } };
 
-function choice(id: string, label: string, current: boolean, detail?: string): HTMLButtonElement {
+function colorSwatch(hex: string): HTMLElement {
+    const swatch = el("span", "player-color-swatch");
+    swatch.style.backgroundColor = hex;
+    swatch.setAttribute("aria-hidden", "true");
+    return swatch;
+}
+
+function choice(id: string, label: string, current: boolean, detail?: string, swatchHex?: string): HTMLButtonElement {
     const button = el("button", "player-choice");
     button.type = "button";
     button.setAttribute("data-focus", id);
     button.setAttribute("aria-pressed", String(current));
+    if (swatchHex !== undefined) button.append(colorSwatch(swatchHex));
     const copy = el("span", "player-choice-copy");
     copy.append(el("span", "player-choice-label", label));
     if (detail !== undefined && detail !== "") copy.append(el("span", "player-choice-detail", detail));
@@ -30,7 +42,7 @@ function choice(id: string, label: string, current: boolean, detail?: string): H
  * `HUDSettingRow` (TVPlayerInfoHUD.swift:494, label at 548): label left, value right-aligned, then a chevron when the row opens a picker.
  * `glyph` (text) or `icon` (inline SVG) stands in for its `systemImage` at 20pt semibold; Appearance's `textformat` reads "Aa".
  */
-export function settingRow(id: string, label: string, value: string, options: { readonly chevron?: boolean; readonly detail?: string; readonly glyph?: string; readonly icon?: string; readonly pressed?: boolean } = {}): HTMLButtonElement {
+export function settingRow(id: string, label: string, value: string, options: { readonly chevron?: boolean; readonly detail?: string; readonly glyph?: string; readonly icon?: string; readonly pressed?: boolean; readonly swatchHex?: string } = {}): HTMLButtonElement {
     const button = el("button", "player-choice player-setting");
     button.type = "button";
     button.setAttribute("data-focus", id);
@@ -48,7 +60,15 @@ export function settingRow(id: string, label: string, value: string, options: { 
         copy.append(el("span", "player-setting-label", label), el("span", "player-choice-detail", options.detail));
         button.append(copy);
     }
-    if (value !== "") button.append(el("span", "player-setting-value", value));
+    if (value !== "" || options.swatchHex !== undefined) {
+        if (options.swatchHex !== undefined) {
+            const valueGroup = el("span", "player-setting-value player-setting-value-swatch");
+            valueGroup.append(colorSwatch(options.swatchHex), el("span", "", value));
+            button.append(valueGroup);
+        } else {
+            button.append(el("span", "player-setting-value", value));
+        }
+    }
     if (options.chevron !== false) {
         const chevron = el("span", "player-setting-chevron");
         chevron.innerHTML = chevronForwardIcon();
@@ -79,9 +99,62 @@ export function overlayPicker(list: HTMLElement, pane: Extract<SubtitlePane, { k
     picker.setAttribute("role", "dialog");
     picker.setAttribute("aria-label", pane.title);
     const options = el("div", "player-menu-picker-options");
-    for (const option of pane.options) options.append(choice(`subtitle-picker:${option.id}`, option.label, option.id === pane.selected));
+    for (const option of pane.options) options.append(choice(`subtitle-picker:${option.id}`, option.label, option.id === pane.selected, undefined, option.colorHex));
     picker.append(el("h2", "player-menu-picker-title", pane.title), options);
     list.append(behind, picker);
+}
+
+/**
+ * `SubtitleAppearanceDialog` (TVPlayerInfoHUD.swift:1125-1446, silo-apple 3289bedb): 720px floating dialog over the dimmed
+ * Subtitles pane with eyebrow, title, 46px close button, Apple's row order, toggles, and 18px color swatches.
+ * "Use device settings" is omitted because Samsung TVs have no system caption appearance API (docs/settings.md).
+ */
+export function overlayAppearance(list: HTMLElement, tracks: TrackView): void {
+    const display = tracks.subtitleTools?.display;
+    if (display === undefined) return;
+    const appearance = display.appearance;
+    const behind = el("div", "player-menu-behind");
+    behind.append(...Array.from(list.childNodes));
+    behind.inert = true;
+    for (const node of behind.querySelectorAll("[data-focus]")) node.removeAttribute("data-focus");
+
+    const dialog = el("div", "player-appearance-dialog");
+    dialog.setAttribute("role", "dialog");
+    dialog.setAttribute("aria-label", translate("player.hud.styleAndColors"));
+
+    const header = el("div", "player-appearance-header");
+    const titles = el("div", "player-appearance-titles");
+    titles.append(
+        el("p", "player-appearance-eyebrow", translate("player.hud.appearanceEyebrow")),
+        el("h2", "player-appearance-title", translate("player.hud.styleAndColors")),
+    );
+    const close = el("button", "player-appearance-close");
+    close.type = "button";
+    close.setAttribute("data-focus", "subtitle-appearance-close");
+    close.setAttribute("aria-label", translate("player.hud.closeAppearance"));
+    close.innerHTML = closeIcon();
+    header.append(titles, close);
+
+    const rows = el("div", "player-appearance-rows");
+    rows.append(
+        settingRow("subtitle-appearance:backgroundStyle", translate("player.subtitles.style.backgroundStyle"), appearanceDetail(appearance, "backgroundStyle")),
+        settingRow("subtitle-appearance:fontFamily", translate("player.subtitles.style.font"), appearanceDetail(appearance, "fontFamily")),
+        settingRow("subtitle-appearance:fontSize", translate("player.subtitles.style.size"), appearanceDetail(appearance, "fontSize")),
+        settingRow("subtitle-appearance:fontColor", translate("player.hud.appearanceText"), appearanceDetail(appearance, "fontColor"), { swatchHex: appearance.fontColor }),
+    );
+    if (display.textOpacity) {
+        rows.append(settingRow("subtitle-appearance:textOpacity", translate("player.subtitles.style.textOpacityLabel"), appearanceDetail(appearance, "textOpacity")));
+    }
+    rows.append(
+        settingRow("subtitle-appearance:textOutline", translate("player.subtitles.style.textOutline"), appearanceDetail(appearance, "textOutline"), { chevron: false, pressed: appearance.textOutline }),
+        settingRow("subtitle-appearance:textOutlineColor", translate("player.hud.subtitleOutline"), appearanceDetail(appearance, "textOutlineColor"), appearance.textOutline ? { swatchHex: appearance.textOutlineColor } : {}),
+        settingRow("subtitle-appearance:backgroundColor", translate("player.subtitles.style.background"), appearanceDetail(appearance, "backgroundColor"), appearance.backgroundStyle === "box" ? { swatchHex: appearance.backgroundColor } : {}),
+        settingRow("subtitle-appearance:backgroundOpacity", translate("player.subtitles.style.opacity"), appearanceDetail(appearance, "backgroundOpacity")),
+        settingRow("subtitle-appearance:position", translate("player.subtitles.style.position"), appearanceDetail(appearance, "position")),
+    );
+
+    dialog.append(header, rows);
+    list.append(behind, dialog);
 }
 
 export function pickerFor(tracks: TrackView, field: string): Omit<Extract<SubtitlePane, { kind: "picker" }>, "origin"> | undefined {
@@ -92,12 +165,12 @@ export function pickerFor(tracks: TrackView, field: string): Omit<Extract<Subtit
     if (field === "fontSize") return { kind: "picker", title: translate("player.hud.pickerSubtitleSize"), field, selected: appearance.fontSize, options: choiceOptions(FONT_SIZES) };
     if (field === "position") return { kind: "picker", title: translate("player.hud.pickerSubtitlePosition"), field, selected: appearance.position, options: choiceOptions(POSITIONS) };
     if (field === "fontFamily") return { kind: "picker", title: translate("player.hud.pickerSubtitleFont"), field, selected: appearance.fontFamily, options: choiceOptions(FONT_FAMILIES) };
-    if (field === "fontColor") return { kind: "picker", title: translate("player.hud.pickerTextColor"), field, selected: appearance.fontColor, options: choiceOptions(FONT_COLORS) };
+    if (field === "fontColor") return { kind: "picker", title: translate("player.hud.pickerTextColor"), field, selected: appearance.fontColor, options: choiceOptions(FONT_COLORS, true) };
     if (field === "textOpacity") return { kind: "picker", title: translate("player.subtitles.style.textOpacityLabel"), field, selected: String(appearance.textOpacity), options: opacityOptions(appearance.textOpacity, 25) };
     if (field === "textOutline") return { kind: "picker", title: translate("player.hud.subtitleOutline"), field, selected: String(appearance.textOutline), options: [{ id: "true", label: translate("options.on") }, { id: "false", label: translate("options.off") }] };
-    if (field === "textOutlineColor") return { kind: "picker", title: translate("player.hud.pickerOutlineColor"), field, selected: appearance.textOutlineColor, options: choiceOptions(BACKGROUND_COLORS) };
+    if (field === "textOutlineColor") return { kind: "picker", title: translate("player.hud.pickerOutlineColor"), field, selected: appearance.textOutlineColor, options: choiceOptions(BACKGROUND_COLORS, true) };
     if (field === "backgroundStyle") return { kind: "picker", title: translate("player.hud.pickerSubtitleStyle"), field, selected: appearance.backgroundStyle, options: choiceOptions(STYLES) };
-    if (field === "backgroundColor") return { kind: "picker", title: translate("player.hud.pickerBackgroundColor"), field, selected: appearance.backgroundColor, options: choiceOptions(BACKGROUND_COLORS) };
+    if (field === "backgroundColor") return { kind: "picker", title: translate("player.hud.pickerBackgroundColor"), field, selected: appearance.backgroundColor, options: choiceOptions(BACKGROUND_COLORS, true) };
     if (field === "backgroundOpacity") return { kind: "picker", title: translate("player.subtitles.style.backgroundOpacityLabel"), field, selected: String(appearance.backgroundOpacity), options: opacityOptions(appearance.backgroundOpacity, 0) };
     return undefined;
 }
@@ -108,54 +181,174 @@ export function appearanceDetail(appearance: SubtitleAppearance, field: string):
         case "position": return choiceLabel(POSITIONS, appearance.position);
         case "fontFamily": return choiceLabel(FONT_FAMILIES, appearance.fontFamily);
         case "fontColor": return choiceLabel(FONT_COLORS, appearance.fontColor);
-        case "textOpacity": return `${appearance.textOpacity}%`;
+        case "textOpacity": return percentText(appearance.textOpacity);
         case "textOutline": return appearance.textOutline ? translate("options.on") : translate("options.off");
-        case "textOutlineColor": return choiceLabel(BACKGROUND_COLORS, appearance.textOutlineColor);
+        case "textOutlineColor": return appearance.textOutline ? choiceLabel(BACKGROUND_COLORS, appearance.textOutlineColor) : "—";
         case "backgroundStyle": return appearance.backgroundStyle === "outline" ? translate("player.subtitles.background.outline") : choiceLabel(STYLES, appearance.backgroundStyle);
-        case "backgroundColor": return choiceLabel(BACKGROUND_COLORS, appearance.backgroundColor);
-        case "backgroundOpacity": return appearance.backgroundOpacity === 0 ? translate("options.off") : `${appearance.backgroundOpacity}%`;
+        case "backgroundColor": return appearance.backgroundStyle === "box" ? choiceLabel(BACKGROUND_COLORS, appearance.backgroundColor) : "—";
+        case "backgroundOpacity": return appearance.backgroundStyle === "box" && appearance.backgroundOpacity > 0 ? percentText(appearance.backgroundOpacity) : translate("options.off");
         default: return "";
     }
 }
 
-/** The Appearance and Search panes, which replace both columns. */
-export function fillSubtitleTools(list: HTMLElement, tracks: TrackView, pane: SubtitlePane): void {
-    const tools = tracks.subtitleTools;
-    if (tools === undefined) return;
-    if (pane.kind === "appearance") {
-        const display = tools.display;
-        if (display === undefined) return;
-        list.append(el("h2", "player-menu-heading", heading("player.hud.subtitleAppearance")));
-        list.append(choice("subtitle-appearance-back", translate("common.back"), false));
-        const rows = ["backgroundStyle", "fontSize", "position", "fontFamily", "fontColor", ...(display.textOpacity ? ["textOpacity"] : []), "textOutline", "textOutlineColor", "backgroundColor", "backgroundOpacity"];
-        // Apple's row names (`player.subtitles.style.*`) where its English is Tizen's; the rest keep their wording.
-        const titles: Record<string, string> = { backgroundStyle: translate("player.subtitles.style.backgroundStyle"), fontSize: translate("player.subtitles.style.size"), position: translate("player.subtitles.style.position"), fontFamily: translate("player.subtitles.style.font"), fontColor: "Text color", textOpacity: "Text opacity", textOutline: translate("player.hud.subtitleOutline"), textOutlineColor: "Outline color", backgroundColor: "Background color", backgroundOpacity: "Background opacity" };
-        for (const field of rows) list.append(choice(`subtitle-appearance:${field}`, titles[field] ?? field, false, appearanceDetail(display.appearance, field)));
-        return;
+function searchLanguageName(search: SubtitleSearchView): string {
+    if (search.language === undefined) return translate("player.tracks.subtitles");
+    return [...search.suggested, ...search.other].find(item => item.code === search.language)?.label ?? languageLabel(search.language);
+}
+
+function searchLanguageRow(item: LanguageChoice, current: boolean): HTMLButtonElement {
+    const button = el("button", current ? "player-choice player-choice-current player-ai-row player-search-language-row" : "player-choice player-ai-row player-search-language-row");
+    button.type = "button";
+    button.setAttribute("data-focus", `subtitle-language:${item.code}`);
+    button.setAttribute("aria-pressed", String(current));
+    const glyph = el("span", "player-setting-glyph");
+    glyph.innerHTML = item.hint === "subtitleSearch.preferred" ? starFillIcon() : globeIcon();
+    glyph.setAttribute("aria-hidden", "true");
+    const copy = el("span", "player-choice-copy");
+    copy.append(el("span", "player-setting-label", item.label));
+    if (item.hint !== undefined) copy.append(el("span", "player-choice-detail", translate(item.hint)));
+    const chevron = el("span", "player-setting-chevron");
+    chevron.innerHTML = chevronForwardIcon();
+    button.append(glyph, copy, chevron);
+    return button;
+}
+
+function searchResultRow(result: SubtitleSearchView["results"][number], downloading: boolean): HTMLButtonElement {
+    const button = el("button", downloading ? "player-choice player-choice-current player-search-result-row" : "player-choice player-search-result-row");
+    button.type = "button";
+    button.setAttribute("data-focus", `subtitle-result:${result.key}`);
+    button.setAttribute("aria-pressed", String(downloading));
+    const scoreCol = el("span", "player-search-score-col");
+    const tier = scoreTier(result.score);
+    const badge = el("span", `player-search-score-badge player-search-score-${tier}`, integerText(Math.round(result.score)));
+    badge.setAttribute("data-score-tier", tier);
+    scoreCol.append(badge, el("span", "player-search-match-label", translate("subtitleSearch.matchLabel")));
+    const copy = el("span", "player-choice-copy player-search-result-copy");
+    const title = result.releaseName !== "" ? result.releaseName : translate("subtitleSearch.untitled");
+    copy.append(el("span", "player-search-result-title", title));
+    const detail = resultDetail(result);
+    if (detail !== "") copy.append(el("span", "player-choice-detail player-search-result-detail", detail));
+    if (downloading) {
+        const spinner = el("span", "player-search-result-spinner");
+        spinner.innerHTML = spinnerIcon();
+        spinner.setAttribute("aria-hidden", "true");
+        button.append(scoreCol, copy, spinner);
+    } else {
+        const providerCol = el("span", "player-search-provider-col");
+        providerCol.append(el("span", "player-search-provider-name", providerLabel(result.provider)));
+        const format = el("span", "player-search-format");
+        const formatIcon = el("span", "player-search-format-icon");
+        formatIcon.innerHTML = arrowDownCircleOutlineIcon();
+        formatIcon.setAttribute("aria-hidden", "true");
+        format.append(formatIcon, el("span", "player-search-format-text", result.format.toUpperCase()));
+        providerCol.append(format);
+        button.append(scoreCol, copy, providerCol);
     }
-    const search = tools.search;
-    if (search.phase !== "closed") {
-        list.append(el("h2", "player-menu-heading", "SEARCH"));
-        list.append(choice("subtitle-search-back", search.phase === "languages" ? translate("common.back") : translate("subtitleSearch.chooseAnother"), false));
-        if (search.phase === "searching") {
-            list.append(el("p", "player-menu-note", search.status));
-            list.append(choice("subtitle-search-cancel", translate("common.cancel"), false));
-        } else if (search.phase === "failed") {
-            if (search.message !== "") list.append(el("p", "player-menu-note", search.message));
-            if (search.canRetry) list.append(choice("subtitle-search-retry", "Try Again", false));
-        } else if (search.phase === "languages") {
-            if (!search.offered && search.unavailableReason !== "") list.append(el("p", "player-menu-note", search.unavailableReason));
-            for (const item of [...search.suggested, ...search.other]) list.append(choice(`subtitle-language:${item.code}`, item.label, item.code === search.language, item.hint === undefined ? undefined : translate(item.hint)));
-        } else {
-            for (const warning of search.warnings) list.append(el("p", "player-menu-note", warning));
-            if (search.message !== "") list.append(el("p", "player-menu-note", search.message));
-            for (const result of search.results) {
-                const title = result.releaseName !== "" ? result.releaseName : providerLabel(result.provider);
-                list.append(choice(`subtitle-result:${result.key}`, title, result.key === search.downloadingKey, [providerLabel(result.provider), result.format.toUpperCase(), resultDetail(result)].filter(part => part !== "").join(" · ")));
+    return button;
+}
+
+function searchChooseAnotherRow(): HTMLButtonElement {
+    const button = el("button", "player-choice player-ai-row player-search-back-row");
+    button.type = "button";
+    button.setAttribute("data-focus", "subtitle-search-back");
+    const glyph = el("span", "player-setting-glyph player-search-back-icon");
+    glyph.innerHTML = chevronBackwardIcon();
+    glyph.setAttribute("aria-hidden", "true");
+    button.append(glyph, el("span", "player-setting-label", translate("subtitleSearch.chooseAnother")));
+    return button;
+}
+
+function searchWarningRow(message: string): HTMLElement {
+    const row = el("p", "player-search-warning");
+    const icon = el("span", "player-search-warning-icon");
+    icon.innerHTML = warningTriangleOutlineIcon();
+    icon.setAttribute("aria-hidden", "true");
+    row.append(icon, el("span", "player-search-warning-text", message));
+    return row;
+}
+
+/**
+ * `SubtitleSearchMenu`'s tvOS dialog (`TVSubtitleDialog.swift`, `SubtitleSearchMenu.swift:315-585`, silo-apple 3289bedb):
+ * shared 1280x800 modal dialog over a dimmed full-player backdrop with title, phase subtitle, hairline dividers, grouped
+ * language rows / scored result rows / searching & failure panels, and non-focusable back/status footer.
+ */
+export function renderSearchDialog(host: HTMLElement, tracks: TrackView, onBackdropDismiss: () => void): void {
+    const search = tracks.subtitleTools?.search;
+    if (search === undefined || search.phase === "closed") return;
+    const subtitle = search.phase === "languages"
+        ? translate("subtitleSearch.explainer")
+        : search.phase === "searching"
+            ? search.language !== undefined ? translate("subtitleSearch.searchingIn", { language: searchLanguageName(search) }) : translate("subtitleSearch.searchingInYourLanguage")
+            : search.phase === "failed"
+                ? translate("subtitleSearch.failedTitle")
+                : translate("subtitleSearch.resultCount", { language: searchLanguageName(search), count: search.results.length });
+    const backHint = search.downloadingKey !== undefined
+        ? translate("subtitleSearch.waitForDownload")
+        : search.phase === "languages" ? translate("player.tracks.backToSubtitles") : translate("subtitleSearch.backToLanguages");
+    const statusHint = search.downloadingKey !== undefined
+        ? translate("subtitleSearch.adding")
+        : search.phase === "results" && search.results.length > 0 ? translate("subtitleSearch.selectHint") : "";
+
+    renderSubtitleDialog(host, {
+        title: translate("subtitleSearch.title"),
+        subtitle,
+        backHint,
+        statusHint,
+        className: "player-search-menu",
+        onBackdropDismiss: () => { if (search.downloadingKey === undefined) onBackdropDismiss(); },
+        body: (body) => {
+            if (search.phase === "searching") {
+                const center = el("div", "player-subtitle-dialog-center");
+                const head = el("div", "player-search-searching-head");
+                const spinner = el("span", "player-search-searching-spinner");
+                spinner.innerHTML = spinnerIcon();
+                spinner.setAttribute("aria-hidden", "true");
+                head.append(spinner, el("span", "player-search-searching-title", translate("subtitleSearch.searching")));
+                const note = el("p", "player-search-searching-note", translate("subtitleSearch.searchingNote"));
+                const actions = el("div", "player-subtitle-dialog-actions");
+                actions.append(choice("subtitle-search-cancel", translate("common.cancel"), false));
+                center.append(head, note, actions);
+                body.append(center);
+            } else if (search.phase === "failed") {
+                const center = el("div", "player-subtitle-dialog-center");
+                if (search.message !== "") {
+                    const fail = el("p", "player-search-failure");
+                    const icon = el("span", "player-search-failure-icon");
+                    icon.innerHTML = warningTriangleOutlineIcon();
+                    icon.setAttribute("aria-hidden", "true");
+                    fail.append(icon, el("span", "player-search-failure-text", search.message));
+                    center.append(fail);
+                }
+                const actions = el("div", "player-subtitle-dialog-actions");
+                if (search.canRetry) actions.append(choice("subtitle-search-retry", translate("subtitleSearch.tryAgain"), false));
+                actions.append(choice("subtitle-search-back", translate("common.back"), false));
+                center.append(actions);
+                body.append(center);
+            } else if (search.phase === "languages") {
+                if (!search.offered && search.unavailableReason !== "") body.append(el("p", "player-menu-note", search.unavailableReason));
+                if (search.suggested.length > 0) {
+                    body.append(el("h2", "player-menu-heading", heading("subtitleSearch.preferredHeader")));
+                    for (const item of search.suggested) body.append(searchLanguageRow(item, item.code === search.language));
+                }
+                if (search.other.length > 0 || search.suggested.length === 0) {
+                    body.append(el("h2", "player-menu-heading", heading(search.suggested.length === 0 ? "subtitleSearch.languageHeader" : "subtitleSearch.allLanguagesHeader")));
+                    for (const item of search.other) body.append(searchLanguageRow(item, item.code === search.language));
+                }
+            } else {
+                for (const warning of search.warnings) body.append(searchWarningRow(warning));
+                if (search.results.length === 0) {
+                    const emptyText = search.language !== undefined
+                        ? translate("subtitleSearch.noResults", { language: searchLanguageName(search) })
+                        : translate("subtitleSearch.noResultsAnyLanguage");
+                    body.append(el("p", "player-search-empty", emptyText));
+                    body.append(searchChooseAnotherRow());
+                } else {
+                    if (search.message !== "") body.append(el("p", "player-menu-note", search.message));
+                    for (const result of search.results) body.append(searchResultRow(result, result.key === search.downloadingKey));
+                }
             }
-        }
-        return;
-    }
+        },
+    });
 }
 
 /** The running job: ProgressView beside its whole percentage, with the phase under it. Neither takes focus. */

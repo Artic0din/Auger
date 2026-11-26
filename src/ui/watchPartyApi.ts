@@ -5,10 +5,10 @@ import { ApiError } from "../api/errors.ts";
 import { operations } from "../api/operations.ts";
 import type { RequestSpec } from "../api/http.ts";
 import { watchTogetherOperations } from "../api/watchTogetherOperations.ts";
-import type { CatalogPage, Episode, ItemDetail, Season } from "../contracts/v2/catalog.ts";
+import type { CatalogPage, Episode, HomeSection, ItemDetail, Season } from "../contracts/v2/catalog.ts";
 import type { PlaybackCapabilities } from "../contracts/v2/playback.ts";
 import {
-    type CreatableSelectionMode, type GuestControlPolicy, type NewSuggestion, type Picker, type RoomAccess, type RoomSelection, type SuggestionPage,
+    type CreatableSelectionMode, type GuestControlPolicy, type MemberState, type NewSuggestion, type Picker, type RoomAccess, type RoomSelection, type SuggestionPage,
     roomSocketHandshake, type WatchTogetherCapabilities, watchTogetherSocketSupported,
 } from "../contracts/v2/watchTogether.ts";
 import type { NativeSession } from "../session/session.ts";
@@ -19,6 +19,10 @@ import type { RoomSocketApi } from "./watchPartySocket.ts";
 const PLAYBACK_FEATURES = ["watch_party_coordinator_v1", "fixed_media_file_v1"] as const;
 /** Apple's picker reads 40 watchlist items when the server has no picker. */
 const WATCHLIST_LIMIT = 40;
+/** Apple's picker reads 24 recently added movies and 24 recently added series. */
+const RECENT_LIMIT = 24;
+/** Apple's TV picker search page size. */
+const SEARCH_LIMIT = 48;
 
 /** WatchPartySession.supportsSynchronizedParty: the room gate and socket, plus coordinated fixed-file playback. */
 export function supportsSynchronizedParty(room: WatchTogetherCapabilities, playback: PlaybackCapabilities): boolean {
@@ -41,14 +45,19 @@ export interface WatchPartyApi extends RoomSocketApi {
     /** The room as it now stands, read with the room token, to reconcile after a change whose answer was lost. */
     room(roomId: string, token: string, signal: AbortSignal): Promise<RoomAccess>;
     picker(roomId: string, token: string, signal: AbortSignal): Promise<Picker>;
+    memberState?(roomId: string, token: string, contentIds: readonly string[], signal: AbortSignal): Promise<MemberState>;
     suggestions(roomId: string, token: string, cursor: string | undefined, signal: AbortSignal): Promise<SuggestionPage>;
     addSuggestion(roomId: string, token: string, suggestion: NewSuggestion, signal: AbortSignal): Promise<string>;
+    deleteSuggestion?(roomId: string, token: string, suggestionId: string, signal: AbortSignal): Promise<void>;
     setVote(roomId: string, token: string, suggestionId: string, voted: boolean, signal: AbortSignal): Promise<void>;
     promoteSuggestion(roomId: string, token: string, suggestionId: string, signal: AbortSignal): Promise<RoomAccess>;
     item(contentId: string, signal: AbortSignal): Promise<ItemDetail>;
     seasons(seriesId: string, signal: AbortSignal): Promise<Season[]>;
     episodes(seriesId: string, seasonNumber: number, signal: AbortSignal): Promise<Episode[]>;
     watchlist(signal: AbortSignal): Promise<CatalogPage>;
+    homeSections?(signal: AbortSignal): Promise<readonly HomeSection[]>;
+    recentCatalog?(type: "movie" | "series", signal: AbortSignal): Promise<CatalogPage>;
+    searchCatalog?(query: string, cursor: string | undefined, signal: AbortSignal): Promise<CatalogPage>;
 }
 
 export function watchPartyApi(session: Pick<NativeSession, "call" | "http">): WatchPartyApi {
@@ -67,8 +76,10 @@ export function watchPartyApi(session: Pick<NativeSession, "call" | "http">): Wa
         setGuestControlPolicy: (roomId, policy, signal) => call(watchTogetherOperations.setGuestControlPolicy(roomId, policy), signal),
         room: (roomId, token, signal) => call(watchTogetherOperations.room(roomId, token), signal),
         picker: (roomId, token, signal) => call(watchTogetherOperations.picker(roomId, token), signal),
+        memberState: (roomId, token, contentIds, signal) => call(watchTogetherOperations.memberState(roomId, token, contentIds), signal),
         suggestions: (roomId, token, cursor, signal) => call(watchTogetherOperations.suggestions(roomId, token, cursor), signal),
         addSuggestion: (roomId, token, suggestion, signal) => call(watchTogetherOperations.addSuggestion(roomId, token, suggestion), signal),
+        deleteSuggestion: (roomId, token, suggestionId, signal) => call(watchTogetherOperations.deleteSuggestion(roomId, token, suggestionId), signal),
         setVote: (roomId, token, suggestionId, voted, signal) => call(watchTogetherOperations.setVote(roomId, token, suggestionId, voted), signal),
         promoteSuggestion: (roomId, token, suggestionId, signal) => call(watchTogetherOperations.promoteSuggestion(roomId, token, suggestionId), signal),
         socketTicket: (roomId, token, signal) => call(watchTogetherOperations.socketTicket(roomId, token), signal),
@@ -77,6 +88,9 @@ export function watchPartyApi(session: Pick<NativeSession, "call" | "http">): Wa
         seasons: (seriesId, signal) => call(operations.listSeriesSeasons(seriesId), signal),
         episodes: (seriesId, seasonNumber, signal) => call(operations.listSeasonEpisodes(seriesId, seasonNumber), signal),
         watchlist: signal => call(operations.listPersonalItems("watchlist", { limit: WATCHLIST_LIMIT }), signal),
+        homeSections: signal => call(operations.listHomeSections(), signal),
+        recentCatalog: (type, signal) => call(operations.listCatalogItems({ type, limit: RECENT_LIMIT, cursor: undefined, sort: "added_at", order: "desc" }), signal),
+        searchCatalog: (query, cursor, signal) => call(operations.listCatalogItems({ q: query, type: "video", limit: SEARCH_LIMIT, cursor }), signal),
     };
 }
 

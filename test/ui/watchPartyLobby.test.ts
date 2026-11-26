@@ -97,16 +97,84 @@ test("the lobby's remote order: Options, the code and the seats above, the actio
     } finally { await tv.page.context().close(); }
 });
 
-test("Choose a title opens the picker with the group's shelves, read once with the room token", async () => {
+test("Choose a title opens the picker with Apple's shelves, icon-only chrome, and Search (#783)", async () => {
     const { tv, fake } = await inLobby();
     try {
         await button(tv, "choose").click();
         await view(tv, "watchParty:picker:shelves").waitFor();
         await tv.page.locator(".watch-party-shelf").first().waitFor();
-        assert.deepEqual(await texts(tv, ".watch-party-shelf .browse-section-title"), ["Continue Together", "On Your Watchlists"]);
-        assert.equal(await texts(tv, ".watch-party-shelf .browse-card").then(cards => cards.length), 4);
+        const titles = await texts(tv, ".watch-party-shelf .browse-section-title");
+        assert.deepEqual(titles.slice(0, 2), ["Continue Together", "On Your Watchlists"]);
+        assert.ok(titles.includes("Recently Added Movies"), `expected Recently Added Movies in ${titles.join(", ")}`);
+        assert.ok(titles.includes("Recently Added Series"), `expected Recently Added Series in ${titles.join(", ")}`);
         assert.deepEqual(fake.pickerTokens, ["room-proof-one"]);
+        // Chrome icons are icon-only 56x56 capsules matching Skyline's top bar.
+        assert.equal(await button(tv, "picker-search").textContent(), "");
+        assert.equal(await button(tv, "picker-search").getAttribute("aria-label"), "Search");
+        assert.equal(await button(tv, "picker-close").textContent(), "");
+        assert.equal(await button(tv, "picker-close").getAttribute("aria-label"), "Close");
         assert.equal(await tv.focused(), "movie:m0004", "focus opens on the first title");
+        // Search opens Apple's WatchPartySearchPage and lets you pick a matching movie.
+        await button(tv, "picker-search").click();
+        await view(tv, "watchParty:search").waitFor();
+        assert.equal(await tv.focused(), "picker-search-input");
+        const emptyEnterPrevented = await tv.page.locator('[data-focus="picker-search-input"]').evaluate(node => {
+            const event = new KeyboardEvent("keydown", { key: "Enter", keyCode: 13, bubbles: true, cancelable: true });
+            node.dispatchEvent(event);
+            return event.defaultPrevented;
+        });
+        assert.equal(emptyEnterPrevented, false, "Enter on an empty search field leaves default action intact for the TV keyboard");
+        await tv.page.locator('[data-focus="picker-search-input"]').evaluate(node => {
+            (window as unknown as { __searchInputBlurs?: number }).__searchInputBlurs = 0;
+            node.addEventListener("blur", () => {
+                (window as unknown as { __searchInputBlurs: number }).__searchInputBlurs += 1;
+            });
+        });
+        await tv.page.locator('[data-focus="picker-search-input"]').fill("Movie 0004");
+        await tv.page.locator('[data-focus="picker-search-input"]').press("Enter");
+        await tv.page.locator(".watch-party-search-grid .browse-card").first().waitFor();
+        const blursDuringSearch = await tv.page.evaluate(() => (window as unknown as { __searchInputBlurs?: number }).__searchInputBlurs ?? -1);
+        assert.equal(blursDuringSearch, 0, "search renders keep the search header mounted so the focused input never blurs");
+        const completedEnterPrevented = await tv.page.locator('[data-focus="picker-search-input"]').evaluate(node => {
+            const event = new KeyboardEvent("keydown", { key: "Enter", keyCode: 13, bubbles: true, cancelable: true });
+            node.dispatchEvent(event);
+            return event.defaultPrevented;
+        });
+        assert.equal(completedEnterPrevented, false, "Enter on a completed search field still leaves default action intact to reopen the TV keyboard");
+        assert.equal(await tv.focused(), "picker-search-input", "Enter on a completed search field keeps focus on the input for editing");
+        await tv.remote(65376);
+        assert.equal(await tv.focused(), "movie:m0004", "IME Done on a completed search field moves focus to the first result");
+        await tv.page.locator('.watch-party-search-grid [data-focus="movie:m0004"]').evaluate(node => {
+            (window as unknown as { __searchCardFocusouts?: number }).__searchCardFocusouts = 0;
+            node.addEventListener("focusout", () => {
+                (window as unknown as { __searchCardFocusouts: number }).__searchCardFocusouts += 1;
+            });
+        });
+        // A room update while a result card is focused must keep the search grid mounted without blurring it.
+        fake.guestReady = true;
+        fake.snapshot();
+        await tv.page.waitForTimeout(50);
+        const cardFocusouts = await tv.page.evaluate(() => (window as unknown as { __searchCardFocusouts?: number }).__searchCardFocusouts ?? -1);
+        assert.equal(cardFocusouts, 0, "room updates keep the search grid parent mounted so a focused result card never blurs");
+        await tv.page.locator('.watch-party-search-grid [data-focus="movie:m0004"]').click();
+        await view(tv, "watchParty:choice").waitFor();
+        await tv.remote(10009);
+        await view(tv, "watchParty:search").waitFor();
+        // Editing the query and pressing Enter within the debounce window runs the new search immediately rather than focusing stale results.
+        await tv.page.locator('[data-focus="picker-search-input"]').fill("Night Shift");
+        await tv.page.locator('[data-focus="picker-search-input"]').press("Enter");
+        await tv.page.locator('.watch-party-search-grid [data-focus="series:s2"]').waitFor();
+        // Opening a series without next-up from Search -> episode -> Back twice returns to Search.
+        await tv.page.locator('.watch-party-search-grid [data-focus="series:s2"]').click();
+        await view(tv, "watchParty:episodes").waitFor();
+        await tv.page.locator(".watch-party-episode").first().click();
+        await view(tv, "watchParty:choice").waitFor();
+        await tv.remote(10009);
+        await view(tv, "watchParty:episodes").waitFor();
+        await tv.remote(10009);
+        await view(tv, "watchParty:search").waitFor();
+        await tv.remote(10009);
+        await view(tv, "watchParty:picker:shelves").waitFor();
         await tv.remote(10009);
         await view(tv, "watchParty:lobby").waitFor();
         assert.equal(await tv.focused(), "choose", "Back returns to the lobby's action");
@@ -125,8 +193,8 @@ test("the picker's shelves caption a series with the years it ran", async () => 
     try {
         await button(tv, "choose").click();
         await view(tv, "watchParty:picker:shelves").waitFor();
-        await tv.page.locator('.watch-party-shelf [data-focus="series:s2"]').waitFor();
-        const line = (id: string) => tv.page.locator(`.watch-party-shelf [data-focus="${id}"] .browse-card-subtitle`).textContent();
+        await tv.page.locator('.watch-party-shelf [data-focus="series:s2"]').first().waitFor();
+        const line = (id: string) => tv.page.locator(`.watch-party-shelf [data-focus="${id}"] .browse-card-subtitle`).first().textContent();
         assert.equal(await line("series:s1"), "2020 – Present");
         assert.equal(await line("series:s2"), "2021 – 2024");
     } finally { await tv.page.context().close(); }
@@ -193,6 +261,23 @@ test("a series the group is part-way through goes straight to its next episode, 
         await view(tv, "watchParty:choice").waitFor();
         assert.equal(await tv.page.locator(".watch-party-choice-title").textContent(), "Harbor Lights");
         assert.equal(await tv.page.locator(".watch-party-choice-facts").textContent(), "S1 · E2 · Harbor Lights chapter 1.2");
+        // Choice page shows "See all episodes" and "Who's seen it" member watch states (#783).
+        assert.equal(await button(tv, "browse-series").textContent(), "See all episodes");
+        await tv.page.locator(".watch-party-who-seen-row").first().waitFor();
+        assert.deepEqual(await texts(tv, ".watch-party-who-seen-name"), ["Owner", "Sam"]);
+        assert.deepEqual(await texts(tv, ".watch-party-who-seen-state"), ["Watched", "Not watched · Watchlist"]);
+        // D-pad Down reaches the reading zone for "Who's seen it" so large parties can scroll member history.
+        await tv.remote(40);
+        assert.equal(await tv.focused(), "browse-series");
+        await tv.remote(40);
+        assert.equal(await tv.focused(), "who-seen");
+        await tv.remote(38);
+        assert.equal(await tv.focused(), "browse-series");
+        await button(tv, "browse-series").click();
+        await view(tv, "watchParty:episodes").waitFor();
+        assert.equal(await tv.page.locator(".watch-party-episodes-title").textContent(), "Harbor Lights");
+        await tv.remote(10009);
+        await view(tv, "watchParty:choice").waitFor();
         await button(tv, "confirm").click();
         await view(tv, "watchParty:lobby").waitFor();
         assert.deepEqual(fake.roomChanges.map(change => change.body), [{ content_id: "episode:s1e12" }]);
@@ -219,7 +304,10 @@ test("a series with no next-up opens its seasons and episodes, and an episode is
         assert.ok((rail[1]?.[0] ?? 0) > (rail[0]?.[0] ?? 0));
         assert.equal(await tv.page.locator(".watch-party-season-tabs").evaluate(node => [node.classList.contains("browse-row"), getComputedStyle(node).overflowX]).then(value => value.join()), "true,hidden", "season tabs use the shared horizontal row, so focus reveals them");
         await button(tv, "season:2").click();
-        await tv.eventually(async () => (await texts(tv, ".watch-party-episode-number"))[0] === "E1" && (await tv.page.locator('.watch-party-season-tab[aria-pressed="true"]').textContent()) === "Season 2", "season 2 episodes");
+        await tv.eventually(async () => (await tv.page.locator(".watch-party-episode-still").count()) > 0 && (await tv.page.locator('.watch-party-season-tab[aria-pressed="true"]').textContent()) === "Season 2", "season 2 episodes with 16:9 still cards");
+        const stillBox = await tv.page.locator(".watch-party-episode-still").first().boundingBox();
+        assert.deepEqual([Math.round(stillBox?.width ?? 0), Math.round(stillBox?.height ?? 0)], [400, 225], "episode cards use 400x225 16:9 stills");
+        assert.equal(await button(tv, "episodes-close").count(), 0, "tvOS episode picker omits the text Close button");
         await tv.page.locator(".watch-party-episode").first().click();
         await view(tv, "watchParty:choice").waitFor();
         assert.match(await tv.page.locator(".watch-party-choice-facts").textContent() ?? "", /^S2 · E1 · /);
@@ -233,20 +321,22 @@ test("a series with no next-up opens its seasons and episodes, and an episode is
     } finally { await tv.page.context().close(); }
 });
 
-test("a failed picker read shows the reason with Try Again, and an empty picker says what to do", async () => {
-    const { tv, fake } = await inLobby("host", fake => { fake.pickerFailure = problem(503, "unavailable", "Down for maintenance."); });
+test("a failed and empty picker shows Apple's empty state with the warning banner, focuses Search, and omits Try Again (#783)", async () => {
+    const { tv, fake } = await inLobby();
     try {
+        fake.pickerFailure = problem(503, "unavailable", "Down for maintenance.");
+        fake.titles.clear();
         await button(tv, "choose").click();
         await view(tv, "watchParty:picker:empty").waitFor();
         await tv.page.locator(".watch-party-banner").waitFor();
+        assert.equal(await tv.page.locator(".watch-party-picker-empty-state .search-state-title").textContent(), "Nothing to pick from yet");
+        assert.equal(await tv.page.locator(".watch-party-picker-empty-state .search-state-description").textContent(), "Search for a title, or add something to a watchlist.");
         assert.equal(await tv.page.locator(".watch-party-banner").textContent(), "Down for maintenance.");
-        assert.equal(await tv.focused(), "picker-close", "focus stays on the strip, where it opened");
-        await tv.remote(40);
-        assert.equal(await tv.focused(), "picker-retry", "Down reaches Try Again");
+        assert.equal(await button(tv, "picker-retry").count(), 0, "tvOS empty state has no extra Try Again button");
+        assert.equal(await tv.focused(), "picker-search", "empty state focuses Search on the chrome strip");
         fake.pickerFailure = undefined;
-        await button(tv, "picker-retry").click();
-        await tv.page.locator(".watch-party-shelf").first().waitFor();
-        assert.equal(await tv.page.locator(".watch-party-banner").count(), 0);
+        await tv.remote(10009);
+        await view(tv, "watchParty:lobby").waitFor();
     } finally { await tv.page.context().close(); }
 });
 
@@ -346,13 +436,13 @@ test("Leave party as the host is Apple's leaveRoom: no confirmation, this TV lea
         await button(tv, "options").click();
         await button(tv, "leave").click();
         await view(tv, "watchParty:hub").waitFor();
-        assert.equal(await tv.focused(), "create");
+        assert.equal(await tv.focused(), "rejoin");
         await tv.eventually(async () => fake.sockets[0]?.closed === true, "room socket closed");
         assert.deepEqual(fake.closedRooms, [], "the server holds the party while its host is away; End party ends it");
     } finally { await tv.page.context().close(); }
 });
 
-test("a season with no episodes says so in Apple's words, and Try Again reads it once more", async () => {
+test("a season with no episodes uses tvOS empty copy and Reload episodes (#783)", async () => {
     const { tv, fake } = await inLobby("host", fake => { fake.episodesReply = { status: 200, body: { items: [] } }; });
     try {
         await button(tv, "choose").click();
@@ -360,30 +450,27 @@ test("a season with no episodes says so in Apple's words, and Try Again reads it
         await button(tv, "series:s2").click();
         await view(tv, "watchParty:episodes").waitFor();
         await tv.page.locator(".watch-party-empty-title").waitFor();
-        assert.equal(await tv.page.locator(".watch-party-empty-title").textContent(), "No episodes");
-        assert.equal(await tv.page.locator(".watch-party-episodes .watch-party-lead").textContent(), "Nothing in this season is available to play.");
-        assert.equal(await button(tv, "episodes-retry").textContent(), "Try Again", "offered with no error too");
+        assert.equal(await tv.page.locator(".watch-party-empty-title").textContent(), "No episodes in this season");
+        assert.equal(await button(tv, "episodes-retry").textContent(), "Reload episodes", "offered with no error too");
         fake.episodesReply = undefined;
         await button(tv, "episodes-retry").click();
         await tv.page.locator(".watch-party-episode").first().waitFor();
     } finally { await tv.page.context().close(); }
 });
 
-test("a failed episodes read puts the reason under No episodes, with Try Again", async () => {
+test("a failed episodes read puts the warning banner under No episodes in this season, with Reload episodes (#783)", async () => {
     const { tv } = await inLobby("host", fake => { fake.episodesReply = problem(503, "unavailable", "Down for maintenance."); });
     try {
         await button(tv, "choose").click();
         await view(tv, "watchParty:picker:shelves").waitFor();
         await button(tv, "series:s2").click();
         await tv.page.locator(".watch-party-empty-title").waitFor();
-        assert.equal(await tv.page.locator(".watch-party-empty-title").textContent(), "No episodes");
-        assert.equal(await tv.page.locator(".watch-party-episodes .watch-party-lead").textContent(), "Down for maintenance.");
-        assert.equal(await tv.focused(), "episodes-close", "focus stays on the strip, where it opened");
-        await tv.remote(40);
-        assert.equal(await tv.focused(), "season:1", "the season tabs sit between Close and Try Again");
+        assert.equal(await tv.page.locator(".watch-party-empty-title").textContent(), "No episodes in this season");
+        assert.equal(await tv.page.locator(".watch-party-episodes .watch-party-banner").textContent(), "Down for maintenance.");
+        assert.equal(await tv.focused(), "season:1", "focus stays on the active season tab");
         await tv.remote(40);
         assert.equal(await tv.focused(), "episodes-retry");
-        assert.equal(await button(tv, "episodes-retry").textContent(), "Try Again");
+        assert.equal(await button(tv, "episodes-retry").textContent(), "Reload episodes");
     } finally { await tv.page.context().close(); }
 });
 
@@ -456,7 +543,7 @@ test("a guest sees the host's room with no host controls: waiting copy, no actio
         await button(tv, "leave").click();
         await view(tv, "watchParty:hub").waitFor();
         assert.deepEqual(fake.closedRooms, [], "a guest has no HTTP leave");
-        assert.equal(await tv.focused(), "create");
+        assert.equal(await tv.focused(), "rejoin");
     } finally { await tv.page.context().close(); }
 });
 
@@ -477,14 +564,19 @@ test("a guest whose host is away sees the host-away indicator and Apple's warnin
     } finally { await tv.page.context().close(); }
 });
 
-test("Back from the lobby as the host returns to the entry and leaves as Leave party does, closing nothing", async () => {
+test("Back from the lobby as the host dismisses the page without leaving, and Return to Watch Party reopens it (#783)", async () => {
     const { tv, fake } = await inLobby();
     try {
         await tv.remote(10009);
-        await view(tv, "watchParty:hub").waitFor();
-        assert.equal(await tv.focused(), "create");
-        await tv.eventually(async () => fake.sockets[0]?.closed === true, "room socket closed");
+        await view(tv, "home").waitFor();
+        assert.equal(fake.sockets[0]?.closed, false, "Back from the lobby keeps the room socket open");
         assert.deepEqual(fake.closedRooms, []);
+        await tv.page.locator('[data-focus="profiles"]').click();
+        await tv.page.locator('[data-focus="watch-party"]').waitFor();
+        assert.equal(await tv.page.locator('[data-focus="watch-party"]').textContent(), "Return to Watch Party");
+        await tv.page.locator('[data-focus="watch-party"]').click();
+        await view(tv, "watchParty:lobby").waitFor();
+        assert.equal(await tv.page.locator(".watch-party-code").textContent(), "K7M2QX");
     } finally { await tv.page.context().close(); }
 });
 
@@ -540,22 +632,30 @@ test("a guest sees the host's pick and policy arrive live, without reading anyth
     } finally { await tv.page.context().close(); }
 });
 
-test("the host ending the party reaches a guest live: back to the entry with This party has ended.", async () => {
+test("the host ending the party reaches a guest live: back to the entry with This party has ended and no Rejoin row", async () => {
     const { tv, fake } = await inLobby("guest");
     try {
         fake.push({ type: "room_closed", reason: "ended" });
         await view(tv, "watchParty:hub").waitFor();
         assert.equal(await tv.page.locator(".watch-party-banner").textContent(), "This party has ended.");
+        assert.equal(await tv.page.locator('[data-focus="rejoin"]').count(), 0, "an ended room offers no Rejoin row");
+        assert.equal(await tv.focused(), "create");
         await tv.eventually(async () => fake.sockets[0]?.closed === true, "socket closed");
     } finally { await tv.page.context().close(); }
 });
 
-test("joining on another device takes over: this TV returns to the entry with Apple's take-over message", async () => {
+test("joining on another device takes over: this TV returns to the entry with Continue here, take-over note, and Rejoin focus (#783)", async () => {
     const { tv, fake } = await inLobby("guest");
     try {
         fake.push({ type: "connection_replaced", reason: "replaced" });
         await view(tv, "watchParty:hub").waitFor();
         assert.equal(await tv.page.locator(".watch-party-banner").textContent(), "This profile joined the party on another device. Rejoin here to take over playback.");
+        assert.equal(await tv.focused(), "rejoin");
+        assert.equal(await button(tv, "rejoin").textContent(), "Continue here");
+        assert.equal(await tv.page.locator(".watch-party-rejoin-note").textContent(), "Rejoining here disconnects this profile's other device from the party.");
+        await button(tv, "rejoin").click();
+        await view(tv, "watchParty:lobby").waitFor();
+        assert.deepEqual(fake.joined, ["K7M2QX", "K7M2QX"]);
     } finally { await tv.page.context().close(); }
 });
 
@@ -590,30 +690,33 @@ test("a series on both shelves opens the entry of the shelf it was chosen from",
     try {
         await button(tv, "choose").click();
         await view(tv, "watchParty:picker:shelves").waitFor();
-        assert.equal(await tv.page.locator('[data-focus="series:s1"]').count(), 2);
+        assert.ok((await tv.page.locator('[data-focus="series:s1"]').count()) >= 2);
         await tv.page.locator('[data-focus="series:s1"]').first().click();
         await view(tv, "watchParty:choice").waitFor();
         assert.equal(await tv.page.locator(".watch-party-choice-facts").textContent(), "S1 · E2 · Harbor Lights chapter 1.2", "Continue Together goes to its next-up episode");
     } finally { await tv.page.context().close(); }
 });
 
-test("a failed reload keeps the shelves, shows the reason and a Try Again that works", async () => {
+test("a failed reload keeps the shelves and shows the warning banner without an extra Try Again button (#783)", async () => {
     const { tv, fake } = await inLobby();
     try {
         await button(tv, "choose").click();
         await view(tv, "watchParty:picker:shelves").waitFor();
+        const initialShelves = await tv.page.locator(".watch-party-shelf").count();
         await tv.remote(10009);
         await view(tv, "watchParty:lobby").waitFor();
         fake.pickerFailure = problem(503, "unavailable", "Down for maintenance.");
         await button(tv, "choose").click();
         await tv.page.locator(".watch-party-banner").waitFor();
-        assert.equal(await tv.page.locator(".watch-party-shelf").count(), 2, "the shelves from the first read stay");
+        assert.ok((await tv.page.locator(".watch-party-shelf").count()) > 0, "other shelves still show");
         assert.equal(await tv.page.locator(".watch-party-banner").textContent(), "Down for maintenance.");
-        assert.equal(await button(tv, "picker-retry").count(), 1, "Try Again is on the page");
+        assert.equal(await button(tv, "picker-retry").count(), 0);
         fake.pickerFailure = undefined;
-        await button(tv, "picker-retry").click();
-        await tv.eventually(async () => await tv.page.locator(".watch-party-banner").count() === 0, "error clears");
-        assert.equal(await tv.page.locator(".watch-party-shelf").count(), 2);
+        await tv.remote(10009);
+        await view(tv, "watchParty:lobby").waitFor();
+        await button(tv, "choose").click();
+        await view(tv, "watchParty:picker:shelves").waitFor();
+        await tv.eventually(async () => await tv.page.locator(".watch-party-banner").count() === 0 && await tv.page.locator(".watch-party-shelf").count() === initialShelves, "error clears and all shelves reload on reopen");
     } finally { await tv.page.context().close(); }
 });
 
@@ -704,7 +807,7 @@ test("an empty vote room asks the question, offers Suggest a title, and the pick
         assert.equal(await tv.page.locator(".watch-party-picker-name").textContent(), "Suggest a title");
         await button(tv, "movie:m0004").click();
         await view(tv, "watchParty:choice").waitFor();
-        assert.equal(await tv.page.locator(".watch-party-choice .watch-party-eyebrow").textContent(), "Suggest to the party");
+        assert.equal(await tv.page.locator(".watch-party-choice .watch-party-eyebrow").first().textContent(), "Suggest to the party");
         assert.equal(await button(tv, "confirm").textContent(), "Add suggestion");
         await button(tv, "confirm").click();
         await view(tv, "watchParty:lobby").waitFor();
@@ -746,6 +849,7 @@ test("the ballot shows each tally and the leader; Select votes and takes it back
         await tv.page.keyboard.press("Enter");
         await tv.eventually(async () => JSON.stringify(await tallies(tv)) === JSON.stringify(["1", "1"]), "my vote counted");
         await tv.eventually(async () => (await tv.page.locator('[data-focus="suggestion:heat"] .watch-party-candidate-tick').count()) === 1, "my tick");
+        await tv.eventually(async () => (await button(tv, "suggestion:heat").getAttribute("aria-disabled")) === "false", "my vote settled");
         assert.equal(fake.ballotChanges.at(-1)?.call, "POST /suggestions/heat/vote");
         assert.equal(fake.ballotChanges.at(-1)?.roomToken, "room-proof-one");
         assert.equal(await button(tv, "suggestion:heat").getAttribute("aria-label"), "Remove vote for Heat");
@@ -790,11 +894,11 @@ test("live votes from others move the tallies and the leader while focus stays o
         await tv.eventually(async () => (await texts(tv, ".watch-party-candidate-leader .watch-party-candidate-title"))[0] === "Heat", "Heat leads");
         assert.equal(await tv.page.locator(".watch-party-hint").textContent(), "Owner starts Heat when voting settles.");
         assert.equal(await tv.focused(), "suggestion:heat", "focus is restored by suggestion id, not position");
-        // The host removes the focused suggestion: focus goes to the lobby's action instead of falling to the page.
+        // The focused suggestion disappears: since it carries a quick action, focus moves to the neighboring ballot card instead of falling to the page.
         fake.suggestions.splice(1, 1);
         fake.voteAs("p-other1", "alien", true);
         await tv.eventually(async () => (await cards(tv)).length === 2, "Heat removed");
-        assert.equal(await focusKept(tv), "ready");
+        assert.equal(await focusKept(tv), "suggestion:alien");
     } finally { await tv.page.context().close(); }
 });
 
@@ -866,3 +970,73 @@ for (const reduced of [false, true]) {
         } finally { await tv.page.context().close(); }
     });
 }
+
+test("host-pick lobby shows guest suggestions on the right; host can queue or long-press remove (#783)", async () => {
+    const { tv, fake } = await inLobby("host", fake => {
+        fake.suggest("m0004", "Movie 0004");
+        fake.suggest("m0005", "Movie 0005");
+    });
+    try {
+        await jumpUntil(tv, 250, async () => await tv.page.locator(".watch-party-lobby-suggestions").count() === 1, "suggestions panel renders");
+        assert.equal(await tv.page.locator(".watch-party-lobby-suggestions .watch-party-eyebrow").textContent(), "Suggestions · 2");
+        assert.equal(await tv.page.locator(".watch-party-strip-subtitle").textContent(), "Queue one to put it up next.");
+        const poster = await tv.page.locator(".watch-party-strip-poster").first().boundingBox();
+        assert.deepEqual([Math.round(poster?.width ?? 0), Math.round(poster?.height ?? 0)], [120, 180]);
+        // Clicking queues (stages) the suggestion as the host's pick.
+        await button(tv, "host-suggestion:m0004").click();
+        await tv.eventually(async () => fake.selectedContentId === "movie:m0004", "host staged the guest suggestion");
+        // Context menu on a suggestion card offers Remove suggestion and deletes it.
+        await button(tv, "host-suggestion:m0005").click({ button: "right" });
+        await view(tv, "watchParty:suggestionMenu").waitFor();
+        assert.equal(await button(tv, "suggestion-remove").textContent(), "Remove suggestion");
+        await button(tv, "suggestion-remove").click();
+        await view(tv, "watchParty:lobby").waitFor();
+        await tv.eventually(async () => fake.suggestions.length === 1 && await tv.page.locator(".watch-party-lobby-suggestions .watch-party-eyebrow").textContent() === "Suggestions · 1", "suggestion removed");
+    } finally { await tv.page.context().close(); }
+});
+
+test("ballot cards open a long-press menu with Start this one and Remove suggestion (#783)", async () => {
+    const { tv, fake } = await inLobby("host", fake => {
+        fake.selectionMode = "vote";
+        fake.suggest("m0004", "Movie 0004", ["p-owner"]);
+        fake.suggest("m0005", "Movie 0005");
+    });
+    try {
+        await ballotShows(tv, 2);
+        // Right-click / long-press on non-leading candidate opens Start this one + Remove suggestion.
+        await button(tv, "suggestion:m0005").click({ button: "right" });
+        await view(tv, "watchParty:suggestionMenu").waitFor();
+        assert.equal(await button(tv, "suggestion-start").textContent(), "Start this one");
+        assert.equal(await button(tv, "suggestion-remove").textContent(), "Remove suggestion");
+        await button(tv, "suggestion-remove").click();
+        await view(tv, "watchParty:lobby").waitFor();
+        await tv.eventually(async () => (await cards(tv)).length === 1, "m0005 removed from ballot");
+        // Start this one promotes the suggestion and opens playback.
+        await button(tv, "suggestion:m0004").click({ button: "right" });
+        await view(tv, "watchParty:suggestionMenu").waitFor();
+        await button(tv, "suggestion-start").click();
+        await tv.eventually(async () => (await tv.page.evaluate(() => window.browseHarness.plays.length)) === 1, "Start this one opens playback");
+    } finally { await tv.page.context().close(); }
+});
+
+test("guests in a host-pick lobby can focus and scroll other members' suggestions without queue or remove permissions (#783)", async () => {
+    const { tv, fake } = await inLobby("guest", fake => {
+        fake.suggest("m0004", "Movie 0004");
+        fake.suggestions.push({
+            id: "owner-pick", contentId: "movie:m0005", contentType: "movie", title: "Movie 0005", subtitle: "", posterUrl: "/art/m0005.svg",
+            suggesterProfileId: "p-owner", createdAt: "2026-11-10T01:02:00.000Z", voters: new Set(),
+        });
+    });
+    try {
+        await jumpUntil(tv, 250, async () => await tv.page.locator(".watch-party-lobby-suggestions").count() === 1, "guest sees suggestions strip");
+        assert.equal(await tv.page.locator(".watch-party-strip-subtitle").textContent(), "The host decides what plays.");
+        const other = button(tv, "host-suggestion:owner-pick");
+        await other.focus();
+        assert.equal(await tv.focused(), "host-suggestion:owner-pick", "another member's card stays focusable for scrolling");
+        assert.equal(await other.getAttribute("aria-disabled"), "true");
+        await other.click({ force: true });
+        await other.click({ button: "right", force: true });
+        assert.equal(await view(tv, "watchParty:suggestionMenu").count(), 0, "cannot open remove menu on another member's suggestion");
+        assert.deepEqual(fake.roomChanges, [], "cannot queue as a guest");
+    } finally { await tv.page.context().close(); }
+});

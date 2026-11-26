@@ -1,5 +1,4 @@
 import type { Clock } from "../api/clock.ts";
-import { operations } from "../api/operations.ts";
 import type { PlaybackPlan } from "../contracts/v2/playback.ts";
 import { shownLocale } from "../i18n/format.ts";
 import type { NativeSession } from "../session/session.ts";
@@ -10,8 +9,6 @@ import { SubtitleSync, type SubtitleSyncView } from "./subtitleSync.ts";
 import { textSubtitle } from "./subtitleTransportRules.ts";
 import type { AudioVersionSnapshot, PendingStoredTrack, SubtitleTrackViewSlice } from "./subtitleTypes.ts";
 
-const SERIES_SAVE_FAILED = "Could not confirm the series subtitle choice. Check the saved preference before trying again.";
-
 export type SearchAction =
     | { readonly kind: "search-open" }
     | { readonly kind: "search-language"; readonly code: string }
@@ -21,14 +18,12 @@ export type SearchAction =
     | { readonly kind: "search-retry" };
 
 /**
- * Private internal coordinator behind `SubtitleSession` for per-file/episode subtitle tools:
- * `SubtitleAI`, `SubtitleSearch`, `SubtitleSync`, and series subtitle saving.
+ * Private internal coordinator behind `SubtitleSession` for per-file subtitle tools:
+ * `SubtitleAI`, `SubtitleSearch`, and `SubtitleSync`.
  */
 export class SubtitleTools {
     private readonly session: NativeSession;
     private readonly clock: Clock;
-    private readonly contentId: string;
-    private readonly signal: AbortSignal;
     private readonly onChanged: () => void;
     private readonly onTimingChanged: (key: string) => void;
     private readonly onDownloaded: (id: string) => boolean;
@@ -37,32 +32,20 @@ export class SubtitleTools {
     private ai: SubtitleAI | undefined;
     private search: SubtitleSearch | undefined;
     private sync: SubtitleSync | undefined;
-    private series: { readonly busy: boolean; readonly message: string } | undefined;
     private cachedAIMenu: { readonly key: string; readonly menu: AIMenu } | undefined;
-    private destroyed = false;
 
     constructor(
         session: NativeSession,
         clock: Clock,
-        contentId: string,
-        episode: true | undefined,
-        signal: AbortSignal,
         onChanged: () => void,
         onTimingChanged: (key: string) => void,
         onDownloaded: (id: string) => boolean,
     ) {
         this.session = session;
         this.clock = clock;
-        this.contentId = contentId;
-        this.signal = signal;
         this.onChanged = onChanged;
         this.onTimingChanged = onTimingChanged;
         this.onDownloaded = onDownloaded;
-        this.series = episode ? { busy: false, message: "" } : undefined;
-    }
-
-    get seriesSubtitle(): { readonly busy: boolean; readonly message: string } | undefined {
-        return this.series;
     }
 
     get searchView(): SubtitleSearchView | undefined {
@@ -202,30 +185,6 @@ export class SubtitleTools {
         void this.sync?.reset(key);
     }
 
-    saveSeries(plan: PlaybackPlan, shown: string | undefined, isAlive: () => boolean): void {
-        if (this.series === undefined || this.series.busy) return;
-        const track = plan.subtitle.inventory.find(entry => entry.trackId === shown);
-        if (shown !== undefined && track === undefined) {
-            this.series = { busy: false, message: SERIES_SAVE_FAILED };
-            this.onChanged();
-            return;
-        }
-        this.series = { busy: true, message: "Saving series subtitles…" };
-        this.onChanged();
-        void (async () => {
-            try {
-                const detail = await this.session.call({ ...operations.watchDetail(this.contentId), profileScoped: true, signal: this.signal });
-                if (!isAlive() || this.destroyed) return;
-                if (detail.id !== this.contentId || detail.seriesId === undefined) throw new Error("Series unavailable");
-                await this.session.call({ ...operations.saveSeriesSubtitle(detail.seriesId, track), profileScoped: true, replayAfterRefresh: false, signal: this.signal });
-                if (isAlive() && !this.destroyed) this.series = { busy: false, message: "Subtitle choice saved for this series." };
-            } catch {
-                if (isAlive() && !this.destroyed) this.series = { busy: false, message: SERIES_SAVE_FAILED };
-            }
-            if (isAlive() && !this.destroyed) this.onChanged();
-        })();
-    }
-
     activateStored(plan: PlaybackPlan, stored: PendingStoredTrack, selectTrack: (trackId: string) => void): void {
         const track = plan.subtitle.inventory.find(entry => entry.syncKey === `stored-${stored.id}`);
         if (stored.kind === "ai") {
@@ -248,7 +207,6 @@ export class SubtitleTools {
     }
 
     destroy(): void {
-        this.destroyed = true;
         this.ai?.destroy();
         this.search?.destroy();
         this.sync?.destroy();

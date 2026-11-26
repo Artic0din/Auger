@@ -11,6 +11,7 @@
 
 import {
     type CreatableSelectionMode,
+    decodeMemberState,
     decodePicker,
     decodeRoomAccess,
     decodeRoomSocketTicket,
@@ -19,6 +20,7 @@ import {
     decodeWatchTogetherCapabilities,
     MAX_JOIN_CODE_LENGTH,
     MAX_ROOM_TOKEN_LENGTH,
+    type MemberState,
     type Picker,
     type RoomAccess,
     type RoomSelection,
@@ -117,6 +119,13 @@ export const watchTogetherOperations = {
     picker: (roomId: string, token: string): RequestSpec<Picker> =>
         ({ method: "GET", path: `${roomPath(roomId)}/picker`, retry: "safe", roomToken: roomToken(token), decode: decodePicker }),
 
+    /** Per-member watch state ("Who's seen it") for 1..200 content ids. Needs the room token. */
+    memberState: (roomId: string, token: string, contentIds: readonly string[]): RequestSpec<MemberState> => {
+        if (contentIds.length < 1 || contentIds.length > 200 || contentIds.some(id => id === "")) throw new RangeError("Member state requires 1 to 200 non-empty content ids");
+        const ids = [...contentIds];
+        return { method: "POST", path: `${roomPath(roomId)}/member-state`, retry: "safe", roomToken: roomToken(token), body: { content_ids: ids }, decode: value => decodeMemberState(value, ids) };
+    },
+
     // The ballot, for any member: every call needs the room token. Votes and suggestions change no room, so only promote answers with it.
 
     /** One page of the room's suggestions in creation order, with this profile's own votes, which the socket never carries. */
@@ -144,6 +153,10 @@ export const watchTogetherOperations = {
     /** POST votes, DELETE takes the vote back; 204 either way, and a vote already in that state is a no-op. */
     setVote: (roomId: string, token: string, suggestionId: string, voted: boolean): RequestSpec<undefined> =>
         ({ method: voted ? "POST" : "DELETE", path: `${suggestionPath(roomId, suggestionId)}/vote`, retry: "safe", roomToken: roomToken(token), decode: () => undefined }),
+
+    /** Host, or the member who suggested it: removes the suggestion from the room. 204 with no body. */
+    deleteSuggestion: (roomId: string, token: string, suggestionId: string): RequestSpec<undefined> =>
+        ({ method: "DELETE", path: suggestionPath(roomId, suggestionId), retry: "safe", roomToken: roomToken(token), decode: () => undefined }),
 
     /** Host only: plays the suggestion for everyone. Non-retryable; a lost answer is read back from the room. */
     promoteSuggestion: (roomId: string, token: string, suggestionId: string): RequestSpec<RoomAccess> => {

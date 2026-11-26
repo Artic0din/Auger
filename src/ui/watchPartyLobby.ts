@@ -3,7 +3,7 @@
 // room's ballot (watchPartyBallot.ts) and the party ending.
 // Metrics are Apple's tvOS values at 1920x1080 (WatchPartyMetrics).
 
-import type { Room } from "../contracts/v2/watchTogether.ts";
+import type { Room, Suggestion } from "../contracts/v2/watchTogether.ts";
 import { isolated } from "../i18n/direction.ts";
 import { translate } from "../i18n/translate.ts";
 import type { FocusItem, View, Zone } from "./browseFocus.ts";
@@ -11,7 +11,7 @@ import { actionButton } from "./browseViews.ts";
 import { qrCode } from "./qr.ts";
 import { el } from "./screen.ts";
 import { backdrop, banner, checkIcon, circleButton, codeText, ellipsisIcon, eyebrow, labelled, playIcon, plusIcon } from "./watchPartyParts.ts";
-import { ballotRow, serverPoster } from "./watchPartyBallot.ts";
+import { ballotRow, hostPickSuggestions, serverPoster } from "./watchPartyBallot.ts";
 import { inviteUrl } from "./watchPartyInvite.ts";
 import { type PrimaryAction, primaryAction, waitingNames } from "./watchPartyPolicy.ts";
 import { seatsRow } from "./watchPartySeats.ts";
@@ -154,7 +154,7 @@ function secondaryButton(hub: WatchPartyHub, room: Room, action: PrimaryAction):
 }
 
 /** The lobby behind every room page. `interactive` is false behind an overlay, which owns focus. */
-function lobbyPage(context: LobbyContext, room: Room, interactive: boolean): { node: HTMLElement; items: { top: FocusItem[]; ballot: readonly FocusItem[]; seats: FocusItem[]; actions: FocusItem[] }; defaultKey: string } {
+function lobbyPage(context: LobbyContext, room: Room, interactive: boolean): { node: HTMLElement; items: { top: FocusItem[]; ballot: readonly FocusItem[]; suggestions: readonly FocusItem[]; seats: FocusItem[]; actions: FocusItem[] }; defaultKey: string } {
     const { hub } = context;
     const item = hub.state.selected;
     const action = primaryAction(room, hub.state.capabilities, hub.canStart(), hub.state.selectedUnavailable);
@@ -180,6 +180,9 @@ function lobbyPage(context: LobbyContext, room: Room, interactive: boolean): { n
     const copy = el("div", "watch-party-room-copy");
     copy.appendChild(heroText(room, item, hub));
     const ballot = voting(room) ? ballotRow(hub, context.baseUrl) : undefined;
+    const strip = room.phase === "lobby" && room.selectionMode === "host_pick" && hub.state.votes.rows.length > 0
+        ? hostPickSuggestions(hub, room, context.baseUrl)
+        : undefined;
     const overview = item?.overview;
     if (ballot !== undefined) {
         // The ballot takes the screen's width under the question, as Apple's tvLobby.
@@ -189,6 +192,10 @@ function lobbyPage(context: LobbyContext, room: Room, interactive: boolean): { n
     const notice = statusBanner(hub, room);
     if (notice !== undefined) copy.appendChild(notice);
     body.appendChild(copy);
+    if (strip !== undefined) {
+        body.classList.add("watch-party-room-body-split");
+        body.appendChild(strip.node);
+    }
 
     const seats = seatsRow(room.members, room.phase, () => { hub.show({ kind: "invite" }); });
     if (ballot !== undefined) seats.node.classList.add("watch-party-here-compact");
@@ -206,7 +213,7 @@ function lobbyPage(context: LobbyContext, room: Room, interactive: boolean): { n
     if (!interactive) page.inert = true;
     return {
         node: page,
-        items: { top: [code, more], ballot: ballot?.items ?? [], seats: [seats.invite], actions: [secondary, primary].filter((button): button is FocusItem => button !== undefined) },
+        items: { top: [code, more], ballot: ballot?.items ?? [], suggestions: strip?.items ?? [], seats: [seats.invite], actions: [secondary, primary].filter((button): button is FocusItem => button !== undefined) },
         defaultKey: primary?.key ?? "lobby-code",
     };
 }
@@ -223,15 +230,43 @@ function roomBackdrop(context: LobbyContext): HTMLElement {
     return backdrop(reference, context.baseUrl, item?.backdropUrl === undefined);
 }
 
-export function lobbyView(context: LobbyContext, room: Room): View {
+export function lobbyView(context: LobbyContext, room: Room, dismiss: () => void): View {
     const page = lobbyPage(context, room, true);
     const zones: Zone[] = [
         { id: "lobby-top", layout: "row", items: page.items.top },
         ...(page.items.ballot.length === 0 ? [] : [{ id: "lobby-ballot", layout: "row" as const, items: [...page.items.ballot] }]),
+        ...(page.items.suggestions.length === 0 ? [] : [{ id: "lobby-suggestions", layout: "row" as const, items: [...page.items.suggestions] }]),
         { id: "lobby-seats", layout: "row", items: page.items.seats },
         ...(page.items.actions.length === 0 ? [] : [{ id: "lobby-actions", layout: "row" as const, items: page.items.actions }]),
     ];
-    return { name: "watchParty:lobby", content: [roomBackdrop(context), page.node], zones, focus: { zone: page.items.actions.length === 0 ? "lobby-top" : "lobby-actions", key: page.defaultKey }, back: () => context.hub.back() };
+    return { name: "watchParty:lobby", content: [roomBackdrop(context), page.node], zones, focus: { zone: page.items.actions.length === 0 ? "lobby-top" : "lobby-actions", key: page.defaultKey }, back: dismiss };
+}
+
+/** Long-press context menu for ballot cards ("Start this one", "Remove suggestion") and host-pick suggestion cards ("Remove suggestion"). */
+export function suggestionMenuView(context: LobbyContext, room: Room, suggestion: Suggestion): View {
+    const { hub } = context;
+    const rows: FocusItem[] = [];
+    if (room.selectionMode === "vote" && hub.canStartSuggestion(suggestion)) {
+        rows.push(optionRow("suggestion-start", translate("watchParty.ballot.startThis"), undefined, false, () => { hub.show({ kind: "lobby" }); void hub.promoteSuggestion(suggestion.id); }));
+    }
+    if (hub.canRemoveSuggestion(suggestion)) {
+        rows.push(optionRow("suggestion-remove", translate("watchParty.ballot.remove"), undefined, true, () => { hub.show({ kind: "lobby" }); void hub.deleteSuggestion(suggestion.id); }));
+    }
+    if (rows.length === 0) {
+        rows.push(optionRow("close", translate("watchParty.options.close"), undefined, false, () => { hub.show({ kind: "lobby" }); }));
+    }
+    const card = el("div", "watch-party-sheet watch-party-options");
+    card.append(el("h2", "watch-party-sheet-title", suggestion.title), ...rows.map(row => row.element));
+    const scrim = el("div", "watch-party-scrim watch-party-ui");
+    scrim.appendChild(card);
+    const behind = lobbyPage(context, room, false);
+    return {
+        name: "watchParty:suggestionMenu",
+        content: [roomBackdrop(context), behind.node, scrim],
+        zones: [{ id: "suggestion-menu", layout: "column", items: rows }],
+        focus: { zone: "suggestion-menu", key: rows[0]!.key },
+        back: () => hub.show({ kind: "lobby" }),
+    };
 }
 
 // --- Party options ---

@@ -19,7 +19,7 @@ import { profileMenuAvatar } from "./navigationAvatar.ts";
 import { centredDialog } from "./confirmationDialog.ts";
 import { navigationIcon } from "./navigationIcon.ts";
 import { decodeAppearance, DEFAULT_APPEARANCE } from "../contracts/v2/subtitles.ts";
-import { applySubtitleAppearance, subtitleFontSize } from "../player/subtitleView.ts";
+import { applySubtitleAppearance } from "../player/subtitleView.ts";
 import { pairedProfileDescription, pairedProfileLabel, profileSelectionCaption } from "./pairedProfile.ts";
 import { bitrateLabel, bufferingQualityModes, bufferingQualityTitle, qualityFooter } from "./qualitySettings.ts";
 import { ConnectionSpeed, learnedLimitText } from "./connectionSpeed.ts";
@@ -1131,8 +1131,7 @@ export function mountSettings(root: HTMLElement, session: NativeSession, close: 
                 const stored = state.stored(APPEARANCE_KEY);
                 const appearance = decodeAppearance({ profile_id: "preview", effective_value: JSON.stringify(stored?.isSet ? stored.value : {}) }, "preview");
                 // The preview is laid out by flexbox, so it ignores the top and bottom this also sets for the player.
-                applySubtitleAppearance(preview, text, appearance);
-                text.style.fontSize = subtitleFontSize(appearance, 0.5);
+                applySubtitleAppearance(preview, text, appearance, false, 0.5);
                 text.style.fontWeight = "600";
                 text.style.padding = appearance.backgroundStyle === "box" ? "4px 10px" : "0";
                 text.style.borderRadius = "4px";

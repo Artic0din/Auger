@@ -514,16 +514,99 @@ class CheckPrReleaseNotesTest(unittest.TestCase):
         )
         self.assertTrue(
             changelog.check_pr_release_notes(
+                "feat(diagnostics): explain track and buffering failures",
+                pr_body("## Release Notes\n\n- Audio reports now show tracks.\n- Playback error screens use local text."),
+            )
+        )
+        self.assertTrue(
+            changelog.check_pr_release_notes(
+                "feat(player): add chapters",
+                pr_body("## Release Notes\n\n### Highlights\n\nChapters arrive in the player."),
+            )
+        )
+        self.assertTrue(
+            changelog.check_pr_release_notes(
+                "feat!: drop Tizen 7",
+                pr_body("## Release Notes\n\n### New\n\n- Requires Tizen 8 or later."),
+            )
+        )
+        self.assertEqual(
+            [],
+            changelog.check_pr_release_notes(
+                "feat!: drop Tizen 7",
+                pr_body("## Release Notes\n\n### Breaking Changes\n\n- Upgrade your TV to Tizen 8 or later."),
+            ),
+        )
+        self.assertTrue(
+            changelog.check_pr_release_notes(
                 "feat(player): add still watching",
-                pr_body("## Release Notes\n\n- Added prompt (#886)."),
+                pr_body("## Release Notes\n\n### New\n\n- Added prompt (#886)."),
             )
         )
         self.assertTrue(
             changelog.check_pr_release_notes(
                 "fix(player): stop crash",
-                pr_body("## Release Notes\n\n- fix(player): stop crash"),
+                pr_body("## Release Notes\n\n### Fixed\n\n- fix(player): stop crash"),
             )
         )
+
+    def test_semver_bump_matches_release_notes_categories(self):
+        self.assertEqual(
+            [],
+            changelog.check_pr_release_notes(
+                "feat(subtitles): floating appearance dialog",
+                pr_body("## Release Notes\n\n### Improved\n\n- Subtitle Appearance opens as a floating dialog."),
+            ),
+        )
+        self.assertEqual(
+            [],
+            changelog.check_pr_release_notes(
+                "perf(home): cache tint wash",
+                pr_body("## Release Notes\n\n### Improved\n\n- Home scrolls more smoothly."),
+            ),
+        )
+        self.assertEqual(
+            [],
+            changelog.check_pr_release_notes(
+                "fix(security): redact token",
+                pr_body("## Release Notes\n\n### Security\n\n- Redact tokens from error screens."),
+            ),
+        )
+        self.assertEqual(
+            [],
+            changelog.check_pr_release_notes(
+                "fix(ci): stop flaky upload",
+                pr_body("## Release Notes\n\n### Fixed\n\n- Release uploads retry cleanly."),
+            ),
+        )
+        self.assertEqual(
+            [],
+            changelog.check_pr_release_notes(
+                "perf(ci): cache bundle check",
+                pr_body("## Release Notes\n\n### Improved\n\n- Faster package validation."),
+            ),
+        )
+        self.assertEqual(
+            [],
+            changelog.check_pr_release_notes(
+                "chore(repo): tidy scripts",
+                pr_body("## Release Notes\n\nNone"),
+            ),
+        )
+        for title, section in (
+            ("fix(player): add end time", "### New\n\n- Show estimated finish time."),
+            ("fix(player): add end time", "### Improved\n\n- Show estimated finish time."),
+            ("fix(ci): add check", "### New\n\n- Added a new setting."),
+            ("perf(ci): cache bundle check", "### Fixed\n\n- Stopped a crash."),
+            ("revert: undo row", "### Improved\n\n- Removed extra subtitle row."),
+            ("perf(home): faster rows", "### New\n\n- Added a new shelf."),
+            ("perf(home): faster rows", "### Fixed\n\n- Stopped a crash."),
+            ("feat(player): fix crash", "### Fixed\n\n- Stopped a crash."),
+            ("feat(settings): rename keys", "### Breaking Changes\n\n- Sign in again.\n\n### New\n\n- New settings."),
+            ("chore(repo): change package id", "### Breaking Changes\n\n- Uninstall older builds first."),
+        ):
+            with self.subTest(title=title, section=section[:20]):
+                self.assertTrue(changelog.check_pr_release_notes(title, pr_body(f"## Release Notes\n\n{section}")))
 
     def test_check_pr_cli_and_workflow_step(self):
         workflow_text = (SCRIPT_DIR.parent / ".github/workflows/ci-scripts.yml").read_text(encoding="utf-8")
@@ -537,7 +620,7 @@ class CheckPrReleaseNotesTest(unittest.TestCase):
             good = subprocess.run(
                 ["bash", "-euo", "pipefail", "-c", step_script],
                 cwd=SCRIPT_DIR.parent,
-                env={**env, "PR_TITLE": "feat(player): add chapters", "PR_BODY": pr_body("## Release Notes\n\n- Jump to any chapter from the player.")},
+                env={**env, "PR_TITLE": "feat(player): add chapters", "PR_BODY": pr_body("## Release Notes\n\n### New\n\n- Jump to any chapter from the player.")},
                 capture_output=True,
                 text=True,
             )
@@ -868,13 +951,9 @@ class ReleaseWorkflowChangelogRangeTest(unittest.TestCase):
             )
             self.assertNotIn("- Old bug", notes_text)
             self.assertNotIn("Initial feature", notes_text)
-            self.assertIn(
-                "## Install or update\n\n- **Apps2Samsung (recommended).** Open Apps2Samsung, find **Auger** under "
-                "**Media servers & players**, and install or update in one click. Do not add this repository as a custom source.\n",
-                notes_text,
-            )
-            self.assertNotIn("as a source,", notes_text)
-            self.assertNotIn("github.com/Artic0din/Auger-Tizen` as", notes_text)
+            self.assertNotIn("## Install", notes_text)
+            self.assertNotIn("Apps2Samsung", notes_text)
+            self.assertNotIn("Sideload with Tizen Studio", notes_text)
             self.assertTrue(
                 notes_text.endswith(
                     "\n\nFull technical details in [CHANGELOG.md](https://github.com/Artic0din/Auger-Tizen/blob/main/CHANGELOG.md). "

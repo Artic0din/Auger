@@ -43,7 +43,8 @@ export const PLATFORM_EXCEPTIONS: readonly string[] = ["settings.skipIntervals.f
  * language. Text about the server (Silo server, its address, its errors, the Silo account) keeps Silo.
  */
 export const APP_NAME_KEYS: readonly string[] = [
-    "player.aiTranslate.explainerShort", "player.error.connectionLost", "player.subtitleSync.failureNoAudio", "profiles.error.rememberFailed",
+    "player.aiTranslate.explainerShort", "player.error.connectionLost", "player.error.couldNotStart", "player.error.couldNotStartRetry",
+    "player.subtitleSync.failureNoAudio", "profiles.error.rememberFailed",
     "profiles.rememberOffer.bodyAppleTv", "search.initial", "settings.about.trademarkNotice", "settings.appLanguage.footer",
     "settings.appLanguage.unshippedFooter", "settings.bufferingQuality.description", "settings.general.pairingShared",
     "settings.general.pairingSharedAskEveryTime", "settings.profileLaunch.afterOneHour.detail", "settings.profileLaunch.afterTwelveHours.detail",

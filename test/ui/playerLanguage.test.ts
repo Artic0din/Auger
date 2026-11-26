@@ -12,6 +12,8 @@ import { type Browser, chromium, type Page } from "playwright";
 import { DEFAULT_APPEARANCE } from "../../src/contracts/v2/subtitles.ts";
 import type { PlaybackView, TrackView } from "../../src/player/controller.ts";
 import { UP_NEXT_PREVIEW, upNextPreviewLeft } from "../../src/player/upNextPreview.ts";
+import { percentText } from "../../src/i18n/format.ts";
+import { formattingLocale } from "../../src/i18n/language.ts";
 import { type MessageKey, translate, translateTv } from "../../src/i18n/translate.ts";
 import { registerSourceCatalogs } from "../native/support/catalogs.ts";
 
@@ -151,8 +153,14 @@ for (const language of ["de", "ar"]) {
             assert.equal(await page.getByRole("slider").getAttribute("aria-label"), text("player.controls.scrubber", language));
             await show(page, { phase: "loading", title: "The Movie" });
             assert.equal(await page.locator(".player-spinner").getAttribute("aria-label"), text("common.loading", language));
+            await show(page, { phase: "loading", title: "The Movie", detail: "reconnecting" });
+            assert.equal(await page.locator(".player-status").isVisible(), false);
+            assert.equal(await page.locator(".player-alert-notice .player-alert-title").textContent(), text("player.notice.reconnectingTitle", language));
+            assert.equal(await page.locator(".player-alert-notice .player-alert-detail").textContent(), text("player.notice.reconnectingBody", language));
             await show(page, { phase: "loading", title: "The Movie", detail: "restoring" });
-            assert.equal(await page.locator(".player-status").textContent(), "Restoring", "no Apple key: English");
+            assert.equal(await page.locator(".player-status").isVisible(), false);
+            assert.equal(await page.locator(".player-alert-notice .player-alert-title").textContent(), text("player.notice.reconnectingTitle", language));
+            assert.equal(await page.locator(".player-alert-notice .player-alert-detail").textContent(), text("player.notice.reconnectingBody", language));
         } finally { await page.close(); }
     });
 
@@ -200,6 +208,24 @@ for (const language of ["de", "ar"]) {
             assert.equal(await page.locator('.player-menu-subtitles [data-focus="subtitle-appearance"] .player-setting-label').textContent(), text("player.hud.subtitleAppearance", language));
             assert.equal(await page.locator('.player-menu-subtitles [data-focus="subtitle-device"] .player-setting-label').textContent(), translateTv("player.hud.onlyOnThisAppleTv", undefined, language));
             assert.equal(await page.locator('.player-menu-subtitles [data-focus="subtitle-appearance"] .player-choice-detail').textContent(), [text("player.subtitles.size.large", language), text("player.subtitles.background.box", language), text("player.subtitles.position.bottom", language)].join(" · "));
+            await page.locator('[data-focus="subtitle-appearance"]').focus();
+            await remote(page, ENTER);
+            assert.equal(await page.locator(".player-appearance-eyebrow").textContent(), text("player.hud.appearanceEyebrow", language));
+            assert.equal(await page.locator(".player-appearance-title").textContent(), text("player.hud.styleAndColors", language));
+            assert.equal(await label(page, "subtitle-appearance-close"), text("player.hud.closeAppearance", language));
+            assert.deepEqual(await texts(page, ".player-appearance-dialog .player-setting-label"), (["player.subtitles.style.backgroundStyle", "player.subtitles.style.font", "player.subtitles.style.size", "player.hud.appearanceText", "player.subtitles.style.textOpacityLabel", "player.subtitles.style.textOutline", "player.hud.subtitleOutline", "player.subtitles.style.background", "player.subtitles.style.opacity", "player.subtitles.style.position"] as const).map(key => text(key, language)));
+            const locale = formattingLocale(language, undefined);
+            const expected100 = percentText(100, locale);
+            const expected75 = percentText(75, locale);
+            assert.notEqual(expected100, "100%");
+            assert.equal(await page.locator('[data-focus="subtitle-appearance:textOpacity"] .player-setting-value').textContent(), expected100);
+            assert.equal(await page.locator('[data-focus="subtitle-appearance:backgroundOpacity"] .player-setting-value').textContent(), expected75);
+            await page.locator('[data-focus="subtitle-appearance:textOpacity"]').focus();
+            await remote(page, ENTER);
+            const pickerOptions = await texts(page, ".player-menu-picker .player-choice-label");
+            assert.ok(pickerOptions.includes(expected100) && pickerOptions.includes(expected75), `expected localized percents in ${JSON.stringify(pickerOptions)}`);
+            await remote(page, 10009);
+            await remote(page, 10009);
             // SubtitlesPane.timingRows (TVPlayerInfoHUD.swift, silo-apple main 9dabb62): Sync to Audio, its progress and Reset Timing.
             const timing = { key: "stored-7", canSync: true, canReset: true, busy: false, inProgress: false, forbidden: undefined, progress: undefined, note: undefined };
             assert.notEqual(text("player.tracks.syncToAudioButton", language), "Sync to Audio", `the ${language} file carries the sync keys`);
@@ -234,7 +260,8 @@ for (const language of ["de", "ar"]) {
             await menu({});
             assert.equal(await page.locator(".player-ai-title").textContent(), text("player.aiTranslate.aiSubtitles", language));
             assert.equal(await page.locator(".player-ai-subtitle").textContent(), text("player.aiTranslate.explainerShort", language));
-            assert.equal(await page.locator('[data-focus="ai-language-back"]').textContent(), text("player.tracks.backToSubtitles", language));
+            assert.equal(await page.locator('[data-focus="ai-language-back"]').count(), 0);
+            assert.equal(await page.locator(".player-subtitle-dialog-back-text").textContent(), text("player.tracks.backToSubtitles", language));
             assert.equal(await page.locator(".player-ai-quota-note").textContent(), text("player.aiTranslate.quotaExhaustedNote", language));
             assert.deepEqual(await texts(page, ".player-ai-menu .player-menu-heading"), [upper(text("player.aiTranslate.suggestedHeader", language), language), upper(text("subtitleSearch.allLanguagesHeader", language), language)]);
             assert.deepEqual(await texts(page, ".player-ai-menu .player-choice-detail"), [text("player.aiTranslate.detectedFromAudio", language), text("subtitleSearch.preferred", language)]);
@@ -281,8 +308,21 @@ for (const language of ["de", "ar"]) {
         try {
             await show(page, { phase: "error", title: "The Movie", error: { kind: "network" }, retryable: true });
             assert.equal(await page.locator(".player-error-text").innerText(), text("player.error.connectionLost", language));
+            assert.equal(await page.locator('[data-focus="settings-retry"]').textContent(), text("common.tryAgain", language));
             await show(page, { phase: "error", title: "The Movie", error: { kind: "server" }, retryable: true });
-            assert.equal(await page.locator(".player-error-text").textContent(), "The server couldn't start playback. Try again.");
+            assert.equal(await page.locator(".player-error-text").textContent(), text("player.error.couldNotStartRetry", language));
+            await show(page, { phase: "error", title: "The Movie", error: { kind: "playback_failed" }, retryable: true });
+            assert.equal(await page.locator(".player-error-text").textContent(), text("player.error.couldNotStartRetry", language));
+            await show(page, { phase: "error", title: "The Movie", error: { kind: "playback_failed" }, retryable: false });
+            assert.equal(await page.locator(".player-error-text").textContent(), text("player.error.couldNotStart", language));
+            await show(page, { phase: "error", title: "The Movie", error: { kind: "unavailable" }, retryable: false });
+            assert.equal(await page.locator(".player-error-text").textContent(), catalog(language)["error.capability_unsupported"]);
+            await show(page, { phase: "error", title: "The Movie", error: { kind: "session_expired" }, retryable: false });
+            assert.equal(await page.locator(".player-error-text").textContent(), catalog(language)["error.playback_session_ended"]);
+            await show(page, { phase: "error", title: "The Movie", error: { kind: "installation_changed" }, retryable: false });
+            assert.equal(await page.locator(".player-error-text").textContent(), catalog(language)["error.installation_changed"]);
+            await show(page, { phase: "error", title: "The Movie", error: { kind: "revoked" }, retryable: false });
+            assert.equal(await page.locator(".player-error-text").textContent(), catalog(language)["error.invalid_token"]);
             // problem.localized (APIv2Models.swift:357-365): the field code's line, else the problem type's, else the server's own text.
             // Never the server's own text, which can carry private values: a problem type with no line reads Apple's HTTP status line.
             await show(page, { phase: "error", title: "The Movie", error: { kind: "server", reason: { status: 400, problemId: "validation_failed" } }, retryable: true });
@@ -488,8 +528,8 @@ for (const language of [undefined, "ar"]) {
             const goBack = await center(page, '[data-focus="back"]');
             assert.equal(retry < goBack, language === undefined, "Retry leads the row");
             assert.equal(await direction(page, ".player-error"), language === undefined ? "ltr" : "rtl");
-            // An English message keeps its own direction on the mirrored page: it reads from the left, its full stop last.
-            await show(page, { phase: "error", title: "The Movie", error: { kind: "server" }, retryable: true });
+            // An English server message keeps its own direction on the mirrored page: it reads from the left, its full stop last.
+            await show(page, { phase: "error", title: "The Movie", error: { kind: "terminal", reason: "source_unreadable", message: "The source file could not be read.", retryable: true }, retryable: true });
             const [first, stop] = await page.locator(".player-error-text").evaluate(node => [0, (node.textContent ?? "").length - 1].map(at => {
                 const range = document.createRange();
                 range.setStart(node.firstChild!, at);
@@ -650,4 +690,49 @@ test("a subtitle Appearance picker that is open when German lands is drawn again
         assert.equal(await picker(page).count(), 0, "Back closes the picker");
         assert.equal(await page.locator('[data-focus="subtitle-appearance:fontSize"]').count(), 1, "and returns to the Appearance rows");
     } finally { await page.close(); }
+});
+
+test("scrubber end time, episode tag in footer and Info, and rate chip digits localize in German and Arabic (#777)", async () => {
+    const de = await open("de");
+    try {
+        await show(de, playing({ seriesTitle: "Die Serie", seasonNumber: 1, episodeNumber: 25, positionSeconds: 754, durationSeconds: 7200 }));
+        assert.equal(await de.locator(".player-episode").textContent(), "S1 · F25");
+        assert.match(await de.locator(".player-time-remaining").textContent() ?? "", /^−1:47:26 · /);
+        assert.ok((await de.locator(".player-time-remaining").textContent() ?? "").includes(catalog("de")["player.scrubber.endsAt"]!.split("{time}")[0]!));
+        await openPanel(de, 0);
+        assert.equal(await de.locator(".player-info-episode").textContent(), "S1 · F25");
+    } finally { await de.close(); }
+
+    const ar = await open("ar");
+    try {
+        await show(ar, playing({ seriesTitle: "مسلسل", seasonNumber: 1, episodeNumber: 25, positionSeconds: 754, durationSeconds: 7200 }));
+        assert.equal(await ar.locator(".player-episode").textContent(), "م1 · ح25");
+        const remainingText = await ar.locator(".player-time-remaining").textContent() ?? "";
+        assert.ok(remainingText.includes("\u2068") && remainingText.includes("\u2069"), `Arabic end time is isolated: ${remainingText}`);
+        await ar.evaluate(() => {
+            const target = document.activeElement ?? document.body;
+            target.dispatchEvent(new KeyboardEvent("keydown", { keyCode: 39, bubbles: true, cancelable: true }));
+        });
+        await ar.clock.fastForward(300);
+        assert.equal(await ar.locator(".player-rate-glyph svg").count(), 1);
+        assert.equal(await ar.locator(".player-rate-value").textContent(), "١x");
+    } finally { await ar.close(); }
+});
+
+test("Secondary heading and Secondary Off row use the catalog in German and Arabic (#780)", async () => {
+    for (const language of ["de", "ar"] as const) {
+        const page = await open(language);
+        try {
+            await show(page, playing({
+                tracks: {
+                    ...TRACKS,
+                    selectedSubtitleId: "file:42:subtitle:0",
+                    secondary: { choices: [{ id: "file:42:subtitle:0", label: "English", unavailable: true }, { id: "file:42:subtitle:1", label: "Japanese" }], selectedId: undefined },
+                },
+            }));
+            await openPanel(page, 4);
+            assert.equal(await page.locator(".player-menu-heading-secondary").textContent(), text("player.hud.secondaryHeading", language).toUpperCase());
+            assert.equal(await page.locator('[data-focus="secondary-off"] .player-choice-label').textContent(), text("player.tracks.subtitlesOff", language));
+        } finally { await page.close(); }
+    }
 });

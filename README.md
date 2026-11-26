@@ -61,7 +61,7 @@ npm run build
 ```
 
 `scripts/build.mjs` stages `app/` into `dist/wgt/` and emits `js/main.js` and `js/main.css`.
-The bundle's app version comes from `app/config.xml`.
+The bundle's app version comes from `app/config.xml`, or from the checked-out `vX.Y.Z` release tag when `app/config.xml` holds its `0.0.1` placeholder.
 
 Tizen 8.0 uses Chromium 108 ([Samsung web engine specifications](https://developer.samsung.com/smarttv/develop/specifications/web-engine-specifications.html)).
 TypeScript checks ES2022 and DOM code in strict mode; tests additionally load Node types.

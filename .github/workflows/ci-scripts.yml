@@ -39,10 +39,14 @@ jobs:
           scripts/ci/set-wgt-version.sh 1.2.30 "${RUNNER_TEMP}/config.xml"
           grep -q '<widget [^>]* version="1.2.30"' "${RUNNER_TEMP}/config.xml"
           grep -q '<?xml version="1.0"' "${RUNNER_TEMP}/config.xml"
-          if scripts/ci/set-wgt-version.sh 1.2 "${RUNNER_TEMP}/config.xml"; then
-            echo "::error::set-wgt-version.sh accepted 1.2"
-            exit 1
-          fi
+          for bad in 1.2 01.2.3 1.02.3 1.2.03 256.0.0 1.256.0 1.0.65536; do
+            if scripts/ci/set-wgt-version.sh "${bad}" "${RUNNER_TEMP}/config.xml"; then
+              echo "::error::set-wgt-version.sh accepted ${bad}"
+              exit 1
+            fi
+          done
+      - name: Test Discord release embed payload
+        run: bash .github/scripts/discord-release-embed.test.sh
       - name: Check user-facing PR release notes
         if: github.event_name == 'pull_request'
         env:

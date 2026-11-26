@@ -64,7 +64,7 @@ export interface ViewContext {
     /** Profile spoiler switches. Absent reads as both off. */
     readonly spoilers?: () => EpisodeSpoilerSettings;
     /** WatchPartyEntry: offered while the experimental switch is on and the server can host a party; open starts a room with the title. */
-    readonly watchParty?: { readonly offered: () => boolean; readonly open: (choice: MediaChoice) => void };
+    readonly watchParty?: { readonly offered: () => boolean; readonly label: () => string; readonly open: (choice: MediaChoice) => void };
 }
 
 function spoilerSettings(context: ViewContext): EpisodeSpoilerSettings {

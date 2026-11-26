@@ -41,7 +41,7 @@ import type { BufferingSnapshot } from "./bufferingSignals.ts";
 import { SeekThumbnails, type ThumbnailSheetLoader } from "./seekThumbnails.ts";
 import { AUTO_NEXT_KEY, HDR_KEY, QUALITY_KEY, BITRATE_KEY, SEEK_BACK_KEY, SEEK_FORWARD_KEY, SEEK_KEYS, profileSettings } from "../contracts/v2/settings.ts";
 import type { SeekThumbnail } from "../contracts/v2/trickplay.ts";
-import { markerAt, type SkipMarker } from "../contracts/v2/markers.ts";
+import { markerAt, type SkipMarker, type TimelineMarker } from "../contracts/v2/markers.ts";
 import { currentNetwork } from "../ui/connectionSpeed.ts";
 import { episodeDetailPresentation, type EpisodeSpoilerSettings, present } from "../ui/episodeSpoilers.ts";
 import { nextEpisode, onDeckPlays, readOnDeck } from "./nextEpisode.ts";
@@ -170,7 +170,6 @@ export interface TrackView {
     readonly ai?: SubtitleAIView | undefined;
     /** The AI Subtitles… menu, present only when the server and this file offer something to run. */
     readonly aiMenu?: { readonly menu: AIMenu; /** Shown while a language relies on transcription. */ readonly quota: string | undefined; readonly quotaExhausted: boolean } | undefined;
-    readonly seriesSubtitle?: { readonly busy: boolean; readonly message: string } | undefined;
     readonly quality?: { readonly choices: readonly TrackChoice[]; readonly selectedId: string | undefined };
     readonly audio: AudioTracks;
     readonly selectedAudioId: string | undefined;
@@ -224,6 +223,7 @@ export type PlaybackView =
           /** `status`, `cueCount` and `instant` expose why the layer is empty: no sidecar, still loading, failed, or ready at this clock reading. */
           readonly captions?: { readonly text: string; /** The second line, from Secondary. */ readonly secondaryText?: string; readonly appearance: SubtitleAppearance; readonly status?: "none" | "loading" | "failed" | "ready"; readonly cueCount?: number; readonly instant?: number } | undefined;
           readonly skipMarker?: SkipMarker | undefined;
+          readonly markers?: readonly TimelineMarker[] | undefined;
           readonly undoSkipSeconds?: number | undefined;
       } & BufferingOverlay)
     | { readonly phase: "error"; readonly title: string; readonly error: PlaybackError; readonly retryable?: boolean }
@@ -266,7 +266,6 @@ export interface PlayerControls {
     /** PlayerViewModel.pickAnotherShufflePick: replaces the announced shuffle pick via POST /shuffles/{id}/skip (#778). */
     pickAnother(): void;
     keepWatching(): void;
-    saveSeriesSubtitle(): void;
     /** AI Subtitles…: one language choice; the controller picks translate, transcribe or both. */
     startSubtitleAI(language: string): void;
     /** Open: the viewer opened AI Subtitles…. Cancel stops the running job, Dismiss clears a failure or a finished job, Discard lets a request go out after one whose outcome is unknown. */
@@ -437,7 +436,7 @@ interface Attempt {
     renditionsAll: boolean;
     trickplayEnabled: boolean;
     thumbnails: SeekThumbnails | undefined;
-    markers: { readonly fileId: string; segments: readonly SkipMarker[] } | undefined;
+    markers: { readonly fileId: string; segments: readonly TimelineMarker[] } | undefined;
     /** The current transport is playing or paused. */
     started: boolean;
     /** A transport of this attempt has shown a frame. Stays true across reconnects. */
@@ -1278,10 +1277,6 @@ export class PlaybackController implements PlayerControls {
     selectSubtitle(trackId: string | undefined): void {
         this.stillWatching.recordViewerAction();
         this.active()?.subtitles.selectSubtitle(trackId);
-    }
-
-    saveSeriesSubtitle(): void {
-        this.active()?.subtitles.saveSeriesSubtitle();
     }
 
     retryTrackInfo(): void {
@@ -3816,7 +3811,7 @@ export class PlaybackController implements PlayerControls {
 
     private readMarkers(attempt: Attempt, fileId: string): void {
         if (attempt.markers?.fileId === fileId) return;
-        const markers = { fileId, segments: [] as readonly SkipMarker[] };
+        const markers = { fileId, segments: [] as readonly TimelineMarker[] };
         attempt.markers = markers;
         void this.deps.session.call({ ...operations.fileMarkers(fileId), profileScoped: true, signal: attempt.signal }).then(
             segments => {
@@ -3897,6 +3892,7 @@ export class PlaybackController implements PlayerControls {
             previewKey: frozen ? undefined : attempt.previewKey,
             captions: attempt.subtitles.captionsView(plan, attempt.hidden || attempt.restoring || frozen),
             skipMarker: frozen ? undefined : markerAt((attempt.markers?.segments ?? []).filter(marker => marker.kind !== "intro" || attempt.introMode === "ask"), attempt.sourceSeconds),
+            markers: attempt.markers?.segments,
             undoSkipSeconds: attempt.undoSkip ?? attempt.pendingSkipUndo,
         });
         if (attempt.offer.credits && attempt.offer.creditsDeadline !== undefined && attempt.offer.cancelCreditsTimer === undefined && attempt.offer.creditsDeadline <= this.deps.clock.now()) {

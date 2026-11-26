@@ -66,7 +66,7 @@ export function discoveryView(route: LibraryRoute, state: DiscoveryState, handle
         rows.forEach(({ section }) => {
             const row = homeView([], [section], handlers.context, {
                 expand: value => open(value.title, { kind: "section", id: value.id }),
-                search: () => handlers.push(newRoute({ kind: "search", query: "", pages: undefined, resultsFor: "" })),
+                search: handlers.openSearch,
                 library: library => handlers.push(newRoute({ kind: "library", library, pages: newPages() })),
                 chooseProfile: handlers.chooseProfile,
                 collectionCards: (collections, rowTitle) => collectionRowCards(collections, rowTitle, handlers, route.library),

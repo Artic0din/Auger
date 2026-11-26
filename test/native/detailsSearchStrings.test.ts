@@ -19,7 +19,7 @@ const SCREEN_KEYS: Readonly<Record<string, readonly string[]>> = {
         "detail.readout.audio", "detail.readout.subtitles", "detail.readout.version", "detail.recommendedSeries", "detail.relatedMovies", "detail.resume", "detail.resumeAt", "detail.resumeEpisode",
         "detail.specials", "detail.starring", "detail.startOver", "detail.stereo", "detail.subtitles", "detail.track", "detail.trackAvailableInPlayer", "detail.trackDefault",
         "detail.trackExternal", "detail.trackForced", "detail.trackPreferred", "detail.trackSdh", "detail.trailers", "detail.unknown", "detail.version", "detail.watchedError.ok", "detail.watchlistAdd",
-        "detail.watchlistRemove", "detail.writer", "detail.writtenBy", "subtitle.trackUnsupportedFormat", "watchParty.menu.open",
+        "detail.watchlistRemove", "detail.writer", "detail.writtenBy", "subtitle.trackUnsupportedFormat",
     ],
     "src/ui/detailsActions.ts": ["detail.autoAudio", "detail.autoSubtitles", "detail.autoVersion", "detail.startOver", "detail.subtitles", "detail.watchlist"],
     "src/ui/detailsLoading.ts": ["detail.loadingDetails", "detail.loadingDetailsFor", "detail.readout.audio", "detail.readout.subtitles", "detail.readout.version"],
@@ -34,7 +34,7 @@ const SCREEN_KEYS: Readonly<Record<string, readonly string[]>> = {
         "boxSets.searchHeading", "requests.search.availableSubtitle", "requests.search.availableTitle", "search.filter.all", "search.filter.audiobooks", "search.filter.movies", "search.filter.series", "search.people", "search.resultCount",
     ],
     "src/ui/browseViews.ts": ["search.empty", "search.emptyBody", "search.initial", "search.initialBodyPeople", "search.searchingAccessibility"],
-    "src/ui/browse.ts": ["search.fieldPrompt.audiobooks", "search.fieldPrompt.video", "search.title"],
+    "src/ui/browse.ts": ["search.fieldPrompt.audiobooks", "search.fieldPrompt.video", "search.title", "watchParty.entry.suggest", "watchParty.entry.watchParty"],
 };
 
 test("each Details and Search screen names its Apple keys, and every one is in the catalog", () => {

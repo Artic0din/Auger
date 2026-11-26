@@ -22,7 +22,7 @@ BETAS = ["v0.1.0-beta.1", "v0.1.0-beta.2", "v0.1.0-beta.3"]
 
 
 def plan(tags, *subjects, **options):
-    return release.plan_release(tags, [Commit(subject) for subject in subjects], **options)
+    return release.plan_release(tags, [s if isinstance(s, Commit) else Commit(s) for s in subjects], **options)
 
 
 class ClassifyCommitTest(unittest.TestCase):
@@ -78,8 +78,38 @@ class LatestTagTest(unittest.TestCase):
     def test_legacy_build_metadata_tags(self):
         tag = release.parse_tag("v1.0.0+21")
         self.assertEqual(release.SemVer(1, 0, 0), tag.version)
-        self.assertTrue(tag.is_prerelease)
+        self.assertFalse(tag.is_prerelease)
+        self.assertFalse(tag.is_exact)
+        self.assertEqual(
+            release.semver_precedence(release.SemVer(1, 0, 0)),
+            release.semver_precedence(tag.version, tag.prerelease),
+        )
         self.assertEqual("v1.0.0", release.latest_tag(["v1.0.0+21", "v1.0.0"]).name)
+        self.assertEqual("v1.0.0+10", release.latest_tag(["v1.0.0+9", "v1.0.0+10"]).name)
+
+    def test_semver_prerelease_precedence_and_grammar(self):
+        ordered = [
+            "v1.0.0-1",
+            "v1.0.0-alpha",
+            "v1.0.0-alpha.1",
+            "v1.0.0-alpha.beta",
+            "v1.0.0-alpha-1",
+            "v1.0.0-alpha10",
+            "v1.0.0-alpha2",
+            "v1.0.0-beta",
+            "v1.0.0-beta.2",
+            "v1.0.0-beta.11",
+            "v1.0.0-rc.1",
+            "v1.0.0",
+        ]
+        for index in range(len(ordered) - 1):
+            lower, higher = ordered[index], ordered[index + 1]
+            with self.subTest(lower=lower, higher=higher):
+                self.assertEqual(higher, release.latest_tag([higher, lower]).name)
+        self.assertIsNotNone(release.parse_tag("v1.0.0-01a+001"))
+        for invalid in ("v01.0.0", "v1.02.0", "v1.0.03", "v1.0.0-01", "v1.0.0-", "v1.0.0-a..b", "v1.0.0+", "v1.0.0+a..b"):
+            with self.subTest(invalid=invalid):
+                self.assertIsNone(release.parse_tag(invalid))
 
     def test_unrelated_tags_are_ignored(self):
         self.assertIsNone(release.latest_tag(["wip/x", "v2", "v1.2", "release-1.0.0"]))
@@ -92,18 +122,33 @@ class AutoBumpTest(unittest.TestCase):
         self.assertEqual("minor", plan(["v1.0.0"], "fix: b", "feat: c", "docs: d").bump)
         self.assertEqual("major", plan(["v1.0.0"], "feat: c", "fix!: e", "fix: b").bump)
 
+    def test_zero_major_breaking_commits_bump_minor_in_auto_mode(self):
+        self.assertEqual(
+            release.ReleasePlan(True, "0.11.0", "v0.11.0", "v0.10.0", "minor"),
+            plan(["v0.10.0"], "feat!: rename key"),
+        )
+        self.assertEqual(
+            release.ReleasePlan(True, "0.11.0", "v0.11.0", "v0.10.0", "minor"),
+            plan(["v0.10.0"], Commit("fix(auth): token format", "BREAKING CHANGE: sign in again")),
+        )
+
     def test_no_user_facing_change_makes_no_release(self):
         result = plan(["v1.0.0"], "docs: a", "chore: b", "ci: c", "test: d")
         self.assertEqual(release.ReleasePlan(False, "", "", "v1.0.0", "none"), result)
         self.assertFalse(plan(["v1.0.0"]).should_release)
 
-    def test_from_legacy_beta_tags(self):
+    def test_graduates_prerelease_tags(self):
         self.assertEqual(
-            release.ReleasePlan(True, "0.1.1", "v0.1.1", "v0.1.0-beta.3", "patch"),
+            release.ReleasePlan(True, "0.1.0", "v0.1.0", "v0.1.0-beta.3", "patch"),
             plan(BETAS, "fix: a"),
         )
-        self.assertEqual("v0.2.0", plan(BETAS, "feat: a").tag)
-        self.assertEqual("v1.0.0", plan(BETAS, "feat!: a").tag)
+        self.assertEqual("v0.1.0", plan(BETAS, "feat: a").tag)
+        self.assertEqual("v0.1.0", plan(BETAS, "feat!: a").tag)
+        self.assertEqual("v1.0.0", plan(["v1.0.0-rc.1"], "fix: a").tag)
+        self.assertEqual("v1.0.0", plan(["v1.0.0-rc.1"], "feat!: a").tag)
+        self.assertEqual("v2.0.0", plan(["v1.0.0", "v1.1.0-rc.1"], "feat!: a").tag)
+        self.assertEqual("v0.2.0", plan(["v0.1.0", "v0.1.1-rc.1"], "feat: a").tag)
+        self.assertEqual("v0.1.1", plan(["v0.1.0", "v0.1.1-rc.1"], "fix: a").tag)
 
     def test_from_a_stable_tag(self):
         tags = ["v0.2.0-beta.1", "v0.2.0", *BETAS]
@@ -116,17 +161,18 @@ class AutoBumpTest(unittest.TestCase):
     def test_from_a_beta_tag_newer_than_an_exact_tag(self):
         tags = ["v0.1.0", "v0.2.0-beta.1", "v0.2.0-beta.2"]
         self.assertEqual(
-            release.ReleasePlan(True, "0.2.1", "v0.2.1", "v0.2.0-beta.2", "patch"),
+            release.ReleasePlan(True, "0.2.0", "v0.2.0", "v0.1.0", "patch"),
             plan(tags, "fix: a"),
         )
         self.assertEqual(
-            release.ReleasePlan(True, "0.3.0", "v0.3.0", "v0.2.0-beta.2", "minor"),
+            release.ReleasePlan(True, "0.2.0", "v0.2.0", "v0.1.0", "minor"),
             plan(tags, "feat: a"),
         )
-        self.assertEqual("v1.0.0", plan(tags, "feat!: a").tag)
+        self.assertEqual("v0.2.0", plan(tags, "feat!: a").tag)
 
     def test_without_tags(self):
         self.assertEqual(release.ReleasePlan(True, "0.1.0", "v0.1.0", "", "minor"), plan([], "feat: a"))
+        self.assertEqual(release.ReleasePlan(True, "0.1.0", "v0.1.0", "", "minor"), plan([], "feat!: a"))
         self.assertEqual("v0.0.1", plan([], "fix: a").tag)
 
     def test_already_released_target_makes_no_release(self):
@@ -135,21 +181,22 @@ class AutoBumpTest(unittest.TestCase):
 
 
 class ManualBumpTest(unittest.TestCase):
-    def test_from_legacy_beta_tags(self):
-        self.assertEqual("v0.1.1", plan(BETAS, mode="patch").tag)
-        self.assertEqual("v0.2.0", plan(BETAS, mode="minor").tag)
+    def test_graduates_prerelease_tags(self):
+        self.assertEqual("v0.1.0", plan(BETAS, mode="patch").tag)
+        self.assertEqual("v0.1.0", plan(BETAS, mode="minor").tag)
         self.assertEqual(
             release.ReleasePlan(True, "1.0.0", "v1.0.0", "v0.1.0-beta.3", "major"),
             plan(BETAS, "docs: a", mode="major"),
         )
+        self.assertEqual("v1.0.0", plan(["v0.10.0"], "docs: a", mode="major").tag)
 
     def test_from_a_beta_tag_newer_than_an_exact_tag(self):
         tags = ["v0.1.0", "v0.2.0-beta.1"]
         self.assertEqual(
-            release.ReleasePlan(True, "0.2.1", "v0.2.1", "v0.2.0-beta.1", "patch"),
+            release.ReleasePlan(True, "0.2.0", "v0.2.0", "v0.1.0", "patch"),
             plan(tags, mode="patch"),
         )
-        self.assertEqual("v0.3.0", plan(tags, mode="minor").tag)
+        self.assertEqual("v0.2.0", plan(tags, mode="minor").tag)
 
     def test_already_released_target_makes_no_release(self):
         result = plan(["v0.2.1"], mode="patch", target_already_released=True)
@@ -171,15 +218,18 @@ class ExplicitVersionTest(unittest.TestCase):
         self.assertEqual("v1.0.0", plan(BETAS, "docs: a", mode="patch", explicit_version="v1.0.0").tag)
 
     def test_must_be_newer_than_the_latest_tag(self):
-        with self.assertRaisesRegex(release.ReleaseError, "not newer"):
-            plan(BETAS, explicit_version="0.1.0")
-        with self.assertRaisesRegex(release.ReleaseError, "not newer than the latest tag, v0.2.0-beta.1"):
-            plan(["v0.1.0", "v0.2.0-beta.1"], explicit_version="0.2.0")
+        self.assertEqual("v0.1.0", plan(BETAS, explicit_version="0.1.0").tag)
+        self.assertEqual("v0.2.0", plan(["v0.1.0", "v0.2.0-beta.1"], explicit_version="0.2.0").tag)
         self.assertEqual("v0.2.1", plan(["v0.1.0", "v0.2.0-beta.1"], explicit_version="0.2.1").tag)
+        with self.assertRaisesRegex(release.ReleaseError, "not newer than the latest tag, v0.2.0-beta.1"):
+            plan(["v0.1.0", "v0.2.0-beta.1"], explicit_version="0.1.9")
+        with self.assertRaisesRegex(release.ReleaseError, "not newer than the latest tag, v1.0.0\\+21"):
+            plan(["v1.0.0+21"], explicit_version="1.0.0")
         with self.assertRaisesRegex(release.ReleaseError, "not newer"):
             plan(["v0.2.0"], explicit_version="0.1.9")
-        with self.assertRaisesRegex(release.ReleaseError, "look like"):
-            plan(BETAS, explicit_version="1.2")
+        for invalid in ("1.2", "01.2.0", "1.02.0", "1.2.00"):
+            with self.subTest(invalid=invalid), self.assertRaisesRegex(release.ReleaseError, "look like"):
+                plan(BETAS, explicit_version=invalid)
 
     def test_already_released_target_makes_no_release(self):
         result = plan(["v0.1.0"], "feat: a", explicit_version="0.2.0", target_already_released=True)
@@ -340,7 +390,7 @@ class GitRepoIntegrationTest(unittest.TestCase):
             self.next_published("--target", target),
         )
         self.assertEqual(
-            {"should_release": "true", "version": "0.2.0", "tag": "v0.2.0", "previous_tag": "v0.1.0-beta.3", "bump": "minor"},
+            {"should_release": "true", "version": "0.1.0", "tag": "v0.1.0", "previous_tag": "v0.1.0-beta.3", "bump": "minor"},
             self.next_published("--target", target, "--bump", "minor"),
         )
 
@@ -353,16 +403,16 @@ class GitRepoIntegrationTest(unittest.TestCase):
             self.next_published("--target", target),
         )
 
-    def test_bumps_from_a_beta_tag_newer_than_a_published_tag(self):
+    def test_graduates_a_beta_tag_newer_than_a_published_tag(self):
         self.commit("feat: initial", "v0.1.0")
         self.commit("feat: beta work", "v0.2.0-beta.1", published=False)
         target = self.commit("fix: polish beta")
         self.assertEqual(
-            {"should_release": "true", "version": "0.2.1", "tag": "v0.2.1", "previous_tag": "v0.2.0-beta.1", "bump": "patch"},
+            {"should_release": "true", "version": "0.2.0", "tag": "v0.2.0", "previous_tag": "v0.1.0", "bump": "minor"},
             self.next_published("--target", target),
         )
         self.assertEqual(
-            {"should_release": "true", "version": "0.3.0", "tag": "v0.3.0", "previous_tag": "v0.2.0-beta.1", "bump": "minor"},
+            {"should_release": "true", "version": "0.2.0", "tag": "v0.2.0", "previous_tag": "v0.1.0", "bump": "minor"},
             self.next_published("--target", target, "--bump", "minor"),
         )
 
