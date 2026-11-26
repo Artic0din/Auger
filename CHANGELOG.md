@@ -6,6 +6,17 @@ All notable changes to this project are documented in this file.
 
 <!-- changelog:releases -->
 
+## [0.14.12] - 2026-11-26
+
+### Fixes
+
+- **Accounts**: Port Change Account from the tvOS source ([#941](https://github.com/Artic0din/Auger-Tizen/pull/941), [`6c0145dc`](https://github.com/Artic0din/Auger-Tizen/commit/6c0145dc))
+
+### Tests
+
+- **Interface**: Stabilize delayed-answer skeleton, spoiler, and person-reopen checks ([#950](https://github.com/Artic0din/Auger-Tizen/pull/950), [`3a7e0201`](https://github.com/Artic0din/Auger-Tizen/commit/3a7e0201))
+- **Person**: Handle filmography-before-metadata focus on reopen ([#952](https://github.com/Artic0din/Auger-Tizen/pull/952), [`ca743d2a`](https://github.com/Artic0din/Auger-Tizen/commit/ca743d2a))
+
 ## [0.14.11] - 2026-11-26
 
 ### Fixes
