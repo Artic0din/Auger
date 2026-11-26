@@ -421,9 +421,9 @@ export class WatchPartyHub {
 
     /** Loads the next page of picker search results when available. */
     async loadMoreSearch(): Promise<void> {
-        const { query, nextCursor, searching } = this.state.search;
+        const { query, completedQuery, nextCursor, searching } = this.state.search;
         const trimmed = query.trim();
-        if (trimmed === "" || nextCursor === undefined || searching) return;
+        if (trimmed === "" || trimmed !== completedQuery || nextCursor === undefined || searching) return;
         await this.runSearch(trimmed, nextCursor, this.searchEpoch);
     }
 
