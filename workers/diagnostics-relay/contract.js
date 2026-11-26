@@ -368,5 +368,5 @@ export function validateBuffering(raw) {
 
 /** Client incidentAutoEligible: only a technical failure that ended playback after recovery files automatically. */
 export function incidentAutoEligible(incident) {
-  return incident.out === "failed" && (incident.kind !== "network" || incident.rec?.r === "exhausted");
+  return incident.out === "failed" && (incident.kind !== "network" || (incident.rec?.r === "exhausted" && incident.http !== undefined));
 }
