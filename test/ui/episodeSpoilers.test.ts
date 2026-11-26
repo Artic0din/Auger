@@ -44,9 +44,19 @@ async function mount(options: { stills: boolean; images?: boolean; overviews?: b
 test("unwatched episode stills blur and descriptions drop while series text stays", async () => {
     const { tv } = await mount({ stills: true, images: true, overviews: true });
     try {
-        const still = tv.page.locator('[data-section="continue_watching"] [data-focus="episode:s1e12"] .episode-spoiler-blur .browse-art-image');
-        await still.waitFor();
-        assert.equal(await still.evaluate(node => getComputedStyle(node).filter), "blur(24px)");
+        const selector = '[data-section="continue_watching"] [data-focus="episode:s1e12"] .episode-spoiler-blur .browse-art-image';
+        await tv.page.locator(selector).waitFor();
+        const filter = await readLive(
+            tv,
+            sel => {
+                const node = document.querySelector(sel);
+                return node === null || !node.isConnected ? null : getComputedStyle(node).filter;
+            },
+            selector,
+            value => value !== "",
+            "episode spoiler blur",
+        );
+        assert.equal(filter, "blur(24px)");
         assert.equal(await tv.page.locator('[data-section="continue_watching"] [data-focus="movie:m0001"] .episode-spoiler-blur').count(), 0);
         await tv.page.locator('[data-section="continue_watching"] [data-focus="episode:s1e12"]').focus();
         await tv.eventually(async () => {

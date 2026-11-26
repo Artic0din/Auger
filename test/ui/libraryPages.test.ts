@@ -10,7 +10,7 @@ import { FakeDetails } from "../native/support/fakeDetails.ts";
 import { FakeSettings } from "../native/support/fakeSettings.ts";
 import { problem } from "../native/support/fakeSilo.ts";
 import { HIDDEN_KEY } from "../../src/contracts/v2/settings.ts";
-import { afterPaint, homeDetailsRead, launchBrowser, openTv, type Tv } from "./support/tv.ts";
+import { afterPaint, homeDetailsRead, launchBrowser, openTv, readLive, type Tv } from "./support/tv.ts";
 import { selectLibraryMode } from "./support/library.ts";
 
 let browser: Browser;
@@ -333,14 +333,20 @@ page("Browse's first load shows twelve static poster placeholders", async tv => 
         await afterPaint(tv);
         assert.equal(await cards.count(), 12);
         assert.equal(await tv.page.locator(".discovery-skeleton").count(), 0);
-        const style = await tv.page.evaluate(() => {
-            const node = document.querySelector(".browse .catalog-skeleton .poster-skeleton");
-            if (node === null) return null;
-            const computed = getComputedStyle(node);
-            const box = node.getBoundingClientRect();
-            return { background: computed.backgroundColor, radius: computed.borderRadius, animations: node.getAnimations().length, ratio: box.height / box.width };
-        });
-        assert.ok(style !== null, "a poster placeholder is rendered");
+        const style = await readLive(
+            tv,
+            selector => {
+                const node = document.querySelector<HTMLElement>(selector);
+                if (node === null || !node.isConnected) return null;
+                const box = node.getBoundingClientRect();
+                if (box.width <= 0) return null;
+                const computed = getComputedStyle(node);
+                return { background: computed.backgroundColor, radius: computed.borderRadius, animations: node.getAnimations().length, ratio: box.height / box.width };
+            },
+            ".browse .catalog-skeleton .poster-skeleton",
+            value => value.background !== "" && value.radius !== "" && Number.isFinite(value.ratio),
+            "browse poster skeleton styles",
+        );
         assert.deepEqual({ ...style, ratio: Math.round(style.ratio * 100) / 100 }, { background: "rgba(255, 255, 255, 0.09)", radius: "12px", animations: 0, ratio: 1.5 });
     } finally { held.release(); }
 });
