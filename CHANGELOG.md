@@ -6,6 +6,24 @@ All notable changes to this project are documented in this file.
 
 <!-- changelog:releases -->
 
+## [0.13.2] - 2026-11-26
+
+### Fixes
+
+- **Collections**: Port collection poster loading, failure states and group header font ([#930](https://github.com/Artic0din/Auger-Tizen/pull/930), [`81a71b27`](https://github.com/Artic0din/Auger-Tizen/commit/81a71b27))
+
+## [0.13.1] - 2026-11-26
+
+### Fixes
+
+- **Search**: Translate Search box-set card eyebrow from catalog ([#929](https://github.com/Artic0din/Auger-Tizen/pull/929), [`b224ccd4`](https://github.com/Artic0din/Auger-Tizen/commit/b224ccd4))
+
+## [0.13.0] - 2026-11-26
+
+### Features
+
+- **Playback**: Claim 2160p on 4K panels via isUdPanelSupported ([#925](https://github.com/Artic0din/Auger-Tizen/pull/925), [`8e2fb62e`](https://github.com/Artic0din/Auger-Tizen/commit/8e2fb62e))
+
 ## [0.12.0] - 2026-11-26
 
 ### Features
