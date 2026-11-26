@@ -1,4 +1,4 @@
-import { integer, object, string, WireError } from "./wire.ts";
+import { integer, object, optionalString, WireError } from "./wire.ts";
 
 export interface PlayerChapter {
     readonly title: string | undefined;
@@ -18,7 +18,7 @@ export function decodePlayerChapters(value: unknown, fileId: string): readonly P
         const seconds = chapter.start_seconds;
         const end = chapter.end_seconds;
         if (index < 0 || typeof seconds !== "number" || !Number.isFinite(seconds) || seconds < 0 || typeof end !== "number" || !Number.isFinite(end) || end < seconds) throw new WireError("watch.chapter", "a valid source-time interval");
-        const title = string(chapter, "title", "watch.chapter").trim();
-        return { title: title === "" ? undefined : title, seconds };
+        const title = optionalString(chapter, "title", "watch.chapter")?.trim();
+        return { title: title === undefined || title === "" ? undefined : title, seconds };
     }).sort((a, b) => a.seconds - b.seconds);
 }

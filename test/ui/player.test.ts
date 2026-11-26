@@ -5365,6 +5365,7 @@ test("Chapters draws single-line rows with play symbol for current chapter and u
         for (const id of ["video-aspect", "video-speed", "auto-next"]) {
             assert.equal(await page.locator(`[data-focus="${id}"]`).count(), 1);
             assert.equal(await page.locator(`[data-focus="${id}"]`).getAttribute("aria-disabled"), "true");
+            assert.equal(await page.locator(`[data-focus="${id}"] .player-setting-value`).count(), 0);
         }
 
         // Chapters enters at the top of the column with unfocused current play.fill (80% white), then Down moves to chapter:1 with focused single-line geometry and no ::after checkmark.
@@ -5399,6 +5400,7 @@ test("Chapters draws single-line rows with play symbol for current chapter and u
         const focusedCurrent = await inspect("chapter:1");
         const unfocusedFirst = await inspect("chapter:0");
 
+        assert.equal(await page.locator('[data-focus="chapter:1"]').getAttribute("aria-label"), null);
         assert.equal(focusedCurrent.afterContent, "none");
         assert.equal(focusedCurrent.hasPlaySvg, true);
         assert.equal(unfocusedFirst.hasPlaySvg, false);

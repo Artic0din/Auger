@@ -45,12 +45,14 @@ test("video settings validate before calling AVPlay, retain confirmed values on 
 test("chapters belong to the effective file and retain source seconds", () => {
     const chapters = decodePlayerChapters({ versions: [
         { file_id: "other", chapters: [{ index: 0, title: "Wrong", start_seconds: 0, end_seconds: 30 }] },
-        { file_id: "42", chapters: [{ index: 0, title: "", start_seconds: 0, end_seconds: 30 }, { index: 1, title: "Second", start_seconds: 30, end_seconds: 80 }] },
+        { file_id: "42", chapters: [{ index: 0, title: "", start_seconds: 0, end_seconds: 30 }, { index: 1, title: "Second", start_seconds: 30, end_seconds: 80 }, { index: 2, start_seconds: 80, end_seconds: 120 }] },
     ] }, "42");
     assert.equal(chapters[0]?.title, undefined);
     assert.equal(chapters[1]?.title, "Second");
+    assert.equal(chapters[2]?.title, undefined);
     assert.equal(chapterTitle(chapters[0]!, 0), "Chapter 1");
     assert.equal(chapterTitle(chapters[1]!, 1), "Second");
+    assert.equal(chapterTitle(chapters[2]!, 2), "Chapter 3");
     setAppLanguage("de", SHIPPED_LANGUAGES, ["de-DE"]);
     try {
         assert.equal(chapterTitle(chapters[0]!, 0), "Kapitel 1");

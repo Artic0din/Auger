@@ -16,7 +16,6 @@ function chapterRow(chapter: PlayerChapter, index: number, current: boolean, sta
     button.type = "button";
     button.setAttribute("data-focus", `chapter:${index}`);
     button.setAttribute("aria-pressed", String(current));
-    button.setAttribute("aria-label", title);
     if (current) button.setAttribute("aria-description", translate("player.hud.currentlyPlaying"));
     button.append(
         el("span", "player-chapter-number", localizeNumerals(String(index + 1).padStart(2, "0"))),
@@ -106,12 +105,12 @@ export function fillVideoPane(list: HTMLElement, hud: PlayerHUD | undefined, tra
     const picture = paneColumn(heading("player.hud.picture"), "player-menu-column-picture");
     const playback = paneColumn(heading("player.hud.playback"), "player-menu-column-playback");
     if ((tracks.quality?.choices.length ?? 0) > 1) picture.rows.append(settingRow("video-quality", translate("options.quality"), qualityValue(tracks)));
-    const aspectRow = settingRow("video-aspect", translate("player.hud.aspect"), aspectLabel(hud?.aspect ?? "Fit"));
+    const aspectRow = settingRow("video-aspect", translate("player.hud.aspect"), hud?.aspect === undefined ? "" : aspectLabel(hud.aspect));
     picture.rows.append((hud?.aspects.length ?? 0) > 0 ? aspectRow : unavailableRow(aspectRow));
-    const speedRow = settingRow("video-speed", translate("player.settings.speed"), speedLabel(hud?.speed ?? 1));
+    const speedRow = settingRow("video-speed", translate("player.settings.speed"), hud?.speed === undefined ? "" : speedLabel(hud.speed));
     playback.rows.append((hud?.speeds.length ?? 0) > 0 ? speedRow : unavailableRow(speedRow));
     const autoNextOn = hud?.autoNext === true;
-    const autoNextRow = settingRow("auto-next", translate("options.autoplayNext"), translate(autoNextOn ? "options.on" : "options.off"), { chevron: false, pressed: autoNextOn });
+    const autoNextRow = settingRow("auto-next", translate("options.autoplayNext"), hud?.autoNext === undefined ? "" : translate(autoNextOn ? "options.on" : "options.off"), { chevron: false, pressed: autoNextOn });
     playback.rows.append(hud?.autoNext !== undefined ? autoNextRow : unavailableRow(autoNextRow));
     columns.append(picture.column, playback.column);
     list.append(columns);
