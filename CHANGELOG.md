@@ -6,6 +6,12 @@ All notable changes to this project are documented in this file.
 
 <!-- changelog:releases -->
 
+## [0.14.15] - 2026-11-26
+
+### Fixes
+
+- **Accounts**: Size Accounts, Profiles, and PIN text as Apple does ([#954](https://github.com/Artic0din/Auger-Tizen/pull/954), [`8bd36b7e`](https://github.com/Artic0din/Auger-Tizen/commit/8bd36b7e))
+
 ## [0.14.14] - 2026-11-26
 
 ### Fixes
