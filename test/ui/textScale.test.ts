@@ -1298,7 +1298,13 @@ test("Sign-in screens and shared alert dialogs use Apple's points times the cap 
         await plainTv.page.locator('[data-focus="connect"]').click();
         await plainTv.page.locator('[data-screen="insecure"] .signin-alert').waitFor();
         await collect(plainTv, "insecure-alert");
-        assert.match((await fontStyle(plainTv, ".signin-auth .signin-alert .signin-alert-title")).fontFamily, /^"?Inter\b/);
+        for (const selector of [
+          ".signin-auth .signin-alert .signin-alert-title",
+          ".signin-auth .signin-alert .signin-alert-text",
+          ".signin-auth .signin-alert .marquee-button",
+        ]) {
+          assert.match((await fontStyle(plainTv, selector)).fontFamily, /^"?Inter\b/);
+        }
         assert.deepEqual(plainTv.console, []);
     } finally { await plainTv.page.context().close(); }
 
@@ -1319,11 +1325,21 @@ test("Sign-in screens and shared alert dialogs use Apple's points times the cap 
             for (const role of alertRoles.seen) alertSeen.add(role);
         };
 
+        const assertBrowseAlertInter = async (buttonSelector: string) => {
+          for (const selector of [
+            ".browse .signin-alert .signin-alert-title",
+            ".browse .signin-alert .signin-alert-text",
+            buttonSelector,
+          ]) {
+            assert.match((await fontStyle(browseTv, selector)).fontFamily, /^"?Inter\b/);
+          }
+        };
+
         await browseTv.page.locator('[data-view="home"] [data-focus="movie:m0001"]').first().click({ button: "right" });
         await browseTv.page.locator(".card-menu").getByRole("menuitem", { name: "Add to Favorites" }).click();
         await browseTv.page.locator(".browse .signin-alert").waitFor();
         await collectBrowseAlert("home-card-alert");
-        assert.match((await fontStyle(browseTv, ".browse .signin-alert .signin-alert-title")).fontFamily, /^"?Inter\b/);
+        await assertBrowseAlertInter(".browse .signin-alert .card-alert-button");
         await browseTv.page.locator('[data-focus="card-alert-ok"]').click();
         await browseTv.page.locator(".browse .signin-alert").waitFor({ state: "detached" });
         await browseTv.eventually(async () => browseTv.pendingReplies === 0, "home reread settled");
@@ -1335,7 +1351,7 @@ test("Sign-in screens and shared alert dialogs use Apple's points times the cap 
         await browseTv.page.locator('[data-focus="watchlist"]').click();
         await browseTv.page.locator('.browse .signin-alert [data-focus="alert-ok"]').waitFor();
         await collectBrowseAlert("details-alert");
-        assert.match((await fontStyle(browseTv, ".browse .signin-alert .signin-alert-title")).fontFamily, /^"?Inter\b/);
+        await assertBrowseAlertInter(".browse .signin-alert .signin-actions .browse-button");
         assert.deepEqual(browseTv.console, []);
     } finally { await browseTv.page.context().close(); }
 
