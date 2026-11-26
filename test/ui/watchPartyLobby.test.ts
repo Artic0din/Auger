@@ -841,6 +841,7 @@ test("the ballot shows each tally and the leader; Select votes and takes it back
         await tv.page.keyboard.press("Enter");
         await tv.eventually(async () => JSON.stringify(await tallies(tv)) === JSON.stringify(["1", "1"]), "my vote counted");
         await tv.eventually(async () => (await tv.page.locator('[data-focus="suggestion:heat"] .watch-party-candidate-tick').count()) === 1, "my tick");
+        await tv.eventually(async () => (await button(tv, "suggestion:heat").getAttribute("aria-disabled")) === "false", "my vote settled");
         assert.equal(fake.ballotChanges.at(-1)?.call, "POST /suggestions/heat/vote");
         assert.equal(fake.ballotChanges.at(-1)?.roomToken, "room-proof-one");
         assert.equal(await button(tv, "suggestion:heat").getAttribute("aria-label"), "Remove vote for Heat");
