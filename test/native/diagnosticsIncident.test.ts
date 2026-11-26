@@ -231,21 +231,57 @@ test("successive player screens can each report their first attempt", () => {
     assert.equal(diagnostics.incidentFor("playback"), latest);
 });
 
-test("ordinary connectivity loss stays manual; a buffering or network recovery that ran out files once", () => {
+test("ordinary connectivity loss and unconfirmed reconnect drops stay manual; exhausted network reconnects with observed HTTP file once", () => {
     const lost = playbackIncident(trace({ stage: "avplay_play", opened: true, first: { stage: "avplay_play", buffering: false } }), { kind: "network" });
     assert.ok(lost !== undefined);
     assert.equal(lost.rec.r, "none");
     assert.equal(incidentAutoEligible(lost), false, "a network failure without exhausted recovery is ordinary connectivity");
-    const attempted = playbackIncident(trace({ stage: "reconnect", reconnects: 1, first: { stage: "playing", code: "connection_lost", buffering: false } }), { kind: "network" });
+    const lostHttp = playbackIncident(trace({ stage: "avplay_play", opened: true, http: 503, first: { stage: "avplay_play", buffering: false } }), { kind: "network" });
+    assert.ok(lostHttp !== undefined);
+    assert.equal(lostHttp.rec.r, "none");
+    assert.equal(incidentAutoEligible(lostHttp), false, "non-exhausted network incidents never auto-file even with an HTTP status");
+    const attempted = playbackIncident(trace({ stage: "reconnect", reconnects: 1, http: 503, first: { stage: "playing", code: "connection_lost", buffering: false } }), { kind: "network" });
     assert.equal(attempted?.rec.r, "attempted");
     assert.equal(attempted === undefined ? true : incidentAutoEligible(attempted), false);
-    const exhausted = playbackIncident(trace({
+
+    const bufferingDrop = playbackIncident(trace({
         stage: "reconnect", opened: true, shown: true, reconnects: 1, exhausted: true,
         first: { stage: "quality_change", code: "no_answer", buffering: true },
     }), { kind: "network" });
-    assert.ok(exhausted !== undefined);
-    assert.deepEqual([exhausted.cat, exhausted.rec.r], ["buffering", "exhausted"]);
-    assert.ok(incidentAutoEligible(exhausted));
+    assert.ok(bufferingDrop !== undefined);
+    assert.deepEqual([bufferingDrop.cat, bufferingDrop.rec.r, bufferingDrop.http, bufferingDrop.fc], ["buffering", "exhausted", undefined, "network_unreachable"]);
+    assert.equal(incidentAutoEligible(bufferingDrop), false, "exhausted buffering reconnect without HTTP stays manual");
+
+    const playbackDrop = playbackIncident(trace({
+        stage: "reconnect", opened: true, shown: true, reconnects: 1, exhausted: true,
+        first: { stage: "playing", code: "connection_lost", buffering: false },
+    }), { kind: "network" });
+    assert.ok(playbackDrop !== undefined);
+    assert.deepEqual([playbackDrop.cat, playbackDrop.rec.r, playbackDrop.http, playbackDrop.fc], ["playback", "exhausted", undefined, "network_unreachable"]);
+    assert.equal(incidentAutoEligible(playbackDrop), false, "exhausted playback reconnect without HTTP stays manual");
+
+    const timedOut = playbackIncident(trace({
+        stage: "reconnect", opened: true, shown: true, reconnects: 1, exhausted: true, timedOut: true,
+        first: { stage: "playing", code: "connection_lost", buffering: false },
+    }), { kind: "network" });
+    assert.ok(timedOut !== undefined);
+    assert.deepEqual([timedOut.http, timedOut.fc], [undefined, "no_response"]);
+    assert.equal(incidentAutoEligible(timedOut), false, "exhausted reconnect timeout without HTTP stays manual");
+
+    for (const [cat, first] of [
+        ["playback", { stage: "playing", code: "connection_lost", buffering: false }],
+        ["buffering", { stage: "quality_change", code: "no_answer", buffering: true }],
+    ] as const) {
+        for (const status of [503, 429, 409, 400]) {
+            const withHttp = playbackIncident(trace({
+                stage: "reconnect", opened: true, shown: true, reconnects: 1, exhausted: true, http: status,
+                first,
+            }), { kind: "network" });
+            assert.ok(withHttp !== undefined);
+            assert.deepEqual([withHttp.cat, withHttp.rec.r, withHttp.http, withHttp.fc], [cat, "exhausted", status, `http_${status}`]);
+            assert.equal(incidentAutoEligible(withHttp), true, `${cat} exhausted reconnect with HTTP ${status} is auto-eligible`);
+        }
+    }
 });
 
 test("an unavailable HDR probe is reported apart from an observed SDR answer", () => {

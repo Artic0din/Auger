@@ -270,3 +270,45 @@ test("a steady roll never keeps more than two bitmaps: the one fading in and the
         assert.ok(peak <= 2, `${peak} bitmaps`);
     } finally { await tab.context().close(); }
 });
+
+test("hero wash skips the top-trailing corner for wide backdrops and draws corner glow plus shadow for framed covers", async () => {
+    const tab = await page();
+    try {
+        const result = await tab.evaluate(async ([tints]) => {
+            const fixture = Reflect.get(window, "HeroFixture") as typeof import("../../src/ui/heroBackdrop.ts");
+            const source = document.createElement("canvas");
+            source.width = 16;
+            source.height = 24;
+            const srcContext = source.getContext("2d");
+            if (srcContext !== null) {
+                srcContext.fillStyle = "#ff4422";
+                srcContext.fillRect(0, 0, source.width, source.height);
+            }
+            const samplePoint = (canvas: HTMLCanvasElement, x: number, y: number): number[] =>
+                Array.from(canvas.getContext("2d")?.getImageData(Math.round(x / 2), Math.round(y / 2), 1, 1).data ?? []).slice(0, 3);
+
+            const wash = new fixture.HeroWash({ now: () => 0, schedule: () => () => undefined });
+            wash.show(tints[0], false, { includesTopTrailing: false });
+            const wide = wash.element.lastElementChild as HTMLCanvasElement;
+            const wideTopRight = samplePoint(wide, 1916, 4);
+
+            wash.show(tints[0], false, { includesTopTrailing: true });
+            const fourCorners = wash.element.lastElementChild as HTMLCanvasElement;
+            const coverTopRight = samplePoint(fourCorners, 1916, 4);
+
+            wash.show(tints[0], false, { includesTopTrailing: true, cover: { aspect: "poster", rtl: false, source } });
+            const withCover = wash.element.lastElementChild as HTMLCanvasElement;
+            const coverRect = fixture.coverFrame("poster", false);
+            const aroundGlow = samplePoint(withCover, coverRect.left - 32, coverRect.top + coverRect.height / 2);
+            const baselineAround = samplePoint(fourCorners, coverRect.left - 32, coverRect.top + coverRect.height / 2);
+            const insideCover = samplePoint(withCover, coverRect.left + coverRect.width / 2, coverRect.top + coverRect.height / 2);
+            const baselineInside = samplePoint(fourCorners, coverRect.left + coverRect.width / 2, coverRect.top + coverRect.height / 2);
+            return { wideTopRight, coverTopRight, aroundGlow, baselineAround, insideCover, baselineInside };
+        }, [TINTS] as const);
+
+        assert.notDeepEqual(result.wideTopRight, result.coverTopRight);
+        assert.ok((result.coverTopRight[2] ?? 0) > (result.wideTopRight[2] ?? 0), "cover mode keeps the blue top-trailing wash");
+        assert.ok((result.aroundGlow[0] ?? 0) > (result.baselineAround[0] ?? 0), "cover glow brightens around the frame");
+        assert.ok((result.insideCover[0] ?? 0) >= (result.baselineInside[0] ?? 0));
+    } finally { await tab.context().close(); }
+});
