@@ -74,7 +74,7 @@ export function mountAccounts(root: HTMLElement, core: SessionCoreDeps, current:
         const dismiss = (): void => { render(false, false, removeServer); };
         let panel: HTMLElement = el("div", "skyline-selector");
         const cancel = actionButton("cancel", translate("common.cancel"), dismiss);
-        const accept = actionButton("confirm", translate(removeServer ? "servers.remove.confirm" : "settings.accounts.signOut"), () => {
+        const accept = actionButton("confirm", translate(removeServer ? "servers.remove.confirm" : "shell.signOut.confirm"), () => {
             if (removalPending) return;
             removalPending = true;
             cancel.element.setAttribute("disabled", "");

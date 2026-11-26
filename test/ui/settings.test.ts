@@ -2170,3 +2170,39 @@ test("Settings Playback shows Still watching prompt after Auto-play next, defaul
         assert.deepEqual(tv.console, []);
     } finally { await tv.page.context().close(); }
 });
+
+test("Settings sign-out confirmation fades scrim and card together over 0.2 s ease-out without clamping three-line titles", async () => {
+    const { tv } = await setup();
+    try {
+        await tv.page.evaluate(() => window.browseHarness.seedServerName("Very Long Living Room Media Library Server Name Extended Across Multiple Wrapped Lines"));
+        await openSettings(tv);
+        await tv.page.locator('[data-focus="settings-signout"]').click();
+        const dialog = tv.page.locator(".confirm-dialog");
+        await dialog.waitFor();
+        const layout = await dialog.evaluate(node => {
+            const scrim = document.querySelector<HTMLElement>(".confirm-dialog-scrim");
+            const title = node.querySelector<HTMLElement>(".skyline-confirm-title");
+            const cardStyle = getComputedStyle(node);
+            const scrimStyle = scrim === null ? null : getComputedStyle(scrim);
+            const titleStyle = title === null ? null : getComputedStyle(title);
+            return {
+                cardAnimation: [cardStyle.animationName, cardStyle.animationDuration, cardStyle.animationTimingFunction],
+                scrimAnimation: scrimStyle === null ? null : [scrimStyle.animationName, scrimStyle.animationDuration, scrimStyle.animationTimingFunction],
+                webkitLineClamp: titleStyle?.webkitLineClamp ?? "",
+                lineHeight: titleStyle === null ? 0 : parseFloat(titleStyle.lineHeight),
+                titleHeight: title?.getBoundingClientRect().height ?? 0,
+            };
+        });
+        assert.deepEqual(layout.cardAnimation, ["skyline-appear", "0.2s", "ease-out"]);
+        assert.deepEqual(layout.scrimAnimation, ["skyline-appear", "0.2s", "ease-out"]);
+        assert.equal(layout.webkitLineClamp, "none");
+        assert.ok(layout.titleHeight >= layout.lineHeight * 2.9, `expected >=3 unclamped lines, got height=${layout.titleHeight} lineHeight=${layout.lineHeight}`);
+        await tv.page.emulateMedia({ reducedMotion: "reduce" });
+        const reduced = await dialog.evaluate(node => {
+            const scrim = document.querySelector<HTMLElement>(".confirm-dialog-scrim");
+            return [getComputedStyle(node).animationName, scrim === null ? "" : getComputedStyle(scrim).animationName];
+        });
+        assert.deepEqual(reduced, ["none", "none"]);
+        assert.deepEqual(tv.console, []);
+    } finally { await tv.page.context().close(); }
+});

@@ -116,17 +116,21 @@ test("Add Profile reads in German and carries lang=de", async () => {
         const screen = tv.page.locator('[data-screen="profile-create"]');
         assert.equal(await screen.getAttribute("lang"), "de");
         assert.equal(await tv.page.locator(".profile-create-title").innerText(), text("newProfile.title", "de"));
+        assert.equal(await tv.page.locator(".profile-create-subtitle").innerText(), text("newProfile.pickLook", "de"));
         assert.deepEqual(await tv.page.locator(".profile-create-label").allTextContents(), [text("profiles.form.style", "de"), text("profiles.form.avatar", "de"), text("newProfile.name", "de"), text("newProfile.pin", "de")]);
         assert.deepEqual(await tv.page.locator(".profile-style-row [data-focus]").allInnerTexts(), ["identicon", "initials", "bottts", "funEmoji", "pixelArt"].map(style => text(`profiles.avatarStyle.${style}` as Parameters<typeof translate>[0], "de")));
         assert.equal(await tv.page.locator('[data-focus="create-submit"]').innerText(), text("newProfile.create", "de"));
-        assert.equal(await tv.page.locator('[data-focus="create-cancel"]').innerText(), text("common.cancel", "de"));
+        assert.equal(await tv.page.locator('[data-focus="create-header-cancel"]').innerText(), text("common.cancel", "de"));
+        assert.equal(await tv.page.locator('[data-focus="create-cancel"]').count(), 0);
         assert.equal(await tv.page.locator("#create-profile-name").getAttribute("aria-label"), text("newProfile.namePlaceholder", "de"));
         assert.equal(await tv.page.locator("#create-profile-pin").getAttribute("aria-label"), text("newProfile.pinPlaceholder", "de"));
         assert.equal(await tv.page.locator('[data-focus="shuffle-avatars"]').innerText(), text("profiles.form.shuffleAvatars", "de"));
         assert.equal(await tv.page.locator('[data-focus="preset:0"]').getAttribute("aria-label") ?? await tv.page.locator('[data-focus="preset:0"]').innerText(), text("profiles.avatar.preset", "de", { seed: "1" }));
         assert.equal(await tv.page.locator('[data-focus="create-child"]').innerText(), `${text("newProfile.child", "de")}: ${text("newProfile.off", "de")}`);
+        assert.equal(await tv.page.locator(".profile-create-switch-detail").innerText(), text("newProfile.childDetail", "de"));
         await tv.page.locator('[data-focus="create-child"]').click();
         assert.equal(await tv.page.locator('[data-focus="create-child"]').innerText(), `${text("newProfile.child", "de")}: ${text("newProfile.on", "de")}`);
+        assert.equal(await tv.page.locator('[data-focus="create-rating"]').innerText(), `${text("newProfile.rating", "de")}: ${text("newProfile.rating.pg", "de")}`);
         assert.equal(await tv.page.locator('[data-focus="create-libraries"]').innerText(), `${text("newProfile.restrict", "de")}: ${text("newProfile.off", "de")}`);
     });
 });
@@ -201,3 +205,42 @@ for (const exit of ["the Cancel button", "the Back key", "the right PIN"] as con
         });
     });
 }
+
+test("Add Profile holds a late language file while editing the name and translates once focus leaves", async () => {
+    await withHeldCatalog(async (tv, land) => {
+        await tv.remote(10009);
+        await tv.page.locator('[data-screen="profiles"]').waitFor();
+        await tv.page.locator('[data-focus="add-profile"]').click();
+        await tv.page.locator('[data-screen="profile-create"]').waitFor();
+        assert.equal(await tv.focused(), "create-name");
+        await tv.page.locator("#create-profile-name").fill("Kid");
+        const name = await tv.page.locator("#create-profile-name").elementHandle();
+        assert.ok(name !== null);
+        await land();
+        assert.equal(await name.evaluate(element => element.isConnected), true);
+        assert.equal(await tv.focused(), "create-name");
+        assert.equal(await tv.page.locator('[data-focus="create-submit"]').textContent(), "Create Profile");
+        await tv.page.locator('[data-focus="create-child"]').focus();
+        await tv.page.getByRole("button", { name: "Profil erstellen", exact: true }).waitFor();
+        assert.equal(await tv.page.locator("#create-profile-name").inputValue(), "Kid");
+        assert.equal(await tv.focused(), "create-child");
+    });
+});
+
+test("a late language file does not replace the profile creation error screen", async () => {
+    await withHeldCatalog(async (tv, land) => {
+        await tv.remote(10009);
+        await tv.page.locator('[data-screen="profiles"]').waitFor();
+        tv.fake.catalog = { route: (method, path) => method === "POST" && path === "/profiles" ? { status: 503 } : undefined };
+        await tv.page.locator('[data-focus="add-profile"]').click();
+        await tv.page.locator('[data-screen="profile-create"]').waitFor();
+        await tv.page.locator("#create-profile-name").fill("Kid");
+        await tv.page.locator('[data-focus="create-submit"]').click();
+        await tv.page.locator('[data-screen="profile-create-error"]').waitFor();
+        await land();
+        assert.equal(await tv.screen(), "profile-create-error");
+        assert.equal(await tv.page.locator(".signin-title").textContent(), "Profile could not be created");
+        assert.equal(await tv.page.locator('[data-focus="creation-back"]').textContent(), "Choose profile");
+        assert.equal(await tv.focused(), "creation-back");
+    });
+});

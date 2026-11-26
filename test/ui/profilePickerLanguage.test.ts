@@ -23,7 +23,7 @@ const textTv = (key: Parameters<typeof translateTv>[0], language: string): strin
 
 async function toPicker(tv: Tv): Promise<void> {
     await tv.page.fill("#signin-address", "silo.example.test");
-    await tv.page.getByRole("button", { name: /^(Connect|Verbinden|اتصال)$/ }).click();
+    await tv.page.getByRole("button", { name: /^(Connect|Verbinden|اتصال|Połącz)$/ }).click();
     await tv.page.locator('[data-screen="code"]').waitFor();
     tv.fake.approve([...tv.fake.devices.keys()].pop() ?? "");
     await tv.jump(5000);
@@ -120,6 +120,16 @@ test("the sign-out confirmation and a failed profile list read in German", async
         await tv.page.locator('[data-focus="cancel-signout"]').waitFor();
         assert.equal(await tv.page.locator('[data-focus="cancel-signout"]').innerText(), text("common.cancel", "de"));
         assert.equal(await tv.page.locator('[data-focus="confirm-signout"]').innerText(), text("shell.signOut.confirm", "de"));
+        await tv.remote(BACK);
+        await tv.page.locator('[data-screen="profiles"]').waitFor();
+    });
+});
+
+test("the sign-out confirmation reads Wyloguj się on Who's watching in Polish", async () => {
+    await inPicker("pl-PL", async tv => {
+        await tv.page.locator('[data-focus="signout"]').click();
+        await tv.page.locator('[data-focus="cancel-signout"]').waitFor();
+        assert.equal(await tv.page.locator('[data-focus="confirm-signout"]').innerText(), "Wyloguj się");
         await tv.remote(BACK);
         await tv.page.locator('[data-screen="profiles"]').waitFor();
     });
