@@ -401,7 +401,7 @@ export class WatchPartyHub {
                 await sleep(this.options.clock ?? systemClock, SEARCH_DEBOUNCE_MS, this.controller.signal, () => new Error("stopped"));
             } catch { return; }
             if (this.stopped || epoch !== this.searchEpoch) return;
-            await this.runSearch(trimmed, undefined, epoch);
+            await this.runSearch(trimmed, undefined, ++this.searchEpoch);
         })();
     }
 
