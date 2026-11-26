@@ -6,6 +6,12 @@ All notable changes to this project are documented in this file.
 
 <!-- changelog:releases -->
 
+## [0.14.18] - 2026-11-26
+
+### Fixes
+
+- **Playback**: Size player panels, controls, and dialogs as Apple does ([#958](https://github.com/Artic0din/Auger-Tizen/pull/958), [`a985cee8`](https://github.com/Artic0din/Auger-Tizen/commit/a985cee8))
+
 ## [0.14.17] - 2026-11-26
 
 ### Fixes
