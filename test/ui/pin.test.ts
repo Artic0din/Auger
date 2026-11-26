@@ -13,6 +13,8 @@ const IME_DONE = 65376;
 const KID_PIN = "2468";
 const APPLE_ERROR = "rgb(255, 105, 97)";
 const APPLE_ON_SURFACE = "rgb(237, 237, 237)";
+const CAP = 0.9685;
+const capped = (points: number): string => `${Math.round(points * CAP * 10000) / 10000}px`;
 
 let browser: Browser;
 before(async () => {
@@ -80,7 +82,7 @@ tvTest("the PIN screen is laid out like tvOS: 160 avatar, 26 dots, 34 status lin
     assert.equal(avatar.width, 160);
     assert.equal(avatar.height, 160);
     assert.equal(name.y - (avatar.y + avatar.height), 14, "6 stack spacing plus 8 under the avatar");
-    assert.equal(await style(tv, ".pin-name", "font-size"), "38px");
+    assert.equal(await style(tv, ".pin-name", "font-size"), capped(38));
     assert.equal(await style(tv, ".pin-name", "font-weight"), "700");
     assert.equal(await tv.page.getByRole("heading", { name: "Kid", exact: true }).count(), 1);
 
@@ -92,7 +94,7 @@ tvTest("the PIN screen is laid out like tvOS: 160 avatar, 26 dots, 34 status lin
 
     assert.equal(status.y - (dotRow.y + dotRow.height), 18);
     assert.equal(status.height, 34);
-    assert.equal(await style(tv, ".pin-status", "font-size"), "26px");
+    assert.equal(await style(tv, ".pin-status", "font-size"), capped(26));
     assert.equal(await style(tv, ".pin-status", "color"), "rgba(237, 237, 237, 0.62)");
     assert.equal(await tv.page.locator(".pin-status").innerText(), "Enter your PIN");
 
@@ -129,9 +131,9 @@ tvTest("the number pad has Apple's order, key size, spacing, digit and letter ty
 
     const letters = await tv.page.locator(".pin-key").evaluateAll((nodes) => nodes.map((node) => node.querySelector(".pin-key-letters")?.textContent ?? ""));
     assert.deepEqual(letters, ["", "ABC", "DEF", "GHI", "JKL", "MNO", "PQRS", "TUV", "WXYZ", "", ""]);
-    assert.equal(await style(tv, `${key("2")} .pin-key-digit`, "font-size"), "44px");
+    assert.equal(await style(tv, `${key("2")} .pin-key-digit`, "font-size"), capped(44));
     assert.equal(await style(tv, `${key("2")} .pin-key-digit`, "font-weight"), "400");
-    assert.equal(await style(tv, `${key("2")} .pin-key-letters`, "font-size"), "12.32px");
+    assert.equal(await style(tv, `${key("2")} .pin-key-letters`, "font-size"), capped(12.32));
     assert.equal(await style(tv, `${key("2")} .pin-key-letters`, "font-weight"), "700");
     assert.equal(await style(tv, `${key("2")} .pin-key-letters`, "letter-spacing"), "1.5px");
     assert.equal(await style(tv, `${key("2")} .pin-key-letters`, "opacity"), "0.62");

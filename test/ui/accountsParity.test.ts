@@ -15,6 +15,8 @@ import { focusSettingsRow, holdSettingsRow } from "./support/settingsRowPress.ts
 let browser: Browser;
 before(async () => { browser = await launchBrowser(); });
 after(async () => { await browser.close(); });
+const CAP = 0.9685;
+const capped = (points: number): string => `${Math.round(points * CAP * 10000) / 10000}px`;
 
 for (const reduced of [false, true]) {
     for (const kind of ["server", "add-server", "account", "add-account"] as const) {
@@ -141,7 +143,7 @@ test("the SIGN IN AGAIN badge is the warning colour with an open lock, and its t
         assert.equal(current.line, "rgba(255, 255, 255, 0.14)");
         assert.equal(current.icon, false);
         assert.equal(current.height, 36);
-        assert.equal(current.size, "18px");
+        assert.equal(current.size, capped(18));
         assert.equal(current.tile, "1");
         assert.equal(current.fill, "rgba(0, 0, 0, 0.85)", "a focused card's badge turns near-opaque black");
 
@@ -156,7 +158,7 @@ test("the SIGN IN AGAIN badge is the warning colour with an open lock, and its t
         assert.equal(warning.height, 36);
         assert.equal(warning.gap, "6px");
         assert.equal(warning.weight, "600");
-        assert.equal(warning.size, "18px");
+        assert.equal(warning.size, capped(18));
         assert.equal(warning.tile, "0.55", "the tile of an account that must sign in again is dimmed");
 
         await focusOn(owner);

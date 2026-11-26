@@ -20,6 +20,8 @@ registerSourceCatalogs();
 let browser: Browser;
 before(async () => { browser = await launchBrowser(); });
 after(async () => { await browser.close(); });
+const CAP = 0.9685;
+const capped = (points: number): string => `${Math.round(points * CAP * 10000) / 10000}px`;
 
 function appTest(name: string, body: (tv: Tv, playback: FakePlayback, catalog: FakeCatalog) => Promise<void>, production = false, sessionOnly = false): void {
     test(name, async () => {
@@ -1166,7 +1168,7 @@ appTest("Sign Out confirmation traps focus and cancellation preserves the sessio
         return { width: `${Math.round(node.getBoundingClientRect().width)}px`, topPadding: style.paddingTop, sidePadding: style.paddingLeft, titleSize: getComputedStyle(node.querySelector("h2") as HTMLElement).fontSize, row: Math.abs((buttons[0]?.y ?? 0) - (buttons[1]?.y ?? 1)) < 1 };
     });
     // The long sign-out message wraps at 820, so the shared TVSettingsConfirmationOverlay card is 916 wide, as on Apple TV.
-    assert.deepEqual(dialogGeometry, { width: "916px", topPadding: "42px", sidePadding: "48px", titleSize: "38px", row: true });
+    assert.deepEqual(dialogGeometry, { width: "916px", topPadding: "42px", sidePadding: "48px", titleSize: capped(38), row: true });
     assert.equal(await tv.page.locator(".browse-nav").evaluate(node => (node as HTMLElement).inert), true);
     assert.equal(await tv.page.locator(".browse-nav").getAttribute("aria-hidden"), "true");
     const destination = tv.page.locator('.browse-nav [data-focus="movies"]');
@@ -1313,7 +1315,7 @@ appTest("Remove Server confirmation matches the settings alert and dismissal ret
         width: "632px",
         topPadding: "42px",
         sidePadding: "48px",
-        titleSize: "38px",
+        titleSize: capped(38),
         buttonHeight: "63px",
         row: true,
         scrim: true,
@@ -1446,7 +1448,7 @@ for (const origin of ["home", "movies"] as const) appTest(`Change Account return
     assert.equal(layout.fill, "rgba(0, 0, 0, 0)");
     assert.match(layout.gradient, /234, 166, 92/);
     assert.equal(layout.scrim, true);
-    assert.equal(geometry.headline, "88px");
+    assert.equal(geometry.headline, capped(88));
     // Focus grows the 760 by 128 card by Apple's 1.03 scale.
     assert.ok(Math.abs(geometry.card[0]! - 760 * 1.03) < .1);
     assert.ok(Math.abs(geometry.card[1]! - 128 * 1.03) < .1);

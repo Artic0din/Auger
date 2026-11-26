@@ -1,7 +1,8 @@
-.accounts-screen { position: fixed; inset: 0; z-index: 10; padding: 60px 90px 44px; color: var(--silo-text); background: #000; overflow: hidden; font-family: var(--silo-font); }
+.accounts-screen { position: fixed; inset: 0; z-index: 10; padding: 60px 90px 44px; color: var(--silo-text); background: #000; overflow: hidden; font-family: var(--silo-font); font-weight: 400; }
+.accounts-screen * { font-family: inherit; font-weight: inherit; }
 .accounts-screen > :not(.marquee-backdrop, .confirm-dialog, .confirm-dialog-scrim, .signin-alert) { position: relative; }
 .accounts-wordmark { width: 150px; height: 64px; object-fit: contain; object-position: left; margin-bottom: 30px; }
-.accounts-title { font-size: 88px; font-weight: 800; line-height: 1.1; margin: 0 0 22px; }
+.accounts-title { font-size: calc(88px * var(--silo-sf-cap-scale)); font-weight: 800; line-height: 96.8px; margin: 0 0 22px; }
 .accounts-columns { display: flex; gap: 40px; margin-top: 48px; height: 650px; }
 /* TVOverflowColumn: the list, then a 24 tall chevron row 6 below it. The list keeps 16 above and 12 beside it for a focused row's growth and shadow. */
 .accounts-column { display: flex; flex-direction: column; gap: 6px; min-height: 0; }
@@ -19,9 +20,9 @@
 .accounts-rail { width: 520px; flex-shrink: 0; box-sizing: content-box; }
 .accounts-pane { width: 784px; gap: 16px; }
 .accounts-screen button { color: var(--silo-text); font: inherit; text-align: start; background: #ffffff12; border: 1px solid #ffffff24; border-radius: 16px; padding: 16px; min-height: 88px; flex-shrink: 0; }
-.accounts-rail button { width: 520px; font-size: 25px; }
+.accounts-rail button { width: 520px; font-size: calc(25px * var(--silo-sf-cap-scale)); font-weight: 500; }
 .accounts-rail button { height: 88px; box-sizing: border-box; padding-block: 15px; }
-.accounts-pane > button { width: 760px; min-height: 128px; border-radius: 30px; padding: 24px; font-size: 34px; }
+.accounts-pane > button { width: 760px; min-height: 128px; border-radius: 30px; padding: 24px; font-size: calc(34px * var(--silo-sf-cap-scale)); font-weight: 400; }
 /* TVChangeAccountRailRowStyle and TVAccountCardStyle disable the system focus effect.
    A focused rail row is #EDEDED with no stroke. A focused card is the same fill, grown 3%,
    with a black shadow (radius 24, y 12; CSS blur is twice that radius) and no resting hairline. */
@@ -36,46 +37,46 @@
 .accounts-pane > button.account-card { height: 128px; border: 0; box-shadow: inset 0 0 0 1px #ffffff24; }
 .accounts-pane > button.account-card:focus { box-shadow: 0 12px 48px rgba(0, 0, 0, 0.45); }
 .accounts-server-mark { width: 56px; height: 56px; object-fit: contain; margin-inline-end: 18px; vertical-align: middle; }
-.account-initial { width: 80px; height: 80px; display: grid; place-items: center; border-radius: 20px; background: linear-gradient(to bottom right, #eaa65c, #a8521d, #5e290d); color: #fff6ea; flex-shrink: 0; }
-.account-name { font-size: 34px; font-weight: 700; flex: 1; overflow: hidden; }
-.account-count { display: block; font-size: 23px; font-weight: 400; opacity: .4; }
+.account-initial { width: 80px; height: 80px; display: grid; place-items: center; border-radius: 20px; background: linear-gradient(to bottom right, #eaa65c, #a8521d, #5e290d); color: #fff6ea; font-weight: 400; flex-shrink: 0; }
+.account-name { font-size: calc(34px * var(--silo-sf-cap-scale)); font-weight: 700; flex: 1; overflow: hidden; }
+.account-count { display: block; font-size: calc(23px * var(--silo-sf-cap-scale)); font-weight: 400; opacity: .4; }
 /* TVChangeAccountBadge: 36 tall capsule, 18 semibold with 0.8 kerning. CURRENT is black at 45% under the white 14% hairline;
    SIGN IN AGAIN is siloStatusWarning #F4C869 at 8% fill and 35% line, with the open-lock glyph. A focused card turns both fills to black at 85%. */
-.account-badge { display: inline-flex; align-items: center; gap: 6px; box-sizing: border-box; height: 36px; padding: 0 16px; font-size: 18px; font-weight: 600; letter-spacing: .8px; border: 1px solid rgba(255, 255, 255, 0.14); border-radius: 18px; color: #ededed; background: rgba(0, 0, 0, 0.45); white-space: nowrap; }
+.account-badge { display: inline-flex; align-items: center; gap: 6px; box-sizing: border-box; height: 36px; padding: 0 16px; font-size: calc(18px * var(--silo-sf-cap-scale)); font-weight: 600; letter-spacing: .8px; border: 1px solid rgba(255, 255, 255, 0.14); border-radius: 18px; color: #ededed; background: rgba(0, 0, 0, 0.45); white-space: nowrap; }
 .account-badge svg { width: 17px; height: 17px; flex: none; }
 .account-badge-warning { color: #f4c869; background: rgba(244, 200, 105, 0.08); border-color: rgba(244, 200, 105, 0.35); }
 .accounts-pane > button:focus .account-badge { background: rgba(0, 0, 0, 0.85); }
 /* TVAccountCardLabel dimsMark: the initial tile of an account that must sign in again is at 55%. */
 .account-initial-dim { opacity: .55; }
 .accounts-screen .signin-alert { z-index: 21; }
-.accounts-screen .signin-alert .signin-actions button { flex: 1; min-height: 66px; height: 66px; margin: 0; padding: 0 32px; border: 2px solid transparent; border-radius: 40px; background: var(--silo-selected); color: #ededed; font-size: 30px; font-weight: 400; text-align: center; box-shadow: none; transform: none; }
+.accounts-screen .signin-alert .signin-actions button { flex: 1; min-height: 66px; height: 66px; margin: 0; padding: 0 32px; border: 2px solid transparent; border-radius: 40px; background: var(--silo-selected); color: #ededed; font-size: calc(30px * var(--silo-sf-cap-scale)); font-weight: 400; text-align: center; box-shadow: none; transform: none; }
 .accounts-screen .signin-alert .signin-actions button:focus { background: #fff; color: #000; border-color: transparent; box-shadow: none; transform: none; }
 /* MarqueeScrim .leading: horizontal darkening, then the bottom band on top. */
 .accounts-screen .accounts-scrim { position: absolute; inset: 0; pointer-events: none; background-image: linear-gradient(to top, rgba(0, 0, 0, 0.5) 0%, rgba(0, 0, 0, 0) 35%), linear-gradient(to right, rgba(0, 0, 0, 0.8) 0%, rgba(0, 0, 0, 0.55) 30%, rgba(0, 0, 0, 0.2) 58%, rgba(0, 0, 0, 0.1) 80%, rgba(0, 0, 0, 0.3) 100%); }
-.accounts-screen > .signin-text { line-height: 39.2px; }
+.accounts-screen > .signin-text { font-size: calc(28px * var(--silo-sf-cap-scale)); line-height: 39.2px; font-weight: 400; }
 .accounts-rail button { background: transparent; border-color: transparent; }
 /* TVChangeAccountRailRowStyle: an unfocused selected server is siloChromeSelectedFill, white at 0.14. */
 .accounts-rail button[aria-selected="true"]:not(:focus) { background: rgba(255, 255, 255, 0.14); }
 .accounts-rail [data-focus="add-server"] { margin-top: 8px; }
-.accounts-plus { display: inline-grid; place-items: center; font-size: 28px; }
+.accounts-plus { display: inline-grid; place-items: center; font-size: calc(28px * var(--silo-sf-cap-scale)); font-weight: 400; }
 .accounts-management { padding: 128px 168px; }
 .accounts-settings { display: flex; flex-direction: column; gap: 8px; width: 1080px; max-height: calc(100vh - 128px - 64px); overflow-y: auto; padding: 0 18px 64px; }
 .accounts-settings-header { display: flex; align-items: center; gap: 20px; padding: 0 24px; margin-bottom: 10px; }
-.accounts-settings-icon { display: grid; place-items: center; width: 72px; height: 72px; border-radius: 18px; background: #ffffff12; font-size: 34px; flex-shrink: 0; }
+.accounts-settings-icon { display: grid; place-items: center; width: 72px; height: 72px; border-radius: 18px; background: #ffffff12; font-size: calc(34px * var(--silo-sf-cap-scale)); flex-shrink: 0; }
 .accounts-settings-icon svg { width: 34px; height: 34px; margin: 0; }
-.accounts-settings h1 { margin: 0 0 5px; font-size: 42px; }
-.accounts-settings-header p { margin: 0; font-size: 20px; color: var(--silo-secondary); }
-.accounts-settings button { display: flex; align-items: center; gap: 16px; font-size: 26px; min-height: 66px; height: 66px; padding: 17px 24px; border-radius: 14px; }
+.accounts-settings h1 { margin: 0 0 5px; font-size: calc(42px * var(--silo-sf-cap-scale)); line-height: 50px; font-weight: 700; }
+.accounts-settings-header p { margin: 0; font-size: calc(20px * var(--silo-sf-cap-scale)); line-height: 25px; font-weight: 400; color: var(--silo-secondary); }
+.accounts-settings button { display: flex; align-items: center; gap: 16px; font-size: calc(26px * var(--silo-sf-cap-scale)); font-weight: 400; min-height: 66px; height: 66px; padding: 17px 24px; border-radius: 14px; }
 /* TVSettingsPaneRowStyle: focused rows drop the hairline. The platter scales 1.012 under a black shadow. */
 .accounts-settings button:focus { border-color: transparent; box-shadow: 0 8px 18px rgba(0, 0, 0, 0.5); transform: scale(1.012); }
-.accounts-row-title { flex: 1; }
-.accounts-row-value { font-size: 24px; opacity: .68; }
+.accounts-row-title { flex: 1; font-weight: 400; }
+.accounts-row-value { font-size: calc(24px * var(--silo-sf-cap-scale)); font-weight: 400; opacity: .68; }
 .accounts-chevron { display: flex; opacity: .55; }
 .accounts-chevron svg { width: 11px; height: 18px; margin: 0; }
 .accounts-settings button { width: 1080px; }
-.accounts-section-header { margin: 0 0 20px; padding: 0 24px; font-size: 19px; line-height: 36px; font-weight: 600; letter-spacing: 1.2px; color: var(--silo-secondary); }
+.accounts-section-header { margin: 0 0 20px; padding: 0 24px; font-size: calc(19px * var(--silo-sf-cap-scale)); line-height: 36px; font-weight: 600; letter-spacing: 1.2px; color: var(--silo-secondary); }
 .accounts-settings [data-focus="add-server"] { margin-top: 18px; }
-.accounts-settings > p { font-size: 20px; line-height: normal; margin: 14px 0 0; padding: 0 24px; }
+.accounts-settings > p { font-size: calc(20px * var(--silo-sf-cap-scale)); line-height: normal; font-weight: 400; margin: 14px 0 0; padding: 0 24px; }
 .accounts-settings .accounts-destructive { color: #b00020; }
 .accounts-settings .accounts-destructive:focus { color: #d22f3f; }
 @media (prefers-reduced-motion: reduce) { .accounts-screen * { transition: none; } }

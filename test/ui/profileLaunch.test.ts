@@ -5,6 +5,9 @@ import { FakeDetails } from "../native/support/fakeDetails.ts";
 import { pressPin } from "./support/pin.ts";
 import { afterPaint, launchBrowser, openTv, type Tv } from "./support/tv.ts";
 
+const CAP = 0.9685;
+const capped = (points: number): string => `${Math.round(points * CAP * 10000) / 10000}px`;
+
 async function picker(tv: Tv): Promise<void> {
     await tv.page.fill("#signin-address", "silo.example.test");
     await tv.page.getByRole("button", { name: "Connect", exact: true }).click();
@@ -161,7 +164,7 @@ test("Settings Accounts uses pane rows and Back returns to Settings", async () =
                 section: getComputedStyle(document.querySelector('.accounts-settings h2')!).fontSize,
                 red: getComputedStyle(remove).color, destructiveChevron: remove.querySelector('.accounts-chevron') !== null };
         });
-        assert.equal(pane.header, "42px");
+        assert.equal(pane.header, capped(42));
         assert.equal(pane.icon, true);
         assert.equal(pane.scale, 1.012);
         const near = (actual: number, expected: number, what: string): void => {
@@ -173,11 +176,11 @@ test("Settings Accounts uses pane rows and Back returns to Settings", async () =
         near(pane.arrow.height, 14, "chevron height");
         // The 1.8px stroke adds 0.9px on each edge: painted bounds are 9 by 16 at x1231.
         near(pane.arrow.x, 1232, "chevron x");
-        assert.equal(pane.section, "19px");
+        assert.equal(pane.section, capped(19));
         near(pane.x, 186, "row x");
         near(pane.y, 290, "row y");
         assert.equal(pane.addGap, 92);
-        assert.equal(pane.footnote, "20px");
+        assert.equal(pane.footnote, capped(20));
         assert.equal(pane.red, "rgb(176, 0, 32)");
         assert.equal(pane.destructiveChevron, false);
         await tv.remote(10009);
