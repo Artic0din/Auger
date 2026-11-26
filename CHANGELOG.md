@@ -6,6 +6,24 @@ All notable changes to this project are documented in this file.
 
 <!-- changelog:releases -->
 
+## [0.14.0] - 2026-11-26
+
+### Features
+
+- **Diagnostics**: Record reconnect errors and refine auto-report policy ([#943](https://github.com/Artic0din/Auger-Tizen/pull/943), [`da7cb6d5`](https://github.com/Artic0din/Auger-Tizen/commit/da7cb6d5))
+
+## [0.13.3] - 2026-11-26
+
+### Fixes
+
+- **Home**: Port Home and the top bar from the tvOS source ([#933](https://github.com/Artic0din/Auger-Tizen/pull/933), [`55918adf`](https://github.com/Artic0din/Auger-Tizen/commit/55918adf))
+
+## [0.13.2] - 2026-11-26
+
+### Fixes
+
+- **Collections**: Port collection poster loading, failure states and group header font ([#930](https://github.com/Artic0din/Auger-Tizen/pull/930), [`81a71b27`](https://github.com/Artic0din/Auger-Tizen/commit/81a71b27))
+
 ## [0.13.1] - 2026-11-26
 
 ### Fixes

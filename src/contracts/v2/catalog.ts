@@ -827,6 +827,13 @@ export interface MarqueeFile {
 
 export interface MarqueeDetail {
     readonly id: string;
+    readonly backdropUrl: string | undefined;
+    readonly backdropThumbhash: string | undefined;
+    readonly seriesBackdropUrl: string | undefined;
+    readonly backdropIsEpisodeStill?: boolean | undefined;
+    readonly posterUrl: string | undefined;
+    readonly posterThumbhash: string | undefined;
+    readonly posterIsEpisodeStill?: boolean | undefined;
     readonly contentRating?: string | undefined;
     readonly runtimeMinutes?: number | undefined;
     /** Calendar date, `YYYY-MM-DD`. */
@@ -861,6 +868,13 @@ export function decodeMarqueeDetail(value: unknown): MarqueeDetail {
     const userData = obj.user_data === undefined ? undefined : object(obj.user_data, `${path}.user_data`);
     return {
         id: string(obj, "content_id", path),
+        backdropUrl: optionalString(obj, "backdrop_url", path),
+        backdropThumbhash: optionalString(obj, "backdrop_thumbhash", path),
+        seriesBackdropUrl: optionalString(obj, "series_backdrop_url", path),
+        ...(obj.backdrop_is_episode_still === undefined ? {} : { backdropIsEpisodeStill: boolean(obj, "backdrop_is_episode_still", path) }),
+        posterUrl: optionalString(obj, "poster_url", path),
+        posterThumbhash: optionalString(obj, "poster_thumbhash", path),
+        ...(obj.poster_is_episode_still === undefined ? {} : { posterIsEpisodeStill: boolean(obj, "poster_is_episode_still", path) }),
         contentRating: optionalString(obj, "content_rating", path),
         runtimeMinutes: optionalInteger(obj, "runtime", path),
         airDate: optionalString(obj, "air_date", path),

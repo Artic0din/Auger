@@ -166,6 +166,13 @@ test("repeated stalls with lowering off are counted with their durations and no 
     r.controller.destroy();
 });
 
+async function exhaustError(r: Rig, maxSeconds = 200): Promise<Extract<PlaybackView, { phase: "error" }>> {
+    for (let waited = 0; waited < maxSeconds && last(r).phase !== "error"; waited++) await r.h.clock.advance(1000);
+    const view = last(r);
+    assert.ok(view.phase === "error" && view.error.kind === "network", JSON.stringify(view));
+    return view;
+}
+
 test("a lowering whose answer is lost and a reconnect that runs out is one buffering incident: the failed replan, then the terminal outcome", async () => {
     const r = await rig();
     r.server.next.push(advertised(), advertised({ recipeKbps: STEP_DOWN_KBPS }));
@@ -176,17 +183,15 @@ test("a lowering whose answer is lost and a reconnect that runs out is one buffe
     r.h.fake.script(`/playback/${id}/replan`, ...Array.from({ length: 3 }, () => ({ status: 503 })), problem(404, "not_found", "Playback session not found"));
     r.h.fake.script("/playback/start", problem(400, "validation_failed", "Rejected"));
     r.avplay.listener?.onbufferingstart();
-    for (let waited = 0; waited < 60 && last(r).phase !== "error"; waited++) await r.h.clock.advance(1000);
-    const view = last(r);
-    assert.ok(view.phase === "error" && view.error.kind === "network", JSON.stringify(view));
+    const view = await exhaustError(r, 60);
 
     const trace = r.controller.incidentTrace();
     assert.ok(trace !== undefined);
     assert.deepEqual([trace.first?.stage, trace.first?.buffering], ["quality_change", true]);
     const incident = playbackIncident(trace, view.error);
     assert.ok(incident !== undefined);
-    assert.deepEqual([incident.cat, incident.out, incident.op, incident.stage, incident.rec.r], ["buffering", "failed", "replan_playback", "quality_change", "exhausted"]);
-    assert.ok(incidentAutoEligible(incident), "only the failed recovery qualifies for automatic filing");
+    assert.deepEqual([incident.cat, incident.out, incident.op, incident.stage, incident.fs, incident.http, incident.fc, incident.rec.r], ["buffering", "failed", "replan_playback", "quality_change", "reconnect", 400, "http_400", "exhausted"]);
+    assert.equal(incidentAutoEligible(incident), true, "only the failed recovery qualifies for automatic filing");
     const failedReplan = incident.t.findIndex((step) => step.startsWith("quality_change:fail"));
     assert.ok(failedReplan !== -1, JSON.stringify(incident.t));
     assert.match(incident.t.at(-1) ?? "", /:end:network$/, "the terminal outcome follows the failed replan in one timeline");
@@ -202,6 +207,26 @@ test("a lowering whose answer is lost and a reconnect that runs out is one buffe
     assert.equal(record.snapshot.buffering?.sd[0]?.o, "not_adopted");
     assert.equal(diagnostics.reportFor("playback"), record);
     assert.equal(diagnosticsReportFingerprint(diagnostics.reportFor("buffering")), diagnosticsReportFingerprint(record));
+    r.controller.destroy();
+});
+
+test("a buffering step-down whose reconnect exhausts on pure network drops records reconnect and stays manual (#923)", async () => {
+    const r = await rig();
+    r.server.next.push(advertised(), advertised({ recipeKbps: STEP_DOWN_KBPS }));
+    await playPastGrace(r);
+    const id = [...r.server.sessions.keys()].pop();
+    assert.ok(id !== undefined);
+    for (let i = 0; i < 15; i++) r.h.fake.dropNextAnswer(`/playback/${id}/replan`);
+    r.avplay.listener?.onbufferingstart();
+    const view = await exhaustError(r);
+    assert.deepEqual(view.error, { kind: "network" });
+
+    const trace = r.controller.incidentTrace();
+    assert.ok(trace !== undefined && trace.exhausted);
+    const incident = playbackIncident(trace, view.error);
+    assert.ok(incident !== undefined);
+    assert.deepEqual([incident.cat, incident.fs, incident.http, incident.fc, incident.rec.r], ["buffering", "reconnect", undefined, "network_unreachable", "exhausted"]);
+    assert.equal(incidentAutoEligible(incident), false);
     r.controller.destroy();
 });
 
