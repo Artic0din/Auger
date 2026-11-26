@@ -3658,40 +3658,43 @@ test("Down opens audio and subtitles with focus on the current track; the menu k
     }
 });
 
-test("the tab rail crosses Audio while its choices are loading", async () => {
+test("the tab rail omits Audio while its choices are loading and crosses directly between Video and Subtitles (#780)", async () => {
     const { page } = await open();
     try {
         await show(page, playing({ ...TRACKS, audio: { state: "loading" } }));
-        await openAudio(page);
-        assert.equal(await focused(page), "tab-audio", "Down stays on the pill when the pane has nothing to focus");
+        await openPanel(page);
+        await remote(page, UP);
         await remote(page, RIGHT);
+        await remote(page, RIGHT);
+        assert.equal(await focused(page), "tab-video");
+        await remote(page, RIGHT);
+        assert.equal(await focused(page), "tab-subtitles", "Audio is omitted while loading");
         await remote(page, DOWN);
         assert.equal(await focused(page), "subtitles-off");
         await remote(page, UP);
         await remote(page, LEFT);
-        await remote(page, LEFT);
+        assert.equal(await focused(page), "tab-video");
         await remote(page, DOWN);
         assert.equal(await focused(page), "video-empty");
     } finally { await page.close(); }
 });
 
-test("the menu says what is happening: loading, a failed list with Retry, a change, a refusal and notices", async () => {
+test("the menu hides Audio until tracks exist and shows track changes, refusals and notices (#780)", async () => {
     const { page, logs } = await open();
     try {
         await show(page, playing({ ...TRACKS, audio: { state: "loading" } }));
-        // Old Down opened the panel on Subtitles when audio had no row. The panel now opens on Info.
         await openPanel(page);
-        // Old heading was "Audio".
-        assert.equal(await lines(page, ".player-menu-audio"), "TRACKS\nLoading audio tracks");
+        assert.deepEqual(await page.locator(".player-tab:not([hidden])").allTextContents(), ["Info", "Stats", "Video", "Subtitles"], "Audio tab is hidden while loading with no tracks");
         assert.equal(await focused(page), "info", "with no audio choice, focus starts on Info");
 
         await show(page, playing({ ...TRACKS, audio: { state: "failed" } }));
-        // Old heading was "Audio".
-        assert.equal(await lines(page, ".player-menu-audio"), "TRACKS\nCouldn't load audio tracks.\nRetry");
-        await nextTab(page, 3);
-        assert.equal(await focused(page), "audio-retry");
-        await remote(page, ENTER);
-        assert.deepEqual(await commands(page), ["retryTrackInfo"]);
+        assert.deepEqual(await page.locator(".player-tab:not([hidden])").allTextContents(), ["Info", "Stats", "Video", "Subtitles"], "Audio tab stays hidden on audio load failure");
+        await remote(page, BACK);
+        await openPanel(page);
+        assert.deepEqual(await commands(page), ["retryTrackInfo"], "reopening Options retries a failed audio inventory read without adding non-Apple UI");
+
+        await show(page, playing(TRACKS));
+        assert.deepEqual(await page.locator(".player-tab:not([hidden])").allTextContents(), ["Info", "Stats", "Video", "Audio", "Subtitles"], "Audio tab appears once tracks exist");
 
         await show(page, playing({ ...TRACKS, change: { state: "changing" } }));
         assert.equal(await text(page, ".player-menu-status"), "Changing track");
