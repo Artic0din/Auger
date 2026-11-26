@@ -93,6 +93,8 @@ export type TextSearchScope = "video" | "video_with_episodes";
 export type CatalogPageRequest = {
     readonly limit: number;
     readonly cursor: string | undefined;
+    readonly sort?: string;
+    readonly order?: "asc" | "desc";
 } & ({ readonly libraryId?: string; readonly q?: string; readonly type: BrowseScope }
     // Search-only scope on listCatalogItems' default query source, never a library browse.
     | { readonly libraryId?: never; readonly q: string; readonly type: "video_with_episodes" }
@@ -314,6 +316,8 @@ export const operations = {
             type: request.type,
             limit: request.limit,
             cursor: request.cursor,
+            sort: request.sort,
+            order: request.order,
             image_size: LIST_IMAGES,
         })}`,
         retry: "safe",

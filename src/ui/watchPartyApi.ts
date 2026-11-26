@@ -5,7 +5,7 @@ import { ApiError } from "../api/errors.ts";
 import { operations } from "../api/operations.ts";
 import type { RequestSpec } from "../api/http.ts";
 import { watchTogetherOperations } from "../api/watchTogetherOperations.ts";
-import type { CatalogPage, Episode, ItemDetail, Season } from "../contracts/v2/catalog.ts";
+import type { CatalogPage, Episode, HomeSection, ItemDetail, Season } from "../contracts/v2/catalog.ts";
 import type { PlaybackCapabilities } from "../contracts/v2/playback.ts";
 import {
     type CreatableSelectionMode, type GuestControlPolicy, type NewSuggestion, type Picker, type RoomAccess, type RoomSelection, type SuggestionPage,
@@ -19,6 +19,10 @@ import type { RoomSocketApi } from "./watchPartySocket.ts";
 const PLAYBACK_FEATURES = ["watch_party_coordinator_v1", "fixed_media_file_v1"] as const;
 /** Apple's picker reads 40 watchlist items when the server has no picker. */
 const WATCHLIST_LIMIT = 40;
+/** Apple's picker reads 24 recently added movies and 24 recently added series. */
+const RECENT_LIMIT = 24;
+/** Apple's TV picker search page size. */
+const SEARCH_LIMIT = 48;
 
 /** WatchPartySession.supportsSynchronizedParty: the room gate and socket, plus coordinated fixed-file playback. */
 export function supportsSynchronizedParty(room: WatchTogetherCapabilities, playback: PlaybackCapabilities): boolean {
@@ -50,6 +54,9 @@ export interface WatchPartyApi extends RoomSocketApi {
     seasons(seriesId: string, signal: AbortSignal): Promise<Season[]>;
     episodes(seriesId: string, seasonNumber: number, signal: AbortSignal): Promise<Episode[]>;
     watchlist(signal: AbortSignal): Promise<CatalogPage>;
+    homeSections?(signal: AbortSignal): Promise<readonly HomeSection[]>;
+    recentCatalog?(type: "movie" | "series", signal: AbortSignal): Promise<CatalogPage>;
+    searchCatalog?(query: string, cursor: string | undefined, signal: AbortSignal): Promise<CatalogPage>;
 }
 
 export function watchPartyApi(session: Pick<NativeSession, "call" | "http">): WatchPartyApi {
@@ -79,6 +86,9 @@ export function watchPartyApi(session: Pick<NativeSession, "call" | "http">): Wa
         seasons: (seriesId, signal) => call(operations.listSeriesSeasons(seriesId), signal),
         episodes: (seriesId, seasonNumber, signal) => call(operations.listSeasonEpisodes(seriesId, seasonNumber), signal),
         watchlist: signal => call(operations.listPersonalItems("watchlist", { limit: WATCHLIST_LIMIT }), signal),
+        homeSections: signal => call(operations.listHomeSections(), signal),
+        recentCatalog: (type, signal) => call(operations.listCatalogItems({ type, limit: RECENT_LIMIT, cursor: undefined, sort: "added_at", order: "desc" }), signal),
+        searchCatalog: (query, cursor, signal) => call(operations.listCatalogItems({ q: query, type: "video", limit: SEARCH_LIMIT, cursor }), signal),
     };
 }
 

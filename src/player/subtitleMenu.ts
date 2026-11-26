@@ -1,23 +1,32 @@
+import { percentText } from "../i18n/format.ts";
 import { translate, translateTv } from "../i18n/translate.ts";
 import { el } from "../ui/screen.ts";
 import { heading } from "./headings.ts";
 import type { SubtitleAppearance } from "../contracts/v2/subtitles.ts";
 import type { TrackView } from "./controller.ts";
 import type { SyncTimingView } from "./subtitleSync.ts";
-import { chevronForwardIcon, magnifyingGlassIcon, uturnBackwardIcon, waveformIcon } from "./playerIcons.ts";
-import { appearanceSummary, BACKGROUND_COLORS, choiceLabel, choiceOptions, delayLabel, delayOptions, FONT_COLORS, FONT_FAMILIES, FONT_SIZES, opacityOptions, POSITIONS, providerLabel, resultDetail, STYLES } from "./subtitleAppearance.ts";
+import { chevronForwardIcon, closeIcon, magnifyingGlassIcon, uturnBackwardIcon, waveformIcon } from "./playerIcons.ts";
+import { appearanceSummary, BACKGROUND_COLORS, choiceLabel, choiceOptions, delayLabel, delayOptions, FONT_COLORS, FONT_FAMILIES, FONT_SIZES, type LabeledChoice, opacityOptions, POSITIONS, providerLabel, resultDetail, STYLES } from "./subtitleAppearance.ts";
 
 /** The Subtitles pane's state. A picker floats over the pane it opened from, including Video's PICTURE and PLAYBACK rows. */
 export type SubtitlePane =
     | { readonly kind: "tracks" }
     | { readonly kind: "appearance" }
-    | { readonly kind: "picker"; readonly title: string; readonly field: string; readonly selected: string; readonly options: readonly { readonly id: string; readonly label: string }[]; readonly origin: { readonly pane: "tracks" | "appearance" | "video"; readonly focusId: string } };
+    | { readonly kind: "picker"; readonly title: string; readonly field: string; readonly selected: string; readonly options: readonly LabeledChoice[]; readonly origin: { readonly pane: "tracks" | "appearance" | "video"; readonly focusId: string } };
 
-function choice(id: string, label: string, current: boolean, detail?: string): HTMLButtonElement {
+function colorSwatch(hex: string): HTMLElement {
+    const swatch = el("span", "player-color-swatch");
+    swatch.style.backgroundColor = hex;
+    swatch.setAttribute("aria-hidden", "true");
+    return swatch;
+}
+
+function choice(id: string, label: string, current: boolean, detail?: string, swatchHex?: string): HTMLButtonElement {
     const button = el("button", "player-choice");
     button.type = "button";
     button.setAttribute("data-focus", id);
     button.setAttribute("aria-pressed", String(current));
+    if (swatchHex !== undefined) button.append(colorSwatch(swatchHex));
     const copy = el("span", "player-choice-copy");
     copy.append(el("span", "player-choice-label", label));
     if (detail !== undefined && detail !== "") copy.append(el("span", "player-choice-detail", detail));
@@ -30,7 +39,7 @@ function choice(id: string, label: string, current: boolean, detail?: string): H
  * `HUDSettingRow` (TVPlayerInfoHUD.swift:494, label at 548): label left, value right-aligned, then a chevron when the row opens a picker.
  * `glyph` (text) or `icon` (inline SVG) stands in for its `systemImage` at 20pt semibold; Appearance's `textformat` reads "Aa".
  */
-export function settingRow(id: string, label: string, value: string, options: { readonly chevron?: boolean; readonly detail?: string; readonly glyph?: string; readonly icon?: string; readonly pressed?: boolean } = {}): HTMLButtonElement {
+export function settingRow(id: string, label: string, value: string, options: { readonly chevron?: boolean; readonly detail?: string; readonly glyph?: string; readonly icon?: string; readonly pressed?: boolean; readonly swatchHex?: string } = {}): HTMLButtonElement {
     const button = el("button", "player-choice player-setting");
     button.type = "button";
     button.setAttribute("data-focus", id);
@@ -48,7 +57,15 @@ export function settingRow(id: string, label: string, value: string, options: { 
         copy.append(el("span", "player-setting-label", label), el("span", "player-choice-detail", options.detail));
         button.append(copy);
     }
-    if (value !== "") button.append(el("span", "player-setting-value", value));
+    if (value !== "" || options.swatchHex !== undefined) {
+        if (options.swatchHex !== undefined) {
+            const valueGroup = el("span", "player-setting-value player-setting-value-swatch");
+            valueGroup.append(colorSwatch(options.swatchHex), el("span", "", value));
+            button.append(valueGroup);
+        } else {
+            button.append(el("span", "player-setting-value", value));
+        }
+    }
     if (options.chevron !== false) {
         const chevron = el("span", "player-setting-chevron");
         chevron.innerHTML = chevronForwardIcon();
@@ -79,9 +96,62 @@ export function overlayPicker(list: HTMLElement, pane: Extract<SubtitlePane, { k
     picker.setAttribute("role", "dialog");
     picker.setAttribute("aria-label", pane.title);
     const options = el("div", "player-menu-picker-options");
-    for (const option of pane.options) options.append(choice(`subtitle-picker:${option.id}`, option.label, option.id === pane.selected));
+    for (const option of pane.options) options.append(choice(`subtitle-picker:${option.id}`, option.label, option.id === pane.selected, undefined, option.colorHex));
     picker.append(el("h2", "player-menu-picker-title", pane.title), options);
     list.append(behind, picker);
+}
+
+/**
+ * `SubtitleAppearanceDialog` (TVPlayerInfoHUD.swift:1125-1446, silo-apple 3289bedb): 720px floating dialog over the dimmed
+ * Subtitles pane with eyebrow, title, 46px close button, Apple's row order, toggles, and 18px color swatches.
+ * "Use device settings" is omitted because Samsung TVs have no system caption appearance API (docs/settings.md).
+ */
+export function overlayAppearance(list: HTMLElement, tracks: TrackView): void {
+    const display = tracks.subtitleTools?.display;
+    if (display === undefined) return;
+    const appearance = display.appearance;
+    const behind = el("div", "player-menu-behind");
+    behind.append(...Array.from(list.childNodes));
+    behind.inert = true;
+    for (const node of behind.querySelectorAll("[data-focus]")) node.removeAttribute("data-focus");
+
+    const dialog = el("div", "player-appearance-dialog");
+    dialog.setAttribute("role", "dialog");
+    dialog.setAttribute("aria-label", translate("player.hud.styleAndColors"));
+
+    const header = el("div", "player-appearance-header");
+    const titles = el("div", "player-appearance-titles");
+    titles.append(
+        el("p", "player-appearance-eyebrow", translate("player.hud.appearanceEyebrow")),
+        el("h2", "player-appearance-title", translate("player.hud.styleAndColors")),
+    );
+    const close = el("button", "player-appearance-close");
+    close.type = "button";
+    close.setAttribute("data-focus", "subtitle-appearance-close");
+    close.setAttribute("aria-label", translate("player.hud.closeAppearance"));
+    close.innerHTML = closeIcon();
+    header.append(titles, close);
+
+    const rows = el("div", "player-appearance-rows");
+    rows.append(
+        settingRow("subtitle-appearance:backgroundStyle", translate("player.subtitles.style.backgroundStyle"), appearanceDetail(appearance, "backgroundStyle")),
+        settingRow("subtitle-appearance:fontFamily", translate("player.subtitles.style.font"), appearanceDetail(appearance, "fontFamily")),
+        settingRow("subtitle-appearance:fontSize", translate("player.subtitles.style.size"), appearanceDetail(appearance, "fontSize")),
+        settingRow("subtitle-appearance:fontColor", translate("player.hud.appearanceText"), appearanceDetail(appearance, "fontColor"), { swatchHex: appearance.fontColor }),
+    );
+    if (display.textOpacity) {
+        rows.append(settingRow("subtitle-appearance:textOpacity", translate("player.subtitles.style.textOpacityLabel"), appearanceDetail(appearance, "textOpacity")));
+    }
+    rows.append(
+        settingRow("subtitle-appearance:textOutline", translate("player.subtitles.style.textOutline"), appearanceDetail(appearance, "textOutline"), { chevron: false, pressed: appearance.textOutline }),
+        settingRow("subtitle-appearance:textOutlineColor", translate("player.hud.subtitleOutline"), appearanceDetail(appearance, "textOutlineColor"), appearance.textOutline ? { swatchHex: appearance.textOutlineColor } : {}),
+        settingRow("subtitle-appearance:backgroundColor", translate("player.subtitles.style.background"), appearanceDetail(appearance, "backgroundColor"), appearance.backgroundStyle === "box" ? { swatchHex: appearance.backgroundColor } : {}),
+        settingRow("subtitle-appearance:backgroundOpacity", translate("player.subtitles.style.opacity"), appearanceDetail(appearance, "backgroundOpacity")),
+        settingRow("subtitle-appearance:position", translate("player.subtitles.style.position"), appearanceDetail(appearance, "position")),
+    );
+
+    dialog.append(header, rows);
+    list.append(behind, dialog);
 }
 
 export function pickerFor(tracks: TrackView, field: string): Omit<Extract<SubtitlePane, { kind: "picker" }>, "origin"> | undefined {
@@ -92,12 +162,12 @@ export function pickerFor(tracks: TrackView, field: string): Omit<Extract<Subtit
     if (field === "fontSize") return { kind: "picker", title: translate("player.hud.pickerSubtitleSize"), field, selected: appearance.fontSize, options: choiceOptions(FONT_SIZES) };
     if (field === "position") return { kind: "picker", title: translate("player.hud.pickerSubtitlePosition"), field, selected: appearance.position, options: choiceOptions(POSITIONS) };
     if (field === "fontFamily") return { kind: "picker", title: translate("player.hud.pickerSubtitleFont"), field, selected: appearance.fontFamily, options: choiceOptions(FONT_FAMILIES) };
-    if (field === "fontColor") return { kind: "picker", title: translate("player.hud.pickerTextColor"), field, selected: appearance.fontColor, options: choiceOptions(FONT_COLORS) };
+    if (field === "fontColor") return { kind: "picker", title: translate("player.hud.pickerTextColor"), field, selected: appearance.fontColor, options: choiceOptions(FONT_COLORS, true) };
     if (field === "textOpacity") return { kind: "picker", title: translate("player.subtitles.style.textOpacityLabel"), field, selected: String(appearance.textOpacity), options: opacityOptions(appearance.textOpacity, 25) };
     if (field === "textOutline") return { kind: "picker", title: translate("player.hud.subtitleOutline"), field, selected: String(appearance.textOutline), options: [{ id: "true", label: translate("options.on") }, { id: "false", label: translate("options.off") }] };
-    if (field === "textOutlineColor") return { kind: "picker", title: translate("player.hud.pickerOutlineColor"), field, selected: appearance.textOutlineColor, options: choiceOptions(BACKGROUND_COLORS) };
+    if (field === "textOutlineColor") return { kind: "picker", title: translate("player.hud.pickerOutlineColor"), field, selected: appearance.textOutlineColor, options: choiceOptions(BACKGROUND_COLORS, true) };
     if (field === "backgroundStyle") return { kind: "picker", title: translate("player.hud.pickerSubtitleStyle"), field, selected: appearance.backgroundStyle, options: choiceOptions(STYLES) };
-    if (field === "backgroundColor") return { kind: "picker", title: translate("player.hud.pickerBackgroundColor"), field, selected: appearance.backgroundColor, options: choiceOptions(BACKGROUND_COLORS) };
+    if (field === "backgroundColor") return { kind: "picker", title: translate("player.hud.pickerBackgroundColor"), field, selected: appearance.backgroundColor, options: choiceOptions(BACKGROUND_COLORS, true) };
     if (field === "backgroundOpacity") return { kind: "picker", title: translate("player.subtitles.style.backgroundOpacityLabel"), field, selected: String(appearance.backgroundOpacity), options: opacityOptions(appearance.backgroundOpacity, 0) };
     return undefined;
 }
@@ -108,31 +178,20 @@ export function appearanceDetail(appearance: SubtitleAppearance, field: string):
         case "position": return choiceLabel(POSITIONS, appearance.position);
         case "fontFamily": return choiceLabel(FONT_FAMILIES, appearance.fontFamily);
         case "fontColor": return choiceLabel(FONT_COLORS, appearance.fontColor);
-        case "textOpacity": return `${appearance.textOpacity}%`;
+        case "textOpacity": return percentText(appearance.textOpacity);
         case "textOutline": return appearance.textOutline ? translate("options.on") : translate("options.off");
-        case "textOutlineColor": return choiceLabel(BACKGROUND_COLORS, appearance.textOutlineColor);
+        case "textOutlineColor": return appearance.textOutline ? choiceLabel(BACKGROUND_COLORS, appearance.textOutlineColor) : "—";
         case "backgroundStyle": return appearance.backgroundStyle === "outline" ? translate("player.subtitles.background.outline") : choiceLabel(STYLES, appearance.backgroundStyle);
-        case "backgroundColor": return choiceLabel(BACKGROUND_COLORS, appearance.backgroundColor);
-        case "backgroundOpacity": return appearance.backgroundOpacity === 0 ? translate("options.off") : `${appearance.backgroundOpacity}%`;
+        case "backgroundColor": return appearance.backgroundStyle === "box" ? choiceLabel(BACKGROUND_COLORS, appearance.backgroundColor) : "—";
+        case "backgroundOpacity": return appearance.backgroundStyle === "box" && appearance.backgroundOpacity > 0 ? percentText(appearance.backgroundOpacity) : translate("options.off");
         default: return "";
     }
 }
 
-/** The Appearance and Search panes, which replace both columns. */
-export function fillSubtitleTools(list: HTMLElement, tracks: TrackView, pane: SubtitlePane): void {
+/** The Search pane, which replaces both columns. Appearance floats via `overlayAppearance`. */
+export function fillSubtitleTools(list: HTMLElement, tracks: TrackView, _pane: SubtitlePane): void {
     const tools = tracks.subtitleTools;
     if (tools === undefined) return;
-    if (pane.kind === "appearance") {
-        const display = tools.display;
-        if (display === undefined) return;
-        list.append(el("h2", "player-menu-heading", heading("player.hud.subtitleAppearance")));
-        list.append(choice("subtitle-appearance-back", translate("common.back"), false));
-        const rows = ["backgroundStyle", "fontSize", "position", "fontFamily", "fontColor", ...(display.textOpacity ? ["textOpacity"] : []), "textOutline", "textOutlineColor", "backgroundColor", "backgroundOpacity"];
-        // Apple's row names (`player.subtitles.style.*`) where its English is Tizen's; the rest keep their wording.
-        const titles: Record<string, string> = { backgroundStyle: translate("player.subtitles.style.backgroundStyle"), fontSize: translate("player.subtitles.style.size"), position: translate("player.subtitles.style.position"), fontFamily: translate("player.subtitles.style.font"), fontColor: "Text color", textOpacity: "Text opacity", textOutline: translate("player.hud.subtitleOutline"), textOutlineColor: "Outline color", backgroundColor: "Background color", backgroundOpacity: "Background opacity" };
-        for (const field of rows) list.append(choice(`subtitle-appearance:${field}`, titles[field] ?? field, false, appearanceDetail(display.appearance, field)));
-        return;
-    }
     const search = tools.search;
     if (search.phase !== "closed") {
         list.append(el("h2", "player-menu-heading", "SEARCH"));

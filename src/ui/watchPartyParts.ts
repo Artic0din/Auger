@@ -30,6 +30,17 @@ export function icon(path: string): SVGSVGElement {
 export const plusIcon = (): SVGSVGElement => icon("M12 3v18M3 12h18");
 export const playIcon = (): SVGSVGElement => { const svg = icon("M7 4.5v15l12-7.5z"); svg.classList.add("watch-party-icon-solid"); return svg; };
 export const checkIcon = (): SVGSVGElement => icon("M5 12.5 10 17.5 19 7");
+export const closeIcon = (): SVGSVGElement => icon("M6 6 18 18M18 6 6 18");
+export const searchIcon = (): SVGSVGElement => {
+    const svg = icon("m15.5 15.5 5 5");
+    const ring = document.createElementNS(SVG, "circle");
+    ring.setAttribute("cx", "10.5"); ring.setAttribute("cy", "10.5"); ring.setAttribute("r", "6.5");
+    svg.prepend(ring);
+    return svg;
+};
+
+/** Apple's film.stack symbol for WatchPartyMediaPicker.tvEmptyState. */
+export const FILM_STACK_ICON = '<svg viewBox="0 0 48 48" fill="none"><rect x="6" y="14" width="36" height="24" rx="4" stroke="currentColor" stroke-width="3.2"/><path d="M12 8h24M14 14v24M34 14v24M6 22h8M34 22h8M6 30h8M34 30h8" stroke="currentColor" stroke-width="2.8" stroke-linecap="round"/></svg>';
 
 export function pill(item: FocusItem, kind: "primary" | "secondary", disabled = false): FocusItem {
     item.element.classList.add("watch-party-button", `watch-party-${kind}`);
