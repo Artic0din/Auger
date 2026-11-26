@@ -6,6 +6,12 @@ All notable changes to this project are documented in this file.
 
 <!-- changelog:releases -->
 
+## [0.13.1] - 2026-11-26
+
+### Fixes
+
+- **Search**: Translate Search box-set card eyebrow from catalog ([#929](https://github.com/Artic0din/Auger-Tizen/pull/929), [`b224ccd4`](https://github.com/Artic0din/Auger-Tizen/commit/b224ccd4))
+
 ## [0.13.0] - 2026-11-26
 
 ### Features
