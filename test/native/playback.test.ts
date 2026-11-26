@@ -5833,6 +5833,175 @@ test("the HUD's Now playing and Stats rows name the plan's audio track and follo
     r.controller.destroy();
 });
 
+test("Stats reads CURRENT_BANDWIDTH through FakeAVPlay, omits invalid values, and never calls getStreamingProperty during seekTo", async () => {
+    const r = await rig();
+    r.avplay.streamingProperties = { CURRENT_BANDWIDTH: "17709368" };
+    const stream = (): readonly { readonly label: string; readonly value: string }[] => {
+        const view = last(r.views);
+        assert.ok((view.phase === "playing" || view.phase === "paused") && view.hud !== undefined);
+        return view.hud.stats.stream;
+    };
+    const throughput = (): string | undefined => stream().find(row => row.label === "Network throughput")?.value;
+
+    await playMovie(r);
+    assert.equal(throughput(), "17.7 Mbps");
+
+    r.avplay.streamingProperties = { CURRENT_BANDWIDTH: "850000" };
+    r.avplay.tick(r.avplay.positionMs + 1000);
+    assert.equal(throughput(), "850 Kbps");
+
+    let getterCallsDuringSeek = 0;
+    let duringSeek = false;
+    const baseGetter = r.avplay.getStreamingProperty.bind(r.avplay);
+    r.avplay.getStreamingProperty = (propertyType: string): string => {
+        if (duringSeek) getterCallsDuringSeek++;
+        return baseGetter(propertyType);
+    };
+
+    duringSeek = true;
+    r.controller.seekToSeconds(60);
+    assert.equal(getterCallsDuringSeek, 0, "never calls getStreamingProperty while seekTo is outstanding");
+    assert.equal(throughput(), undefined);
+    duringSeek = false;
+    r.avplay.streamingProperties = { CURRENT_BANDWIDTH: "15393984" };
+    r.avplay.finishSeek();
+    await r.h.clock.advance(0);
+    assert.equal(throughput(), "15.4 Mbps");
+
+    for (const invalid of ["0", "", "nan", "-500"]) {
+        r.avplay.streamingProperties = { CURRENT_BANDWIDTH: invalid };
+        r.avplay.tick(r.avplay.positionMs + 1000);
+        assert.equal(throughput(), undefined, `omits ${JSON.stringify(invalid)}`);
+    }
+    r.avplay.getStreamingProperty = () => { throw new DOMException("not ready", "InvalidStateError"); };
+    r.avplay.tick(r.avplay.positionMs + 1000);
+    assert.equal(throughput(), undefined);
+    assert.equal(r.avplay.calls.some(call => call.includes("getStreamingProperty")), false);
+    r.controller.destroy();
+});
+
+test("PlaybackController reports Seeking, Rebuffering, Stalled, Reconnecting, Loading and Ended Playback status phases", async () => {
+    const previousOnLine = Object.getOwnPropertyDescriptor(navigator, "onLine");
+    const previousAddEventListener = Object.getOwnPropertyDescriptor(globalThis, "addEventListener");
+    const previousRemoveEventListener = Object.getOwnPropertyDescriptor(globalThis, "removeEventListener");
+    const events = new EventTarget();
+    Object.defineProperty(navigator, "onLine", { value: true, configurable: true });
+    Object.defineProperty(globalThis, "addEventListener", { value: events.addEventListener.bind(events), configurable: true });
+    Object.defineProperty(globalThis, "removeEventListener", { value: events.removeEventListener.bind(events), configurable: true });
+    try {
+        const r = await rig();
+        const settings = new FakeSettings(r.h.fake);
+        settings.bufferingRows = true;
+        settings.profile().set("playback.buffering_quality_mode" as never, "ask");
+        r.server.next.push({
+            availableQualities: [
+                { label: "original", preserves_source: true },
+                { label: "720p", height: 720, bitrate_kbps: 3000, preserves_source: false },
+            ],
+        });
+        const statusValue = (): string | undefined => {
+            const view = last(r.views);
+            return (view.phase === "playing" || view.phase === "paused") ? view.hud?.stats.stream.find(row => row.label === "Playback status")?.value : undefined;
+        };
+
+        const id = await playMovie(r);
+        assert.equal(statusValue(), "Playing");
+
+        r.controller.setPaused(true);
+        await r.h.clock.advance(0);
+        assert.equal(statusValue(), "Paused");
+
+        r.controller.seekToSeconds(30);
+        assert.equal(statusValue(), "Seeking");
+        r.avplay.finishSeek();
+        await r.h.clock.advance(0);
+        assert.equal(statusValue(), "Paused");
+
+        r.controller.setPaused(false);
+        await r.h.clock.advance(0);
+        assert.equal(statusValue(), "Playing");
+        r.avplay.tick(r.avplay.positionMs + 1000);
+
+        await r.h.clock.advance(11_000);
+        r.avplay.listener?.onbufferingstart();
+        assert.equal(statusValue(), "Rebuffering");
+
+        Object.defineProperty(navigator, "onLine", { value: false, configurable: true });
+        events.dispatchEvent(new Event("offline"));
+        assert.equal(statusValue(), "Reconnecting");
+
+        Object.defineProperty(navigator, "onLine", { value: true, configurable: true });
+        events.dispatchEvent(new Event("online"));
+        assert.equal(statusValue(), "Rebuffering");
+
+        await r.h.clock.advance(6_000);
+        assert.equal(statusValue(), "Stalled");
+
+        // Seeking while already stalled skips pre-seek CURRENT_BANDWIDTH reads before seekTo starts.
+        let bandwidthCalls = 0;
+        r.avplay.getStreamingProperty = () => { bandwidthCalls++; return "17709368"; };
+        r.controller.seekToSeconds(45);
+        assert.equal(bandwidthCalls, 0);
+        assert.equal(statusValue(), "Seeking");
+        r.avplay.finishSeek();
+        await r.h.clock.advance(0);
+        assert.equal(statusValue(), "Rebuffering");
+        r.avplay.listener?.onbufferingcomplete();
+        assert.equal(statusValue(), "Playing");
+
+        const holdReplan = r.h.fake.hold(`/playback/${id}/replan`);
+        r.controller.selectQuality("720p");
+        assert.equal(statusValue(), "Loading");
+
+        r.avplay.listener?.onstreamcompleted();
+        assert.equal(statusValue(), "Ended");
+        holdReplan.release();
+        await r.h.clock.advance(0);
+        r.controller.destroy();
+    } finally {
+        if (previousOnLine === undefined) delete (navigator as unknown as Record<string, unknown>).onLine;
+        else Object.defineProperty(navigator, "onLine", previousOnLine);
+        if (previousAddEventListener === undefined) delete (globalThis as unknown as Record<string, unknown>).addEventListener;
+        else Object.defineProperty(globalThis, "addEventListener", previousAddEventListener);
+        if (previousRemoveEventListener === undefined) delete (globalThis as unknown as Record<string, unknown>).removeEventListener;
+        else Object.defineProperty(globalThis, "removeEventListener", previousRemoveEventListener);
+    }
+});
+
+test("a buffering quality replan that fails after EOF still settles completion instead of freezing on Ended", async () => {
+    const previousOnLine = Object.getOwnPropertyDescriptor(navigator, "onLine");
+    Object.defineProperty(navigator, "onLine", { value: true, configurable: true });
+    try {
+        const r = await rig();
+        r.server.next.push(
+            {
+                availableQualities: [
+                    { label: "original", preserves_source: true },
+                    { label: "720p", height: 720, bitrate_kbps: 3000, preserves_source: false },
+                ],
+            },
+            { terminal: "adaptation_unavailable", retryable: false },
+        );
+        const id = await playMovie(r);
+        r.avplay.tick(r.avplay.positionMs + 1000);
+        await r.h.clock.advance(11_000);
+        const holdReplan = r.h.fake.hold(`/playback/${id}/replan`);
+        r.avplay.listener?.onbufferingstart();
+        await r.h.clock.advance(6_000);
+        r.avplay.listener?.onstreamcompleted();
+        const endedView = last(r.views);
+        assert.ok(endedView.phase === "playing");
+        assert.equal(endedView.hud?.stats.stream.find(row => row.label === "Playback status")?.value, "Ended");
+        holdReplan.release();
+        await r.h.clock.advance(0);
+        assert.equal(last(r.views).phase, "completion");
+        r.controller.destroy();
+    } finally {
+        if (previousOnLine === undefined) delete (navigator as unknown as Record<string, unknown>).onLine;
+        else Object.defineProperty(navigator, "onLine", previousOnLine);
+    }
+});
+
 // --- HLS playlists AVPlay cannot read (#650): the check runs before the blocking open and prepare ---
 
 const DEFINE_PLAYLIST = [

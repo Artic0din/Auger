@@ -62,7 +62,7 @@ import { audioRow, qualityMenuLabel } from "./trackLabels.ts";
 import { HUDState } from "./hudState.ts";
 import { textIsRightToLeft } from "../i18n/direction.ts";
 import { UP_NEXT_PREVIEW, upNextPreviewLeft } from "./upNextPreview.ts";
-import { type LiveStats, planStats, videoOptions, type PlayerHUD } from "./playerHUD.ts";
+import { type LiveStats, type PlaybackStatus, planStats, videoOptions, type PlayerHUD } from "./playerHUD.ts";
 import { PlayerSettingsFlusher, sessionPlayerSettingsTransport } from "./playerSettingsFlusher.ts";
 import { DEFAULT_STILL_WATCHING_THRESHOLD, PlayerStillWatchingGuard } from "./stillWatchingGuard.ts";
 import type { DiagnosticsPlanDetails } from "../diagnostics.ts";
@@ -527,12 +527,16 @@ export class PlaybackController implements PlayerControls {
     private base: PlaybackView = { phase: "closed" };
     /** Counts show() calls that reach the buffering sync, so a nested one can supersede its caller. */
     private shown = 0;
+    /** Holds off `showPlayback` while `seekAbsolute` notifies the buffering controller right before closing or seeking AVPlay. */
+    private suppressBufferingPlayback = false;
     /** The last `playback.buffering_quality_mode` read, kept for a later attempt whose read fails, as Apple keeps the device's cached value. */
     private lastBufferingMode: BufferingQualityMode | undefined;
     /** The device going offline or online is transport trouble for the buffering controller. */
     private readonly onConnectivity = (): void => {
         const attempt = this.active();
-        if (attempt !== undefined) this.syncBuffering(attempt);
+        if (attempt === undefined) return;
+        this.syncBuffering(attempt);
+        if (this.base.phase === "playing" || this.base.phase === "paused") this.showPlayback(attempt);
     };
     /** `autoplays`: the card's pick is one Apple counts down to (the next episode or a Shuffle pick), not an On Deck title. */
     private completion: { readonly attempt: Attempt; readonly abort: AbortController; pending: boolean; autoplays: boolean; pickingAnother: boolean; advancingShuffle: boolean; advancedShuffle?: Shuffle | undefined; advancedShuffleUnattended?: boolean | undefined; shuffleScopeLabel?: string | undefined } | undefined;
@@ -603,6 +607,7 @@ export class PlaybackController implements PlayerControls {
         const bufferingQuality: BufferingBridge = new BufferingBridge(this.deps.clock, {
             issueReplan: (request, restore) => this.issueBufferingReplan(bufferingQuality, request, restore),
             changed: () => this.bufferingChanged(bufferingQuality),
+            stalledChanged: () => this.bufferingChanged(bufferingQuality),
         });
         const signal = this.deps.session.authoritySignal;
         const attemptRef: { current?: Attempt } = {};
@@ -1085,7 +1090,12 @@ export class PlaybackController implements PlayerControls {
         attempt.busy = true;
         this.clearThumbnails(attempt);
         // The buffering controller must see the seek begin: the buffering that follows belongs to it.
-        this.syncBuffering(attempt);
+        this.suppressBufferingPlayback = true;
+        try {
+            this.syncBuffering(attempt);
+        } finally {
+            this.suppressBufferingPlayback = false;
+        }
         if (!local) {
             if (requestedPaused !== undefined) attempt.paused = requestedPaused;
             attempt.pauseAfterSeek = undefined;
@@ -1166,6 +1176,9 @@ export class PlaybackController implements PlayerControls {
             );
         } catch {
             settled(false);
+        }
+        if (this.attempt === attempt && attempt.live && this.pending.seek !== undefined) {
+            this.showPlayback(attempt);
         }
     }
 
@@ -1547,7 +1560,10 @@ export class PlaybackController implements PlayerControls {
     private bufferingChanged(bridge: BufferingBridge): void {
         const attempt = this.attempt;
         if (attempt === undefined || !attempt.live || attempt.bufferingQuality !== bridge) return;
-        if (this.base.phase === "loading" || this.base.phase === "playing" || this.base.phase === "paused") this.show(this.base);
+        if (this.base.phase === "loading") this.show(this.base);
+        else if ((this.base.phase === "playing" || this.base.phase === "paused") && !attempt.hidden && !attempt.restoring && !this.suppressBufferingPlayback) {
+            this.showPlayback(attempt);
+        }
     }
 
     /** Hands the buffering controller whatever the playback facts changed. */
@@ -2062,6 +2078,10 @@ export class PlaybackController implements PlayerControls {
         attempt.trace.buffering = false;
         attempt.busy = false;
         attempt.change = { state: "idle" };
+        if (attempt.endedDuringChange) {
+            this.beginCompletion(attempt);
+            return;
+        }
         this.showPlayback(attempt);
     }
 
@@ -2100,6 +2120,7 @@ export class PlaybackController implements PlayerControls {
             return;
         }
         this.closeTransport();
+        attempt.started = false;
         traceFailure(attempt.trace, attempt.recoveries >= MAX_RECOVERY_REPLANS ? "fail" : "fallback", attempt.trace.lastAvplay ?? classification);
         if (attempt.recoveries >= MAX_RECOVERY_REPLANS) {
             attempt.trace.exhausted = true;
@@ -2482,6 +2503,7 @@ export class PlaybackController implements PlayerControls {
                 if (attempt.busy) {
                     if (attempt.subtitles.onStreamCompleted() === "deferred" || attempt.change.state === "changing") {
                         attempt.endedDuringChange = true;
+                        this.showPlayback(attempt);
                     }
                     return;
                 }
@@ -3898,7 +3920,15 @@ export class PlaybackController implements PlayerControls {
                 chapters: attempt.hud.chapters, chapterState: attempt.hud.chapterState,
                 overview: attempt.hud.metadata?.overview ?? attempt.request.overview,
                 metadata: attempt.hud.metadata, metadataFailed: attempt.hud.metadataFailed,
-                stats: planStats(plan, liveStats(attempt, plan, this.deps.session.http.base.baseUrl)),
+                stats: planStats(plan, liveStats(attempt, plan, this.deps.session.http.base.baseUrl, playbackStatus({
+                    ended: this.completion !== undefined || attempt.endedDuringChange,
+                    reconnecting: attempt.recovery?.active === true || (!currentNetwork().online && (attempt.buffering || attempt.bufferingQuality.stalled)),
+                    loading: !attempt.started || attempt.restoring || attempt.suspended || attempt.suspendedReady || attempt.resuming || (attempt.busy && changeHoldsBusy(attempt) && !attempt.subtitles.isReporting),
+                    seeking: this.pending.seek !== undefined || (attempt.busy && !changeHoldsBusy(attempt)),
+                    paused: attempt.paused,
+                    stalled: attempt.bufferingQuality.stalled,
+                    rebuffering: attempt.buffering,
+                }), attempt.started && !attempt.hidden && !attempt.restoring && !attempt.suspended && this.pending.seek === undefined ? currentBandwidthBps(this.deps.avplay) : undefined)),
                 ...videoOptions(this.deps.avplay.setSpeed !== undefined, this.deps.avplay.setDisplayMethod !== undefined, plan.streamProtocol),
                 speed: attempt.hud.speed, aspect: attempt.hud.aspect,
                 autoNext: attempt.autoNextSupported ? attempt.autoNext : undefined,
@@ -4211,8 +4241,44 @@ function sameStart(attempt: Attempt): PlayRequest {
     return { ...request, startSeconds: attempt.sourceSeconds };
 }
 
-/** The selected tracks, speed, phase and media host the Stats and Info rows need beside the plan. */
-function liveStats(attempt: Attempt, plan: PlaybackPlan, baseUrl: string): LiveStats {
+export interface PlaybackStatusState {
+    readonly error?: boolean;
+    readonly ended?: boolean;
+    readonly reconnecting?: boolean;
+    readonly loading?: boolean;
+    readonly seeking?: boolean;
+    readonly paused?: boolean;
+    readonly stalled?: boolean;
+    readonly rebuffering?: boolean;
+}
+
+/** Apple's PlaybackPhase precedence for Stats' Playback status row. */
+export function playbackStatus(state: PlaybackStatusState): PlaybackStatus {
+    if (state.error) return "Error";
+    if (state.ended) return "Ended";
+    if (state.reconnecting) return "Reconnecting";
+    if (state.loading) return "Loading";
+    if (state.seeking) return "Seeking";
+    if (state.paused) return "Paused";
+    if (state.stalled) return "Stalled";
+    if (state.rebuffering) return "Rebuffering";
+    return "Playing";
+}
+
+function currentBandwidthBps(avplay: AVPlay): number | undefined {
+    if (avplay.getStreamingProperty === undefined) return undefined;
+    try {
+        const raw = avplay.getStreamingProperty("CURRENT_BANDWIDTH").trim();
+        if (raw === "") return undefined;
+        const bps = Number(raw);
+        return Number.isFinite(bps) && bps > 0 ? bps : undefined;
+    } catch {
+        return undefined;
+    }
+}
+
+/** The selected tracks, speed, phase, AVPlay bandwidth and media host the Stats and Info rows need beside the plan. */
+function liveStats(attempt: Attempt, plan: PlaybackPlan, baseUrl: string, status: PlaybackStatus, networkThroughputBps: number | undefined): LiveStats {
     const fileId = plan.effectiveMediaFileId;
     const version = attempt.tracks?.state === "ready" ? attempt.tracks.versions.find(candidate => candidate.fileId === fileId) : undefined;
     const ordinal = version?.audio.findIndex((_, index) => `file:${fileId}:audio:${index}` === plan.selectedTracks.audio?.id) ?? -1;
@@ -4223,8 +4289,9 @@ function liveStats(attempt: Attempt, plan: PlaybackPlan, baseUrl: string): LiveS
         audio: track === undefined ? undefined : { track, ordinal },
         subtitle: attempt.subtitles.liveStatsSubtitle(plan),
         speed: attempt.hud.speed,
-        status: attempt.buffering ? "Rebuffering" : attempt.paused ? "Paused" : "Playing",
+        status,
         host,
+        networkThroughputBps,
     };
 }
 

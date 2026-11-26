@@ -48,6 +48,8 @@ export class FakeAVPlay implements AVPlay {
     silentSubtitle = false;
     /** AVPlay on the S95C rejects `getTotalTrackInfo` while a `seekTo` is outstanding (#751); off by default. */
     rejectTrackInfoDuringSeek = false;
+    /** Streaming properties returned by `getStreamingProperty` (for example `CURRENT_BANDWIDTH` in bps). */
+    streamingProperties: Record<string, string> = {};
     /** Between suspend() and a restore. */
     private suspendedPlayer = false;
     private stream = 0;
@@ -140,6 +142,11 @@ export class FakeAVPlay implements AVPlay {
 
     getCurrentTime(): number {
         return this.positionMs;
+    }
+
+    getStreamingProperty(propertyType: string): string {
+        this.require("getStreamingProperty", ["IDLE", "READY", "PLAYING", "PAUSED"]);
+        return this.streamingProperties[propertyType] ?? "";
     }
 
     getTotalTrackInfo(): readonly AVPlayTrackInfo[] {

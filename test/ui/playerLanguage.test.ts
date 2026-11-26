@@ -183,10 +183,22 @@ for (const language of ["de", "ar"]) {
     test(`the Stats, Video and Audio panes read in ${language}`, async () => {
         const page = await open(language);
         try {
-            await show(page, playing());
+            await show(page, playing({
+                hud: {
+                    ...HUD,
+                    stats: {
+                        ...STATS,
+                        stream: [
+                            { label: "Playback status", value: text("player.stats.phaseStalled", language) },
+                            { label: "Network throughput", value: "17.7 Mbps" },
+                        ],
+                    },
+                },
+            }));
             await openPanel(page, 1);
             assert.deepEqual(await texts(page, ".player-stats-heading"), (["player.hud.playback", "player.hud.stream", "player.stats.sectionEngine"] as const).map(key => text(key, language)));
-            assert.deepEqual(await texts(page, ".player-stats-label"), (["player.hud.playback", "player.stats.dynamicRange", "player.stats.playbackStatus", "player.stats.delivery", "player.stats.source"] as const).map(key => text(key, language)));
+            assert.deepEqual(await texts(page, ".player-stats-label"), (["player.hud.playback", "player.stats.dynamicRange", "player.stats.playbackStatus", "player.stats.networkThroughput", "player.stats.delivery", "player.stats.source"] as const).map(key => text(key, language)));
+            assert.equal((await texts(page, ".player-stats-value"))[2], text("player.stats.phaseStalled", language));
             await nextTab(page, 1);
             assert.deepEqual(await texts(page, ".player-menu-quality .player-menu-column > .player-menu-heading"), [upper(text("player.hud.picture", language), language), upper(text("player.hud.playback", language), language)]);
             const names = await texts(page, ".player-menu-quality .player-setting-label");

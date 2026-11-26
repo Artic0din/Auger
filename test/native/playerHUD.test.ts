@@ -1,6 +1,8 @@
 import assert from "node:assert/strict";
+import { readFileSync } from "node:fs";
 import { test } from "node:test";
-import { chapterTitle, currentChapter, planStats, statLabel, videoOptions } from "../../src/player/playerHUD.ts";
+import { chapterTitle, currentChapter, planStats, type PlaybackStatus, statLabel, videoOptions } from "../../src/player/playerHUD.ts";
+import { playbackStatus } from "../../src/player/controller.ts";
 import { decodePlayerChapters } from "../../src/contracts/v2/chapters.ts";
 import { HUDState } from "../../src/player/hudState.ts";
 import { FakeAVPlay } from "./support/fakeAVPlay.ts";
@@ -226,4 +228,65 @@ test("Stats' status, delivery and Diagnostics read in the shown language, as App
         assert.equal(statLabel("Diagnostics"), "Diagnose");
         assert.equal(statLabel("Delivery"), "Bereitstellung");
     } finally { setAppLanguage(null); }
+});
+
+test("Stats' Network throughput formats CURRENT_BANDWIDTH bps when positive and omits zero or invalid readings", () => {
+    const plan = planWith(() => undefined);
+    const throughputRow = (networkThroughputBps: number | undefined) =>
+        planStats(plan, { audio: undefined, subtitle: undefined, speed: 1, status: "Playing", host: undefined, networkThroughputBps })
+            .stream.find(row => row.label === "Network throughput");
+
+    assert.deepEqual(throughputRow(17_709_368), { label: "Network throughput", value: "17.7 Mbps" });
+    assert.deepEqual(throughputRow(850_000), { label: "Network throughput", value: "850 Kbps" });
+    for (const missing of [undefined, 0, -1, Number.NaN, Number.POSITIVE_INFINITY]) {
+        assert.equal(throughputRow(missing), undefined);
+    }
+    setAppLanguage("de", SHIPPED_LANGUAGES, ["en-AU"]);
+    try {
+        assert.equal(statLabel("Network throughput"), "Netzwerkdurchsatz");
+    } finally { setAppLanguage(null); }
+    setAppLanguage("ar", SHIPPED_LANGUAGES, ["en-AU"]);
+    try {
+        const ar = JSON.parse(readFileSync(new URL("../../src/i18n/catalog/ar.json", import.meta.url), "utf8")) as Record<string, string>;
+        assert.equal(statLabel("Network throughput"), ar["player.stats.networkThroughput"]);
+        assert.notEqual(statLabel("Network throughput"), "Network throughput");
+    } finally { setAppLanguage(null); }
+});
+
+test("Stats reads all nine Apple Playback status phases in English and the shown language", () => {
+    const plan = planWith(() => undefined);
+    const phases: readonly PlaybackStatus[] = ["Loading", "Playing", "Paused", "Seeking", "Rebuffering", "Stalled", "Reconnecting", "Ended", "Error"];
+    assert.deepEqual(
+        phases.map(status => planStats(plan, { audio: undefined, subtitle: undefined, speed: 1, status, host: undefined }).stream[0]?.value),
+        ["Loading", "Playing", "Paused", "Seeking", "Rebuffering", "Stalled", "Reconnecting", "Ended", "Error"],
+    );
+    setAppLanguage("de", SHIPPED_LANGUAGES, ["en-AU"]);
+    try {
+        assert.deepEqual(
+            phases.map(status => planStats(plan, { audio: undefined, subtitle: undefined, speed: 1, status, host: undefined }).stream[0]?.value),
+            ["Wird geladen", "Wird abgespielt", "Pausiert", "Wird gespult", "Wird erneut gepuffert", "Stockt", "Verbindung wird wiederhergestellt", "Beendet", "Fehler"],
+        );
+    } finally { setAppLanguage(null); }
+    setAppLanguage("ar", SHIPPED_LANGUAGES, ["en-AU"]);
+    try {
+        const ar = JSON.parse(readFileSync(new URL("../../src/i18n/catalog/ar.json", import.meta.url), "utf8")) as Record<string, string>;
+        const keys = ["common.loading", "player.stats.phasePlaying", "player.stats.phasePaused", "player.stats.phaseSeeking", "player.stats.phaseRebuffering", "player.stats.phaseStalled", "player.stats.phaseReconnecting", "player.stats.phaseEnded", "player.stats.phaseError"] as const;
+        const rendered = phases.map(status => planStats(plan, { audio: undefined, subtitle: undefined, speed: 1, status, host: undefined }).stream[0]?.value);
+        assert.deepEqual(rendered, keys.map(key => ar[key]));
+        for (const [index, value] of rendered.entries()) {
+            assert.ok(value !== undefined && value !== phases[index], `Arabic defines non-English translation for ${phases[index]}`);
+        }
+    } finally { setAppLanguage(null); }
+});
+
+test("playbackStatus follows Apple's PlaybackPhase precedence across all nine phases", () => {
+    assert.equal(playbackStatus({ error: true, ended: true, reconnecting: true }), "Error");
+    assert.equal(playbackStatus({ ended: true, reconnecting: true, seeking: true }), "Ended");
+    assert.equal(playbackStatus({ reconnecting: true, loading: true, stalled: true }), "Reconnecting");
+    assert.equal(playbackStatus({ loading: true, seeking: true, paused: true }), "Loading");
+    assert.equal(playbackStatus({ seeking: true, paused: true, rebuffering: true }), "Seeking");
+    assert.equal(playbackStatus({ paused: true, stalled: true, rebuffering: true }), "Paused");
+    assert.equal(playbackStatus({ stalled: true, rebuffering: true }), "Stalled");
+    assert.equal(playbackStatus({ rebuffering: true }), "Rebuffering");
+    assert.equal(playbackStatus({}), "Playing");
 });
