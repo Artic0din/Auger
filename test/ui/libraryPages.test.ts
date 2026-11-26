@@ -330,9 +330,17 @@ page("Browse's first load shows twelve static poster placeholders", async tv => 
         const cards = tv.page.locator(".browse .catalog-skeleton .poster-skeleton");
         await cards.first().waitFor();
         await tv.eventually(async () => tv.pendingReplies <= tv.fake.heldReplies, "browse setup answers delivered");
+        await afterPaint(tv);
         assert.equal(await cards.count(), 12);
         assert.equal(await tv.page.locator(".discovery-skeleton").count(), 0);
-        const style = await cards.first().evaluate(node => ({ background: getComputedStyle(node).backgroundColor, radius: getComputedStyle(node).borderRadius, animations: node.getAnimations().length, ratio: node.getBoundingClientRect().height / node.getBoundingClientRect().width }));
+        const style = await tv.page.evaluate(() => {
+            const node = document.querySelector(".browse .catalog-skeleton .poster-skeleton");
+            if (node === null) return null;
+            const computed = getComputedStyle(node);
+            const box = node.getBoundingClientRect();
+            return { background: computed.backgroundColor, radius: computed.borderRadius, animations: node.getAnimations().length, ratio: box.height / box.width };
+        });
+        assert.ok(style !== null, "a poster placeholder is rendered");
         assert.deepEqual({ ...style, ratio: Math.round(style.ratio * 100) / 100 }, { background: "rgba(255, 255, 255, 0.09)", radius: "12px", animations: 0, ratio: 1.5 });
     } finally { held.release(); }
 });
