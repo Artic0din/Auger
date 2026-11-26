@@ -454,6 +454,36 @@ test("promoteSuggestion honors voteHostOverride in vote rooms and starts playbac
     r.hub.leave();
 });
 
+test("after reconnect in a vote room, canStartSuggestion and promoteSuggestion stay blocked until the ballot refreshes (#783)", async () => {
+    let reads = 0;
+    const promoted: string[] = [];
+    const r = await voteRoom([], { selection_mode: "vote" }, {
+        suggestions: async () => { reads++; return page(reads === 1 ? [row("a", { vote_count: 1 }), row("b", { vote_count: 0 })] : [row("a", { vote_count: 1 }), row("b", { vote_count: 2 })])(); },
+        promoteSuggestion: async (_roomId, _token, id) => { promoted.push(id); return roomAccess({ selection_mode: "vote", phase: "playing", generation: 2, selection_revision: 1, selected_content_id: `movie:${id}`, selected_file_id: "9" }); },
+        item: async () => { throw new Error("optional"); },
+    }, { vote_host_override: true });
+    await r.clock.advance(200);
+    await settle();
+    assert.equal(r.hub.ballotCurrent(), true);
+    assert.equal(r.hub.canStartSuggestion(r.hub.state.votes.rows[1]!), true);
+    r.socket().close();
+    await r.clock.advance(1000);
+    await settle();
+    r.socket().open();
+    assert.equal(r.hub.state.connection, "connected");
+    assert.equal(r.hub.ballotCurrent(), false);
+    assert.equal(r.hub.canStartSuggestion(r.hub.state.votes.rows[1]!), false, "override start stays disabled until the ballot refreshes");
+    assert.equal(await r.hub.promoteSuggestion("b"), false, "stale suggestion promotion sends no request");
+    assert.deepEqual(promoted, []);
+    await r.clock.advance(200);
+    await settle();
+    assert.equal(r.hub.ballotCurrent(), true);
+    assert.equal(r.hub.canStartSuggestion(r.hub.state.votes.rows[1]!), true);
+    assert.equal(await r.hub.promoteSuggestion("b"), true);
+    assert.deepEqual(promoted, ["b"]);
+    r.hub.leave();
+});
+
 test("queueSuggestion never seeds the lobby with an unsanitized external posterUrl (#783)", async () => {
     let stagedPoster: string | undefined = "sentinel";
     const external = row("ext", { poster_url: "https://evil.example/track.png" });
