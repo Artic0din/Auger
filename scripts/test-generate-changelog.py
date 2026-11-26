@@ -550,6 +550,64 @@ class CheckPrReleaseNotesTest(unittest.TestCase):
             )
         )
 
+    def test_semver_bump_matches_release_notes_categories(self):
+        self.assertEqual(
+            [],
+            changelog.check_pr_release_notes(
+                "feat(subtitles): floating appearance dialog",
+                pr_body("## Release Notes\n\n### Improved\n\n- Subtitle Appearance opens as a floating dialog."),
+            ),
+        )
+        self.assertEqual(
+            [],
+            changelog.check_pr_release_notes(
+                "perf(home): cache tint wash",
+                pr_body("## Release Notes\n\n### Improved\n\n- Home scrolls more smoothly."),
+            ),
+        )
+        self.assertEqual(
+            [],
+            changelog.check_pr_release_notes(
+                "fix(security): redact token",
+                pr_body("## Release Notes\n\n### Security\n\n- Redact tokens from error screens."),
+            ),
+        )
+        self.assertEqual(
+            [],
+            changelog.check_pr_release_notes(
+                "fix(ci): stop flaky upload",
+                pr_body("## Release Notes\n\n### Fixed\n\n- Release uploads retry cleanly."),
+            ),
+        )
+        self.assertEqual(
+            [],
+            changelog.check_pr_release_notes(
+                "perf(ci): cache bundle check",
+                pr_body("## Release Notes\n\n### Improved\n\n- Faster package validation."),
+            ),
+        )
+        self.assertEqual(
+            [],
+            changelog.check_pr_release_notes(
+                "chore(repo): tidy scripts",
+                pr_body("## Release Notes\n\nNone"),
+            ),
+        )
+        for title, section in (
+            ("fix(player): add end time", "### New\n\n- Show estimated finish time."),
+            ("fix(player): add end time", "### Improved\n\n- Show estimated finish time."),
+            ("fix(ci): add check", "### New\n\n- Added a new setting."),
+            ("perf(ci): cache bundle check", "### Fixed\n\n- Stopped a crash."),
+            ("revert: undo row", "### Improved\n\n- Removed extra subtitle row."),
+            ("perf(home): faster rows", "### New\n\n- Added a new shelf."),
+            ("perf(home): faster rows", "### Fixed\n\n- Stopped a crash."),
+            ("feat(player): fix crash", "### Fixed\n\n- Stopped a crash."),
+            ("feat(settings): rename keys", "### Breaking Changes\n\n- Sign in again.\n\n### New\n\n- New settings."),
+            ("chore(repo): change package id", "### Breaking Changes\n\n- Uninstall older builds first."),
+        ):
+            with self.subTest(title=title, section=section[:20]):
+                self.assertTrue(changelog.check_pr_release_notes(title, pr_body(f"## Release Notes\n\n{section}")))
+
     def test_check_pr_cli_and_workflow_step(self):
         workflow_text = (SCRIPT_DIR.parent / ".github/workflows/ci-scripts.yml").read_text(encoding="utf-8")
         self.assertIn("types: [opened, edited, synchronize, reopened]", workflow_text)

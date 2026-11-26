@@ -1,21 +1,59 @@
 // Stage the Tizen web app in dist/wgt: static files from app/ plus one
 // classic-script bundle of src/main.ts for Tizen 8.0's Chromium 108 engine.
+import { execFileSync } from "node:child_process";
 import { build } from "esbuild";
-import { cpSync, readFileSync, rmSync } from "node:fs";
-import { dirname, join } from "node:path";
+import { cpSync, readFileSync, rmSync, writeFileSync } from "node:fs";
+import { dirname, join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 import { writeCatalogFiles } from "./catalog-files.ts";
 
-const root = join(dirname(fileURLToPath(import.meta.url)), "..");
+const DEFAULT_VERSION = "0.0.1";
+const WIDGET_VERSION = /(<widget\b[^>]*\bversion=")([^"]+)(")/;
+const EXACT_TAG = /^v(0|[1-9]\d*)\.(0|[1-9]\d*)\.(0|[1-9]\d*)$/;
+
+function headReleaseVersion(cwd) {
+    try {
+        const tags = execFileSync("git", ["tag", "--points-at", "HEAD", "--list", "v*"], {
+            cwd,
+            encoding: "utf8",
+            stdio: ["ignore", "pipe", "ignore"],
+        }).split(/\s+/);
+        let best;
+        for (const tag of tags) {
+            const match = EXACT_TAG.exec(tag);
+            if (!match) continue;
+            const parts = [Number(match[1]), Number(match[2]), Number(match[3])];
+            if (parts[0] > 255 || parts[1] > 255 || parts[2] > 65535) continue;
+            if (
+                !best ||
+                parts[0] > best[0] ||
+                (parts[0] === best[0] && (parts[1] > best[1] || (parts[1] === best[1] && parts[2] > best[2])))
+            ) {
+                best = parts;
+            }
+        }
+        return best ? best.join(".") : undefined;
+    } catch {
+        return undefined;
+    }
+}
+
+const root = process.env.AUGER_BUILD_ROOT
+    ? resolve(process.env.AUGER_BUILD_ROOT)
+    : join(dirname(fileURLToPath(import.meta.url)), "..");
 const stageDir = join(root, "dist", "wgt");
 const config = readFileSync(join(root, "app", "config.xml"), "utf8");
-const version = /<widget\b[^>]*\bversion="([^"]+)"/.exec(config)?.[1];
-if (version === undefined) {
+const configVersion = WIDGET_VERSION.exec(config)?.[2];
+if (configVersion === undefined) {
     throw new Error("The Tizen package version is missing");
 }
+const version = configVersion === DEFAULT_VERSION ? (headReleaseVersion(root) ?? configVersion) : configVersion;
 
 rmSync(stageDir, { recursive: true, force: true });
 cpSync(join(root, "app"), stageDir, { recursive: true });
+if (version !== configVersion) {
+    writeFileSync(join(stageDir, "config.xml"), config.replace(WIDGET_VERSION, `$1${version}$3`));
+}
 
 await build({
     entryPoints: [join(root, "src", "main.ts")],

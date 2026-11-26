@@ -4,15 +4,18 @@
 The next version bumps the latest vX.Y.Z tag by the largest change since it:
 
 - a breaking change (`feat!:`, `fix(ui)!:`, or a `BREAKING CHANGE:` line in the
-  body) bumps the major version;
+  body) bumps the major version from 1.0.0 onward, or the minor version in
+  auto mode while major version is 0 (SemVer initial development);
 - `feat` bumps the minor version;
 - `fix`, `perf` and `revert` (or a `Revert "..."` subject) bump the patch;
 - anything else (`docs`, `chore`, `ci`, `test`, `refactor`, `style`, `build`,
   merge commits) makes no release.
 
-Older tester tags (vX.Y.Z-beta.B, vX.Y.Z+B) count as their X.Y.Z, below an
-exact vX.Y.Z tag of the same version. A commit that is already at or behind
-the latest published vX.Y.Z tag makes no release, so re-running is safe.
+Pre-release tags (`vX.Y.Z-rc.N`) have lower SemVer precedence than `vX.Y.Z`, so
+releasing after `vX.Y.Z-rc.N` graduates to `vX.Y.Z` unless the commits require
+a larger bump. Build metadata (`+...`) is ignored when comparing precedence.
+A commit that is already at or behind the latest published `vX.Y.Z` tag makes
+no release, so re-running is safe.
 
 With --published-tags-file, only the exact vX.Y.Z tags listed in that file
 (one per line, from the published GitHub Releases) count as published. An
@@ -39,8 +42,15 @@ import subprocess
 import sys
 from typing import AbstractSet, Iterable, Optional
 
-TAG = re.compile(r"v(\d+)\.(\d+)\.(\d+)(?:-[0-9A-Za-z.-]+)?(?:\+[0-9A-Za-z.-]+)?")
-VERSION = re.compile(r"(\d+)\.(\d+)\.(\d+)")
+NUMERIC_ID = r"(?:0|[1-9]\d*)"
+PRERELEASE_ID = rf"(?:{NUMERIC_ID}|\d*[A-Za-z-][0-9A-Za-z-]*)"
+BUILD_ID = r"[0-9A-Za-z-]+"
+TAG = re.compile(
+    rf"v({NUMERIC_ID})\.({NUMERIC_ID})\.({NUMERIC_ID})"
+    rf"(?:-({PRERELEASE_ID}(?:\.{PRERELEASE_ID})*))?"
+    rf"(?:\+({BUILD_ID}(?:\.{BUILD_ID})*))?"
+)
+VERSION = re.compile(rf"({NUMERIC_ID})\.({NUMERIC_ID})\.({NUMERIC_ID})")
 HEADER = re.compile(r"(?P<type>[a-z]+)(?:\((?P<scope>[^)]*)\))?(?P<bang>!)?:\s+(?P<description>.+)", re.IGNORECASE)
 BREAKING = re.compile(r"^BREAKING[- ]CHANGE:", re.MULTILINE)
 PATCH_TYPES = {"fix", "perf", "revert"}
@@ -96,7 +106,16 @@ class SemVer:
 class TagInfo:
     name: str
     version: SemVer
-    is_prerelease: bool
+    prerelease: tuple[str, ...] = ()
+    build: str = ""
+
+    @property
+    def is_prerelease(self) -> bool:
+        return bool(self.prerelease)
+
+    @property
+    def is_exact(self) -> bool:
+        return not self.prerelease and not self.build
 
 
 @dataclass(frozen=True)
@@ -120,16 +139,34 @@ def parse_tag(name: str) -> Optional[TagInfo]:
     if not match:
         return None
     major, minor, patch = (int(part) for part in match.group(1, 2, 3))
-    return TagInfo(name, SemVer(major, minor, patch), is_prerelease=name != f"v{major}.{minor}.{patch}")
+    prerelease = tuple(match.group(4).split(".")) if match.group(4) else ()
+    build = match.group(5) or ""
+    return TagInfo(name, SemVer(major, minor, patch), prerelease=prerelease, build=build)
 
 
-def natural_key(name: str) -> tuple[tuple[int, int | str], ...]:
-    return tuple((0, int(part)) if part.isdigit() else (1, part) for part in re.split(r"(\d+)", name))
+def prerelease_key(identifiers: tuple[str, ...]) -> tuple[tuple[int, int | str], ...]:
+    return tuple((0, int(part)) if part.isdigit() else (1, part) for part in identifiers)
+
+
+def semver_precedence(
+    version: SemVer, prerelease: tuple[str, ...] = ()
+) -> tuple[SemVer, int, tuple[tuple[int, int | str], ...]]:
+    if prerelease:
+        return (version, 0, prerelease_key(prerelease))
+    return (version, 1, ())
 
 
 def latest_tag(tags: Iterable[str]) -> Optional[TagInfo]:
     parsed = [tag for name in tags if (tag := parse_tag(name))]
-    return max(parsed, key=lambda tag: (tag.version, 0 if tag.is_prerelease else 1, natural_key(tag.name)), default=None)
+    return max(
+        parsed,
+        key=lambda tag: (
+            semver_precedence(tag.version, tag.prerelease),
+            1 if tag.is_exact else 0,
+            prerelease_key(tuple(tag.build.split("."))) if tag.build else (),
+        ),
+        default=None,
+    )
 
 
 def classify_commit(commit: CommitMessage) -> BumpLevel:
@@ -147,20 +184,39 @@ def classify_commit(commit: CommitMessage) -> BumpLevel:
 def parse_version(text: str) -> SemVer:
     match = VERSION.fullmatch(text.removeprefix("v"))
     if not match:
-        raise ReleaseError(f"Version must look like 1.2.0, got {text!r}.")
+        raise ReleaseError(f"Version must look like 1.2.0 without leading zeroes, got {text!r}.")
     major, minor, patch = (int(part) for part in match.groups())
     return SemVer(major, minor, patch)
 
 
 def exact_tags(tags: Iterable[str]) -> set[str]:
-    return {name for name in tags if (tag := parse_tag(name)) and not tag.is_prerelease}
+    return {name for name in tags if (tag := parse_tag(name)) and tag.is_exact}
 
 
 def previous_release(tags: Iterable[str], published_exact_tags: AbstractSet[str]) -> Optional[TagInfo]:
-    """The newest tag that is a published release or a tester tag: the start of the release notes."""
-    return latest_tag(
-        name for name in tags if name in published_exact_tags or ((tag := parse_tag(name)) and tag.is_prerelease)
-    )
+    """The newest published exact release, or the newest pre-release/build tag when none is published yet."""
+    published_latest = latest_tag(name for name in tags if name in published_exact_tags)
+    if published_latest is not None:
+        return published_latest
+    return latest_tag(name for name in tags if (tag := parse_tag(name)) and not tag.is_exact)
+
+
+def prerelease_step(version: SemVer) -> BumpLevel:
+    if version.major > 0 and version.minor == 0 and version.patch == 0:
+        return BumpLevel.MAJOR
+    if version.minor > 0 and version.patch == 0:
+        return BumpLevel.MINOR
+    if version.patch > 0:
+        return BumpLevel.PATCH
+    return BumpLevel.NONE
+
+
+def next_version(highest: Optional[TagInfo], level: BumpLevel, *, is_auto: bool) -> tuple[SemVer, BumpLevel]:
+    base = highest.version if highest else SemVer(0, 0, 0)
+    effective = BumpLevel.MINOR if (is_auto and base.major == 0 and level == BumpLevel.MAJOR) else level
+    if highest and highest.is_prerelease and effective <= prerelease_step(base):
+        return base, effective
+    return base.bump(effective), effective
 
 
 def plan_release(
@@ -178,7 +234,6 @@ def plan_release(
     previous_tag = prev.name if prev else ""
     # Bump from the highest tag of all, so a new version never collides with an unpublished one.
     highest = latest_tag(tags)
-    base = highest.version if highest else SemVer(0, 0, 0)
 
     if mode != "auto" and mode not in MANUAL_BUMPS:
         raise ReleaseError(f"Unknown bump {mode!r}.")
@@ -192,17 +247,17 @@ def plan_release(
 
     if explicit_version:
         target = parse_version(explicit_version)
-        if highest and target <= highest.version:
+        if highest and semver_precedence(target) <= semver_precedence(highest.version, highest.prerelease):
             raise ReleaseError(f"{target.text} is not newer than the latest tag, {highest.name}.")
         bump = "explicit"
     elif mode == "auto":
         level = max((classify_commit(commit) for commit in commits), default=BumpLevel.NONE)
         if level == BumpLevel.NONE:
             return ReleasePlan(False, "", "", previous_tag, "none")
-        target = base.bump(level)
-        bump = level.name.lower()
+        target, effective = next_version(highest, level, is_auto=True)
+        bump = effective.name.lower()
     else:
-        target = base.bump(BumpLevel[mode.upper()])
+        target, _ = next_version(highest, BumpLevel[mode.upper()], is_auto=False)
         bump = mode
 
     target.check_tizen_limits()

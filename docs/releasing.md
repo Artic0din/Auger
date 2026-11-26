@@ -10,7 +10,7 @@ The **Release** workflow (`.github/workflows/release.yml`) runs after **Tizen Bu
 
 | Commits since the latest release | Bump |
 | --- | --- |
-| `feat!:`, `fix(ui)!:` or any type with `!`, or a body line starting `BREAKING CHANGE:` | major (`1.4.2` to `2.0.0`) |
+| `feat!:`, `fix(ui)!:` or any type with `!`, or a body line starting `BREAKING CHANGE:` | major from `1.0.0` onward (`1.4.2` to `2.0.0`), or minor while on `0.x` (`0.10.0` to `0.11.0`) |
 | `feat` | minor (`1.4.2` to `1.5.0`) |
 | `fix`, `perf`, `revert`, or a `Revert "..."` subject | patch (`1.4.2` to `1.4.3`) |
 | only `docs`, `chore`, `ci`, `test`, `refactor`, `style`, `build` or merge commits | no release |
@@ -24,9 +24,10 @@ Only tags with a published GitHub Release count as released.
 If a run stops after reserving its tag, the next run on that commit publishes the same version (`bump=recover`).
 A run on a newer commit picks a version past the unpublished tag, and its notes still cover every commit since the last published release.
 
-Tizen limits widget versions to `[0-255].[0-255].[0-65535]`, and the script refuses a version outside that range.
+Tizen limits widget versions to `[0-255].[0-255].[0-65535]` without leading zeroes, and both `scripts/release-version.py` and `scripts/ci/set-wgt-version.sh` refuse a version outside that range.
 
-The older tester tags (`vX.Y.Z-beta.B`) count as their `X.Y.Z`, so the first automatic release after `v0.1.0-beta.3` is `v0.1.1`, `v0.2.0` or `v1.0.0`.
+A pre-release tag (`vX.Y.Z-rc.N`) has lower SemVer precedence than `vX.Y.Z`, so the first release after `v0.11.0-rc.1` graduates to `v0.11.0` unless the commits require a larger bump.
+Build metadata (`+...`) is ignored when comparing version precedence.
 
 ### Running a release by hand
 
@@ -34,7 +35,7 @@ Open **Actions**, select **Release**, and run it on `main`.
 The commit must have passed **Tizen Builds**.
 
 - `bump: auto` releases only when the commits call for it, as above.
-- `bump: patch`, `minor` or `major` forces that bump from the latest tag.
+- `bump: patch`, `minor` or `major` forces that bump from the latest tag (use `bump: major` or `version: 1.0.0` to graduate from `0.x` to `1.0.0`).
 - `version: X.Y.Z` releases exactly that version, which must be newer than the latest tag (or match an unpublished `vX.Y.Z` tag already on the target commit to recover it).
 
 No mode releases a commit that is already released.
@@ -57,7 +58,7 @@ Every release is marked Latest, so `https://github.com/Artic0din/Auger-Tizen/rel
 
 The GitHub Release body is for people who use Auger.
 For each commit, the Release workflow reads the merged pull request named by its `(#123)` suffix and uses that pull request's `## Release Notes` (or `## Release note`) section.
-`CI Scripts and Guards` runs `scripts/generate-changelog.py check-pr` on pull requests so every `feat`, `fix`, `perf`, `revert`, or breaking pull request includes a populated `## Release Notes` section with explicit category subheadings (`### Breaking Changes`, `### New`, `### Improved`, `### Security`, or `### Fixed`, plus optional `### Highlights`) without raw `#123` references or Conventional Commit prefixes (or explicit `None` for an internal-only fix).
+`CI Scripts and Guards` runs `scripts/generate-changelog.py check-pr` on pull requests so every `feat`, `fix`, `perf`, `revert`, or breaking pull request includes a populated `## Release Notes` section with explicit category subheadings (`### Breaking Changes`, `### New`, `### Improved`, `### Security`, or `### Fixed`, plus optional `### Highlights`) matching its SemVer bump (`### Breaking Changes` on and only on breaking PRs, `### New` or `### Improved` on `feat`, `### Improved` without `### New` on `perf`, `### Fixed` or `### Security` without `### New` on `fix` and `revert`, and `None` only on internal-only fixes or non-releasing PRs) without raw `#123` references or Conventional Commit prefixes.
 That section can hold `### Highlights`, `### Breaking Changes`, `### New`, `### Improved`, `### Security`, and `### Fixed` subheadings.
 Text outside a subheading goes to the section the commit type implies, or to Improved for an internal commit type.
 `None`, `N/A`, or `No user-visible changes` leaves the pull request out, unless the commit is breaking.
@@ -120,7 +121,7 @@ Public GitHub Releases use the Tizen SDK public distributor certificate so no pe
 To sideload directly onto a Samsung TV in Developer Mode, build and sign locally with your own Samsung certificate profile:
 
 1. Create a Samsung author and distributor certificate profile in Tizen Studio Certificate Manager for your TV's DUID.
-2. Clone the release tag into a temporary directory (`git clone --depth 1 --branch vX.Y.Z https://github.com/Artic0din/Auger-Tizen.git auger-release && cd auger-release`), install dependencies (`npm ci`), and stamp its version into `app/config.xml`: `scripts/ci/set-wgt-version.sh X.Y.Z`.
+2. Clone the release tag into a temporary directory (`git clone --depth 1 --branch vX.Y.Z https://github.com/Artic0din/Auger-Tizen.git auger-release && cd auger-release`), install dependencies (`npm ci`), and stamp its version into `app/config.xml`: `scripts/ci/set-wgt-version.sh X.Y.Z` (required on `v0.10.0` and earlier; newer tags also stamp `dist/wgt/config.xml` automatically during `npm run build`).
 3. Package locally: `export TIZEN_SECURITY_PROFILE="YourProfileName" && ./scripts/build-wgt.sh`.
 4. Install through Tizen Studio Device Manager or run `tizen install -n dist/Auger.wgt -t <device>`, then delete the temporary `auger-release` directory when done.
 

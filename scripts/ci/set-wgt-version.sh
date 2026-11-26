@@ -6,8 +6,16 @@ set -euo pipefail
 version="${1:?usage: set-wgt-version.sh X.Y.Z [config.xml]}"
 config="${2:-$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)/app/config.xml}"
 
-if [[ ! "${version}" =~ ^[0-9]+\.[0-9]+\.[0-9]+$ ]]; then
-    echo "error: version must look like 1.2.0, got '${version}'." >&2
+if [[ ! "${version}" =~ ^(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)$ ]]; then
+    echo "error: version must look like 1.2.0 without leading zeroes, got '${version}'." >&2
+    exit 1
+fi
+
+major="${BASH_REMATCH[1]}"
+minor="${BASH_REMATCH[2]}"
+patch="${BASH_REMATCH[3]}"
+if (( ${#major} > 3 || ${#minor} > 3 || ${#patch} > 5 || major > 255 || minor > 255 || patch > 65535 )); then
+    echo "error: ${version} doesn't fit a Tizen version (major and minor <= 255, patch <= 65535)." >&2
     exit 1
 fi
 
