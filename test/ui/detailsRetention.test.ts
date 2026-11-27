@@ -1,5 +1,6 @@
 import assert from "node:assert/strict";
 import { after, before, test } from "node:test";
+import { build } from "esbuild";
 import type { Browser } from "playwright";
 import { APP_LANGUAGE_KEY, TITLE_ART_KEY } from "../../src/contracts/v2/settings.ts";
 import { registerSourceCatalogs } from "../native/support/catalogs.ts";
@@ -177,19 +178,7 @@ test("popovers and failure alerts clear inert and aria-hidden from all retained 
         await tv.page.locator(".details-extras .browse-card").first().waitFor();
         await tv.page.locator(".details-hero .details-logo").waitFor();
 
-        // Open and close Audio popover.
-        await tv.page.locator('[data-focus="audio"]').click();
-        await tv.page.getByRole("dialog", { name: "Audio" }).waitFor();
-        await tv.remote(10009);
-        await tv.page.getByRole("dialog", { name: "Audio" }).waitFor({ state: "detached" });
-
-        // Trigger and dismiss failure alert.
-        await tv.page.locator('[data-focus="watchlist"]').click();
-        await tv.page.getByRole("alertdialog").waitFor();
-        await tv.page.getByRole("button", { name: "OK", exact: true }).click();
-        await tv.page.getByRole("alertdialog").waitFor({ state: "detached" });
-
-        const states = await tv.page.evaluate(() => {
+        const readSectionStates = (): Promise<unknown[]> => tv.page.evaluate(() => {
             const nodes = [
                 document.querySelector(".details-page-wash"),
                 document.querySelector(".details-hero"),
@@ -201,7 +190,20 @@ test("popovers and failure alerts clear inert and aria-hidden from all retained 
             ];
             return nodes.map(node => node === null ? "missing" : { inert: (node as HTMLElement).inert, hidden: node.getAttribute("aria-hidden") });
         });
-        for (const state of states) assert.deepEqual(state, { inert: false, hidden: null });
+
+        // Open and close Audio popover.
+        await tv.page.locator('[data-focus="audio"]').click();
+        await tv.page.getByRole("dialog", { name: "Audio" }).waitFor();
+        await tv.remote(10009);
+        await tv.page.getByRole("dialog", { name: "Audio" }).waitFor({ state: "detached" });
+        for (const state of await readSectionStates()) assert.deepEqual(state, { inert: false, hidden: null });
+
+        // Trigger and dismiss failure alert.
+        await tv.page.locator('[data-focus="watchlist"]').click();
+        await tv.page.getByRole("alertdialog").waitFor();
+        await tv.page.getByRole("button", { name: "OK", exact: true }).click();
+        await tv.page.getByRole("alertdialog").waitFor({ state: "detached" });
+        for (const state of await readSectionStates()) assert.deepEqual(state, { inert: false, hidden: null });
         assert.deepEqual(tv.console, []);
     } finally { await tv.page.context().close(); }
 });
@@ -325,4 +327,102 @@ test("retained lower sections rebuild when shownLanguage changes mid-visit", asy
         assert.deepEqual(replaced, { cast: true, extras: true, box: true, related: true, facts: true });
         assert.deepEqual(tv.console, []);
     } finally { releaseLanguage?.(); await tv.page.context().close(); }
+});
+
+test("transiently failing Details logo retries and renders on the next episode focus repaint", async () => {
+    const { tv, details } = await startDetails();
+    let logoHits = 0;
+    let allowLogo = false;
+    try {
+        await tv.page.route("**/art/last-signal-logo.svg", route => {
+            logoHits++;
+            if (!allowLogo) return route.fulfill({ status: 500 });
+            return route.fallback();
+        });
+        await routeSeries(tv, details);
+        await tv.page.locator('[data-section="recently_added"] [data-focus="series:s1"]').first().click();
+        await tv.page.locator('[data-focus="episode:ret:4"]').waitFor();
+        await tv.eventually(async () => logoHits >= 1, "initial logo request");
+        await afterPaint(tv);
+        assert.equal(await tv.page.locator(".details-hero .details-logo").count(), 0);
+
+        allowLogo = true;
+        const hitsBeforeMove = logoHits;
+        await tv.page.locator('[data-focus="episode:ret:1"]').focus();
+        await tv.jump(150);
+        await tv.remote(39);
+        await tv.eventually(async () => await tv.page.locator(".details-hero .details-logo").count() === 1, "retried logo renders after repaint");
+        assert.ok(logoHits > hitsBeforeMove, `expected logo retry request, saw ${logoHits} (before move ${hitsBeforeMove})`);
+        assert.deepEqual(tv.console, []);
+    } finally { await tv.page.context().close(); }
+});
+
+test("box-set rail rebuilds on an asset-only CardOverlayPrefs object replacement", async () => {
+    const details = new FakeDetails();
+    const itemWire = details.route("GET", "/catalog/items/movie%3Am0001", "p-owner")?.body;
+    const bundled = await build({
+        stdin: {
+            resolveDir: process.cwd(),
+            contents: `
+                import { itemView } from "./src/ui/browseDetails.ts";
+                import { DetailsState } from "./src/ui/detailsState.ts";
+                import { BoxSetRowState } from "./src/ui/boxSetRow.ts";
+                import { parseOverlayPrefs } from "./src/ui/cardOverlays.ts";
+                import { decodeCatalogBoxSetDetail } from "./src/contracts/v2/boxSets.ts";
+                import { decodeItemDetail } from "./src/contracts/v2/catalog.ts";
+
+                window.__runBoxSetRetention = (itemRaw, boxSetRaw) => {
+                    const detail = decodeItemDetail(itemRaw);
+                    const boxSetDetail = decodeCatalogBoxSetDetail(boxSetRaw);
+                    const fakeSession = {
+                        call: async () => { throw new Error("unexpected network call"); },
+                        authoritySignal: new AbortController().signal,
+                    };
+                    const state = new DetailsState(detail, fakeSession, () => undefined, async () => undefined);
+                    const boxSet = new BoxSetRowState(fakeSession, detail.id, async () => true, () => undefined);
+                    boxSet.detail = boxSetDetail;
+                    const ref = "b".repeat(64) + ".webp";
+                    const basePrefs = parseOverlayPrefs({
+                        version: 2,
+                        preset: "classic",
+                        order: [],
+                        items: { resolution: { enabled: true, position: "top-left", valueImages: { "2160p": ref } } },
+                    });
+                    const prefs1 = { ...basePrefs, images: new Map([[ref, { url: "/art/badge-1.svg", aspect: 2.5 }]]) };
+                    const prefs2 = { ...basePrefs, images: new Map([[ref, { url: "/art/badge-2.svg", aspect: 2.5 }]]) };
+                    let currentPrefs = prefs1;
+                    const context = { baseUrl: "http://127.0.0.1", cardOverlays: () => currentPrefs, open: () => undefined };
+                    const boxNode = (view) => view.content.find((node) => node.classList.contains("box-set-row")) ?? null;
+                    const row1 = boxNode(itemView(detail, [], context, () => undefined, () => undefined, state, boxSet));
+                    const row2 = boxNode(itemView(detail, [], context, () => undefined, () => undefined, state, boxSet));
+                    currentPrefs = prefs2;
+                    const row3 = boxNode(itemView(detail, [], context, () => undefined, () => undefined, state, boxSet));
+                    return {
+                        jsonSame: JSON.stringify(prefs1) === JSON.stringify(prefs2),
+                        retainedSameRef: row1 !== null && row1 === row2,
+                        rebuiltOnAssetSwap: row3 !== null && row3 !== row2,
+                    };
+                };
+            `,
+            loader: "ts",
+        },
+        bundle: true,
+        write: false,
+        format: "iife",
+        platform: "browser",
+    });
+    const page = await browser.newPage();
+    try {
+        await page.setContent("<!doctype html><html><body></body></html>");
+        await page.addScriptTag({ content: bundled.outputFiles[0]?.text ?? "" });
+        const result = await page.evaluate(
+            ({ itemRaw, boxSetRaw }) => (window as unknown as {
+                __runBoxSetRetention: (a: unknown, b: unknown) => { jsonSame: boolean; retainedSameRef: boolean; rebuiltOnAssetSwap: boolean };
+            }).__runBoxSetRetention(itemRaw, boxSetRaw),
+            { itemRaw: itemWire, boxSetRaw: BOX_SET },
+        );
+        assert.deepEqual(result, { jsonSame: true, retainedSameRef: true, rebuiltOnAssetSwap: true });
+    } finally {
+        await page.close();
+    }
 });

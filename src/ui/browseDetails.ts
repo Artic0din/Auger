@@ -57,6 +57,7 @@ interface DetailsDomCache {
         readonly key: string;
         readonly element: HTMLElement;
         readonly armed: boolean;
+        failed: boolean;
         readonly guard: (() => boolean) | undefined;
     } | undefined;
     cast?: RetainedBlock | undefined;
@@ -220,7 +221,7 @@ export function titleParts(raw: string): { primary: string; subtitle: string | u
  * TVDecodedLogoTitle: the text title stays until the logo has decoded, then the logo cross-fades in over 0.2 s.
  * A logo already decoded this visit, or Reduce Motion, swaps at once.
  */
-export function decodedLogoTitle(holder: HTMLElement, logo: string | undefined, alt: string, allowed: () => boolean, showText: () => void, logoClass: string): void {
+export function decodedLogoTitle(holder: HTMLElement, logo: string | undefined, alt: string, allowed: () => boolean, showText: () => void, logoClass: string, onError?: () => void): void {
     showText();
     if (logo === undefined || !allowed()) return;
     const image = el("img", logoClass);
@@ -242,6 +243,7 @@ export function decodedLogoTitle(holder: HTMLElement, logo: string | undefined, 
         setTimeout(() => exit.remove(), LOGO_CROSSFADE_MS);
     });
     image.addEventListener("error", () => {
+        onError?.();
         if (image.parentElement !== holder) return;
         decodedTitleLogos.delete(logo);
         showText();
@@ -287,7 +289,7 @@ function retainedTitle(detail: ItemDetail, context: ViewContext, state: DetailsS
     const key = JSON.stringify([detail.title, logo ?? null, titleArt]);
     const existing = cache?.title;
     if (
-        existing !== undefined && existing.key === key
+        existing !== undefined && existing.key === key && !existing.failed
         && (logo === undefined || !titleArt || existing.element.querySelector(".details-logo") !== null || (existing.armed ? existing.guard?.() === true : !isLive))
     ) {
         return existing.element;
@@ -301,8 +303,11 @@ function retainedTitle(detail: ItemDetail, context: ViewContext, state: DetailsS
         title.replaceChildren(primary);
         if (secondary !== undefined) title.appendChild(secondary);
     };
-    if (cache !== undefined) cache.title = { key, element: title, armed: Boolean(titleArt && logo !== undefined && isLive), guard: live };
-    decodedLogoTitle(title, logo, detail.title, () => (live?.() ?? false) && (context.titleArt?.() ?? false) && (cache?.title === undefined || cache.title.element === title), showText, "details-logo");
+    const entry: NonNullable<DetailsDomCache["title"]> = { key, element: title, armed: Boolean(titleArt && logo !== undefined && isLive), failed: false, guard: live };
+    if (cache !== undefined) cache.title = entry;
+    decodedLogoTitle(title, logo, detail.title, () => (live?.() ?? false) && (context.titleArt?.() ?? false) && (cache?.title === undefined || cache.title.element === title), showText, "details-logo", () => {
+        entry.failed = true;
+    });
     return title;
 }
 
@@ -667,7 +672,7 @@ export function itemView(detail: ItemDetail, seasons: readonly Season[], context
         cache,
         "boxSet",
         JSON.stringify([detail.id, context.baseUrl, posterScale, spoilers.hidesImages, spoilers.hidesOverviews, context.overlays ?? null, overlaySnapshot ?? null, context.seriesYears ?? null, context.continueWatching ?? null, language, catalogLanguage]),
-        [boxSet, boxSet?.detail],
+        [boxSet, boxSet?.detail, context.overlays, overlaySnapshot],
         () => {
             const movieRow = boxSet === undefined ? undefined : boxSetMovieRow(boxSet, detail.id, deferredContext);
             return movieRow === undefined ? { content: [], zones: [] } : { content: movieRow.content, zones: [movieRow.zone] };
