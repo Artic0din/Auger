@@ -86,6 +86,8 @@ export interface Motion {
 }
 
 export class SkylineScroll {
+    private static readonly episodePadding = new WeakMap<HTMLElement, { readonly prop: "paddingLeft" | "paddingRight"; readonly value: string }>();
+
     /** TVSeriesDetailView.swift:653-674 centers the selected mode. */
     static seasonOffset(row: HTMLElement, element: HTMLElement): number {
         const range = row.scrollWidth - row.clientWidth;
@@ -129,9 +131,13 @@ export class SkylineScroll {
         const first = cards[0], last = cards.at(-1);
         if (first === undefined || last === undefined) return 0;
         // A right-to-left row starts at its right edge: its leading inset is the right padding and its trailing space the left.
-        // Clear stale leading padding first so a direction flip on a cached episode row reads its stylesheet inset.
+        // Clear stale leading padding first so a direction flip on a cached episode row reads its stylesheet inset,
+        // without mutating style attributes while the cached row keeps the same direction.
         const rightToLeft = getComputedStyle(row).direction === "rtl";
-        row.style[rightToLeft ? "paddingRight" : "paddingLeft"] = "";
+        const prop = rightToLeft ? "paddingLeft" : "paddingRight";
+        const other = rightToLeft ? "paddingRight" : "paddingLeft";
+        const previous = SkylineScroll.episodePadding.get(row);
+        if ((previous !== undefined && previous.prop !== prop) || row.style[other] !== "") row.style[other] = "";
         const style = getComputedStyle(row), inset = parseFloat(rightToLeft ? style.paddingRight : style.paddingLeft);
         const cardStyle = getComputedStyle(first);
         // offsetWidth rounds Compact's 309.6px still before multiplying the pitch.
@@ -145,7 +151,11 @@ export class SkylineScroll {
         // clamp viewport adds it back.
         const viewport = row.clientWidth - paintEnd - inset + width * .025 + 2 + spacing;
         const maximum = episodeRailOffset(cards.length - 1, cards.length, width, spacing, viewport);
-        row.style[rightToLeft ? "paddingLeft" : "paddingRight"] = `${Math.max(0, row.clientWidth + maximum - inset - contentWidth - spacing)}px`;
+        const next = `${Math.max(0, row.clientWidth + maximum - inset - contentWidth - spacing)}px`;
+        if (previous?.prop !== prop || previous.value !== next) {
+            row.style[prop] = next;
+            SkylineScroll.episodePadding.set(row, { prop, value: next });
+        }
         return maximum;
     }
 

@@ -294,6 +294,48 @@ export class FocusHost {
         }
     }
 
+    /** Updates active focus zones in place without rebuilding DOM or resetting scroll positions. */
+    updateZones(zones: readonly Zone[], focus?: FocusTarget): void {
+        if (this.view === undefined) return;
+        const press = this.press?.cancelled === false ? this.press : undefined;
+        const pressed = press === undefined ? undefined : this.focused();
+        const held = heldSelect();
+        const holding = held !== undefined && held.element === document.activeElement ? this.focused() : undefined;
+        this.view = { ...this.view, zones };
+        this.zoneLookup = undefined;
+        const active = this.locate(document.activeElement);
+        if (focus !== undefined && active?.zone.id === focus.zone && active.item.key === focus.key && enabled(active.item.element)) {
+            if (press !== undefined) press.item = active.item;
+            this.zoneLookup = { element: active.item.element, zone: active.zone.id };
+            this.memory.set(active.zone.id, active.item.key);
+            this.lastZone = active.zone.id;
+            if (this.tracksContent(active.zone.id)) this.contentZone = active.zone.id;
+            this.navigationItem = active.item;
+            return;
+        }
+        if (focus === undefined && active !== undefined) {
+            if (this.press?.item.element !== active.item.element || !enabled(active.item.element)) this.cancelPress();
+            else this.press.item = active.item;
+            this.zoneLookup = { element: active.item.element, zone: active.zone.id };
+            this.memory.set(active.zone.id, active.item.key);
+            this.lastZone = active.zone.id;
+            if (this.tracksContent(active.zone.id)) this.contentZone = active.zone.id;
+            this.navigationItem = active.item;
+            return;
+        }
+        this.cancelPress();
+        this.focusFirst([focus ?? this.view.focus]);
+        const current = this.locate(document.activeElement);
+        if (held !== undefined && holding !== undefined && current?.zone.id === holding.zone && current.item.key === holding.key && heldSelect()?.element !== current.item.element) {
+            moveSelect(held, current.item.element);
+        }
+        if (press !== undefined && this.press === press && !document.hidden && current?.zone.id === pressed?.zone && current?.item.key === pressed?.key && current?.item.quickAction !== undefined && enabled(current.item.element)) {
+            press.item = current.item;
+            press.cancelled = false;
+            this.armPress(press);
+        }
+    }
+
     focused(): FocusTarget | undefined {
         const found = this.locate(document.activeElement);
         return found === undefined ? undefined : { zone: found.zone.id, key: found.item.key };
@@ -335,16 +377,21 @@ export class FocusHost {
     }
 
     private applyVisit(visit: VisitSnapshot | undefined): void {
-        this.viewport().scrollTop = visit?.top ?? 0;
+        const viewport = this.viewport();
+        const targetTop = visit?.top ?? 0;
+        if (viewport.scrollTop !== targetTop) viewport.scrollTop = targetTop;
         this.container.querySelectorAll<HTMLElement>(".browse-row").forEach((row, index) => {
             SkylineScroll.prepareEpisodeRow(row);
-            row.scrollLeft = visit?.rows.get(this.rowKey(row, index)) ?? 0;
             const entry = row.dataset.scrollEntry === undefined ? undefined : Array.from(row.children).find((node): node is HTMLElement => node instanceof HTMLElement && node.dataset.focus === row.dataset.scrollEntry);
-            if (entry !== undefined) {
-                row.scrollLeft = row.classList.contains("details-episodes") ? SkylineScroll.episodeOffset(row, entry) : row.classList.contains("details-season-chips") ? SkylineScroll.seasonOffset(row, entry) : entry.offsetLeft - row.offsetLeft - parseFloat(getComputedStyle(row).paddingLeft);
-            }
+            const targetLeft = entry !== undefined
+                ? (row.classList.contains("details-episodes") ? SkylineScroll.episodeOffset(row, entry) : row.classList.contains("details-season-chips") ? SkylineScroll.seasonOffset(row, entry) : entry.offsetLeft - row.offsetLeft - parseFloat(getComputedStyle(row).paddingLeft))
+                : (visit?.rows.get(this.rowKey(row, index)) ?? 0);
+            if (row.scrollLeft !== targetLeft) row.scrollLeft = targetLeft;
         });
-        this.container.querySelectorAll<HTMLElement>(SCROLL_PANELS).forEach(panel => { panel.scrollTop = visit?.panels.get(panel.dataset.scrollKey ?? "") ?? 0; });
+        this.container.querySelectorAll<HTMLElement>(SCROLL_PANELS).forEach(panel => {
+            const panelTop = visit?.panels.get(panel.dataset.scrollKey ?? "") ?? 0;
+            if (panel.scrollTop !== panelTop) panel.scrollTop = panelTop;
+        });
     }
 
     private intersects(element: HTMLElement): boolean {

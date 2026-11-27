@@ -14,6 +14,7 @@ import { navigationRoots } from "./navigation.ts";
 import type { PrimaryMenu } from "../contracts/v2/navigation.ts";
 import { menuIcon } from "./navigationIcon.ts";
 import { remoteKey } from "./keys.ts";
+import { heldSelect, moveSelect } from "./selectRelease.ts";
 import { HeroWash, heroBackdrop, heroCover, resolveHeroArtwork, type CoverAspect, type HeroArtwork, type Tints, type WashSink } from "./heroBackdrop.ts";
 import { hidesCardOverview, hidesMarqueeBackdrop, hidesMarqueePoster, marqueeUsesSeriesArt, type EpisodeSpoilerSettings } from "./episodeSpoilers.ts";
 import { DescriptionTranslations, MARQUEE_TRANSLATION_DWELL_MS, marqueeTranslationRequest } from "./descriptionTranslation.ts";
@@ -248,6 +249,8 @@ export class Skyline {
         this.body.addEventListener(SCROLL_START_EVENT, this.onRowScrollStart);
     }
 
+    private avatarState: { readonly name: string; readonly reference: string | undefined; readonly baseUrl: string; readonly text?: string | undefined } | undefined;
+
     update(libraries: readonly UserLibrary[]): void {
         this.libraries = libraries;
         const roots = navigationRoots(this.menu, libraries, this.requestsEnabled, this.showAudiobooks);
@@ -278,6 +281,8 @@ export class Skyline {
         profiles?.element.setAttribute("aria-label", translate("topBar.profileButton"));
         profiles?.element.classList.add("skyline-profile");
         profiles?.element.setAttribute("aria-haspopup", "menu");
+        this.syncSelection(this.selected, false);
+        if (this.avatarState !== undefined) this.applyAvatar(this.avatarState);
         replaceNodes(this.roots, rootItems.map(item => item.element));
         const balance = el("span", "skyline-search-balance");
         balance.setAttribute("aria-hidden", "true");
@@ -334,12 +339,54 @@ export class Skyline {
     setAvatar(name: string, reference: string | undefined, baseUrl: string, text?: string): void {
         this.avatarReference = reference;
         this.avatarText = text;
+        this.avatarState = { name, reference, baseUrl, text };
+        this.applyAvatar(this.avatarState);
+    }
+
+    private applyAvatar(state: NonNullable<Skyline["avatarState"]>): void {
         const profile = this.items.find(item => item.key === "profiles");
-        const identity = JSON.stringify([name, reference, baseUrl, text]);
+        const identity = JSON.stringify([state.name, state.reference, state.baseUrl, state.text]);
         if (profile === undefined || (profile.element.firstElementChild as HTMLElement | null)?.dataset.avatarIdentity === identity) return;
-        const avatar = profileMenuAvatar(name, reference, text, baseUrl, 58);
+        const avatar = profileMenuAvatar(state.name, state.reference, state.text, state.baseUrl, 58);
         avatar.dataset.avatarIdentity = identity;
         replaceNodes(profile.element, [avatar]);
+    }
+
+    private syncSelection(selected: string, animate: boolean): void {
+        for (const item of this.items) {
+            const current = item.key === selected ? "page" : "false";
+            const previous = item.element.getAttribute("aria-current");
+            // TVTopMenuCapsuleChrome: a selection change eases over 0.18 s; a focus change springs. Focusing a tab ends it.
+            if (animate && previous !== null && previous !== current && item.element !== document.activeElement) item.element.setAttribute("data-selection-motion", "");
+            item.element.setAttribute("aria-current", current);
+            if (item.element.getAttribute("role") === "tab") item.element.setAttribute("aria-selected", String(item.key === selected));
+        }
+    }
+
+    private syncSurfaceState(): void {
+        this.nav.inert = this.confirmation;
+        this.body.inert = this.confirmation;
+        if (this.confirmation) {
+            this.nav.setAttribute("aria-hidden", "true");
+            this.body.setAttribute("aria-hidden", "true");
+        } else {
+            this.nav.removeAttribute("aria-hidden");
+            this.body.removeAttribute("aria-hidden");
+        }
+    }
+
+    private buildChromeZones(selected: string): Zone[] {
+        const zones: Zone[] = [{ id: "nav", layout: "row", items: this.items, entry: selected }];
+        if (!this.selector.hidden) zones.push({ id: "selector", layout: this.confirmation ? "row" : "column", items: this.panel });
+        if (!this.flyout.hidden) zones.push({ id: "flyout", layout: "column", items: this.flyoutItems });
+        return zones;
+    }
+
+    /** Recomputes chrome inert/hidden state and focus zones in place without redrawing page content. */
+    syncChrome(baseZones: readonly Zone[]): readonly Zone[] {
+        this.syncSurfaceState();
+        const zones = this.buildChromeZones(this.selected);
+        return this.confirmation ? zones.filter(zone => zone.id === "selector") : [...zones, ...baseZones];
     }
 
     decorate(view: View, selected: string, preview: boolean, routeBack?: () => void, libraryKey?: string): View {
@@ -354,17 +401,8 @@ export class Skyline {
         this.selected = selected;
         this.sharedScene = preview && (libraryRoot || selected === "home" || selected === "for_you");
         if (preview && libraryRoot && view.focus === undefined) view = { ...view, focus: { zone: "nav", key: selected } };
-        for (const item of this.items) {
-            const current = item.key === selected ? "page" : "false";
-            const previous = item.element.getAttribute("aria-current");
-            // TVTopMenuCapsuleChrome: a selection change eases over 0.18 s; a focus change springs. Focusing a tab ends it.
-            if (previous !== null && previous !== current && item.element !== document.activeElement) item.element.setAttribute("data-selection-motion", "");
-            item.element.setAttribute("aria-current", current);
-            if (item.element.getAttribute("role") === "tab") item.element.setAttribute("aria-selected", String(item.key === selected));
-        }
-        const zones: Zone[] = [{ id: "nav", layout: "row", items: this.items, entry: selected }];
-        if (!this.selector.hidden) zones.push({ id: "selector", layout: this.confirmation ? "row" : "column", items: this.panel });
-        if (!this.flyout.hidden) zones.push({ id: "flyout", layout: "column", items: this.flyoutItems });
+        this.syncSelection(selected, true);
+        const zones = this.buildChromeZones(selected);
         const prepare = (): void => {
             // FocusHost has saved the viewport before child views move cached nodes.
             view.prepare?.();
@@ -389,10 +427,7 @@ export class Skyline {
             });
             while (this.body.children.length > view.content.length) this.body.lastElementChild?.remove();
         };
-        this.nav.inert = this.confirmation;
-        this.body.inert = this.confirmation;
-        if (this.confirmation) { this.nav.setAttribute("aria-hidden", "true"); this.body.setAttribute("aria-hidden", "true"); }
-        else { this.nav.removeAttribute("aria-hidden"); this.body.removeAttribute("aria-hidden"); }
+        this.syncSurfaceState();
         if (preview && !this.translationArmed) this.armTranslation();
         // The bar, its menus and the hero layers are the shell's, not the view's: FocusHost leaves their direction to the page.
         for (const node of [this.scrim, this.nav, this.selector, this.flyout, this.leaving, this.marquee]) node.setAttribute("data-chrome", "");
@@ -1060,20 +1095,20 @@ export class Skyline {
     /** A row appearing or going while the menu is open replaces every row, so focus returns to the row it was on. */
     private rebuildProfile(): void {
         const focusedKey = this.panel.find(item => item.element === document.activeElement)?.key;
-        this.openProfile(false, false);
-        if (focusedKey !== undefined) this.panel.find(item => item.key === focusedKey)?.element.focus({ preventScroll: true });
+        this.openProfile(false, false, focusedKey);
     }
 
     /**
      * The dwell opens a passive preview with focus left on the avatar (silo-apple 5780c84 `TVMainTabView.swift:802-831`);
      * Select opens the menu and enters its first row, also when the dwell already opened it (`:835-853`).
      */
-    private openProfile(enter = false, fade = true): void {
+    private openProfile(enter = false, fade = true, preserveKey?: string): void {
         if (!this.visible) return;
         if (fade && this.profileOpen && !this.selector.hidden) {
             if (enter) this.panel[0]?.element.focus({ preventScroll: true });
             return;
         }
+        const held = preserveKey !== undefined && heldSelect()?.element === document.activeElement ? heldSelect() : undefined;
         this.close(fade);
         this.profileOpen = true;
         this.panelAnchor = "profiles";
@@ -1123,7 +1158,11 @@ export class Skyline {
         this.anchorOrigin(this.items.find(item => item.key === "profiles")?.element ?? this.selector);
         this.scrim.hidden = true;
         this.updateChrome();
-        this.refresh();
+        this.refresh(preserveKey === undefined ? undefined : { zone: "selector", key: preserveKey });
+        if (held !== undefined && preserveKey !== undefined) {
+            const replacement = this.panel.find(item => item.key === preserveKey)?.element;
+            if (replacement !== undefined && replacement === document.activeElement) moveSelect(held, replacement);
+        }
         if (enter) this.panel[0]?.element.focus({ preventScroll: true });
     }
 
