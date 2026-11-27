@@ -352,8 +352,8 @@ function deviceRows(record) {
   ];
 }
 
-function finish(lines, record, eli5, hidden) {
-  lines.push("", "### Device", "", ...table(deviceRows(record)), "", "### ELI5", "", eli5, "", ...hidden);
+function finish(lines, record, hidden) {
+  lines.push("", "### Device", "", ...table(deviceRows(record)), "", ...hidden);
   return lines.join("\n");
 }
 
@@ -368,10 +368,7 @@ function incidentBody(record, hash) {
   if (playRows.length > 0) lines.push("", "### Player summary", "", ...table(playRows));
   lines.push(...mediaSection(record));
   if (record.log) lines.push("", "### Recent Events (Redacted)", "", "```text", ...record.log, "```");
-  const eli5 = inc.cat === "audio_subtitles"
-    ? "An Auger TV recorded which audio and subtitles were chosen, what the player delivered and what failed, without personal details."
-    : "An Auger TV recorded what it was doing when playback went wrong and what happened next, without personal details.";
-  return finish(lines, record, eli5, [
+  return finish(lines, record, [
     marker("auger-group", `inc1:${record.groupId}`),
     ...(record.equivalent ? [marker("auger-fp", record.equivalent.fingerprint)] : []),
     marker("auger-hash", hash),
@@ -396,7 +393,7 @@ function legacyBody(record, hash) {
   const playRows = legacyPlayRows(p);
   if (playRows.length > 0) lines.push("", "### Last Playback", "", ...table(playRows));
   lines.push(...mediaSection(record));
-  return finish(lines, record, "An Auger TV sent a redacted report; only values the relay recognizes are shown.", [
+  return finish(lines, record, [
     ...(record.navGroupId
       ? [marker("auger-group", `nav1:${record.navGroupId}`)]
       : record.observedGroupId ? [marker("auger-group", `obs1:${record.observedGroupId}`)] : [marker("auger-fp", record.legacyFingerprint)]),

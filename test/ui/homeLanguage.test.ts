@@ -283,20 +283,17 @@ test("a language that arrives during playback shows on the top bar when browse r
         const titles = await rootTitles(tv);
         for (const key of ["topBar.home", "topBar.forYou", "topBar.calendar"] as const) assert.ok(titles.includes(de(key)), `${de(key)} in ${titles.join(" | ")}`);
         assert.ok(!titles.includes("Calendar") && !titles.includes("For You"), "no English left on the bar");
-    }, { stored: "de", holdLanguage: true });
+    }, { stored: "de", holdLanguage: true, keyedLanguageHold: true });
 });
 
 test("a Select held on a top-bar button while the language arrives still runs on release, and the bar relabels after it", async () => {
     await withHome(async (tv, _settings, _catalog, _releaseLanguage, holds) => {
-        // Release every held read but the language's, so the bar is complete and only the language is late.
-        const reads = tv.fake.paths().filter(path => path.startsWith("GET /settings/values/effective"));
-        const language = reads.findIndex(path => path.includes(APP_LANGUAGE_KEY));
-        assert.ok(language >= 0 && language < holds.length, `language read among ${reads.length} effective reads`);
-        holds.forEach((hold, index) => { if (index !== language) hold.release(); });
+        // Release every held read but the language's (holds[0]), so the bar is complete and only the language is late.
+        holds.slice(1).forEach(hold => hold.release());
         await tv.eventually(async () => (await rootTitles(tv)).includes("Movies"), "library tabs without the language");
         await tv.page.locator('[data-focus="calendar"]').focus();
         await tv.page.keyboard.down("Enter");
-        holds[language]?.release();
+        holds[0]?.release();
         // The answer waits for the release: nothing under the finger is replaced.
         await tv.jump(500);
         assert.ok((await rootTitles(tv)).includes("Calendar"), "the bar is still English while Select is held");
@@ -304,11 +301,15 @@ test("a Select held on a top-bar button while the language arrives still runs on
         await tv.page.keyboard.up("Enter");
         await tv.page.locator('.browse[data-view="calendar"]').waitFor({ state: "visible" });
         await tv.eventually(async () => (await rootTitles(tv)).includes(de("topBar.calendar")), "German top bar after the release");
-    }, { stored: "de", holdLanguage: true });
+    }, { stored: "de", holdLanguage: true, keyedLanguageHold: true });
 });
 
 test("a language that arrives while a card menu is open leaves the menu working and relabels when it closes", async () => {
-    await withHome(async (tv, _settings, _catalog, releaseLanguage) => {
+    await withHome(async (tv, _settings, _catalog, _releaseLanguage, holds) => {
+        // Release every held read but the language's (holds[0]), so library tabs settle in English before the menu opens.
+        holds.slice(1).forEach(hold => hold.release());
+        await tv.eventually(async () => (await rootTitles(tv)).includes("Movies"), "library tabs without the language");
+        await afterPaint(tv);
         const card = tv.page.locator('[data-section="resume/opaque"] [data-focus="movie:m0001"]');
         await card.focus();
         await tv.down(13);
@@ -317,7 +318,7 @@ test("a language that arrives while a card menu is open leaves the menu working 
         const menu = tv.page.getByRole("menu");
         await menu.waitFor();
         const first = await tv.focused();
-        releaseLanguage();
+        holds[0]?.release();
         await tv.jump(500);
         assert.ok((await rootTitles(tv)).includes("Calendar"), "the bar waits while the menu is open");
         await menu.waitFor();
@@ -326,7 +327,7 @@ test("a language that arrives while a card menu is open leaves the menu working 
         await tv.remote(10009);
         await menu.waitFor({ state: "detached" });
         await tv.eventually(async () => (await rootTitles(tv)).includes(de("topBar.calendar")), "German top bar after the menu closes");
-    }, { stored: "de", holdLanguage: true });
+    }, { stored: "de", holdLanguage: true, keyedLanguageHold: true });
 });
 
 test("a language kept from the last answer shows on the first draw, before the server answers", async () => {
@@ -337,7 +338,7 @@ test("a language kept from the last answer shows on the first draw, before the s
         assert.deepEqual(await rootTitles(tv), ["topBar.home", "topBar.forYou", "topBar.calendar"].map(key => de(key as Parameters<typeof de>[0])));
         const titles = await sectionTitles(tv);
         assert.ok(titles.includes(de("home.section.continueWatching")) && titles.includes(de("home.section.recentlyAddedIn", { library: "Movies" })), titles.join(" | "));
-    }, { stored: "de", cached: "de", holdLanguage: true });
+    }, { stored: "de", cached: "de", holdLanguage: true, keyedLanguageHold: true });
 });
 
 test("a late answer that differs from the kept language redraws the screen once and keeps focus on the same card", async () => {
@@ -355,5 +356,5 @@ test("a late answer that differs from the kept language redraws the screen once 
         await tv.eventually(async () => (await rootTitles(tv)).join("|") === expected.join("|"), "German top bar with the libraries");
         assert.deepEqual(await rootTitles(tv), expected);
         assert.equal(await tv.focused(), key, "focus is restored by section and item id");
-    }, { stored: "de", cached: "", holdLanguage: true });
+    }, { stored: "de", cached: "", holdLanguage: true, keyedLanguageHold: true });
 });
