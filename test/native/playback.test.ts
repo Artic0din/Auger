@@ -7085,3 +7085,38 @@ test("deferred discovery resolving during restoreAsync withholds Up Next and pre
     assert.deepEqual(r.avplay.displayRects.slice(beforeRestore), [[180, 112, 760, 428]]);
     r.controller.destroy();
 });
+
+test("transient setDisplayRect refusal during suspendedReady resume keeps playing and retries via rectPending (#759)", async () => {
+    const r = await autoplayRig(true);
+    r.controller.play(EPISODE);
+    await r.h.clock.advance(0);
+    r.controller.suspend();
+    r.avplay.finishPrepare();
+    await r.h.clock.advance(0);
+    while (r.avplay.calls.at(-1)?.startsWith("seekTo")) {
+        r.avplay.finishSeek();
+        await r.h.clock.advance(0);
+    }
+
+    const original = r.avplay.setDisplayRect.bind(r.avplay);
+    let throwOnce = true;
+    r.avplay.setDisplayRect = (x: number, y: number, w: number, h: number): void => {
+        if (throwOnce) {
+            throwOnce = false;
+            throw new Error("transient READY refusal");
+        }
+        original(x, y, w, h);
+    };
+
+    const urlsBefore = r.avplay.urls.length;
+    const rectsBefore = r.avplay.displayRects.length;
+    r.controller.restore();
+    await r.h.clock.advance(0);
+    assert.equal(last(r.views).phase, "playing");
+    assert.equal(r.avplay.urls.length, urlsBefore);
+    assert.equal(r.avplay.displayRects.length, rectsBefore);
+
+    r.avplay.tick(1000);
+    assert.deepEqual(r.avplay.displayRects.slice(rectsBefore), [[0, 0, 1920, 1080]]);
+    r.controller.destroy();
+});

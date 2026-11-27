@@ -3684,10 +3684,7 @@ export class PlaybackController implements PlayerControls {
                 if (attempt.plan !== undefined && attempt.subtitles.alignOpenStream(attempt.plan) !== "aligned") return;
                 attempt.appliedRect = undefined;
                 this.updatePrompt(attempt);
-                if (attempt.appliedRect === undefined) {
-                    this.setDisplayRect(attempt);
-                    attempt.rectPending = false;
-                }
+                this.paintRect(attempt);
                 this.showPlayback(attempt);
                 if (attempt.plan !== undefined) attempt.subtitles.consumePreparedChoices(attempt.plan);
             } catch {
