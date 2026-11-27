@@ -45,8 +45,12 @@ async function startDetails(prepare?: (tv: Tv, details: FakeDetails, settings: F
     await tv.page.evaluate(() => window.browseHarness.selectProfile("p-owner"));
     await tv.page.evaluate(() => window.browseHarness.mount());
     await tv.page.locator('[data-view="home"] .browse-card').first().waitFor();
+    await tv.eventually(
+        async () => tv.fake.heldReplies > 0 || tv.fake.requests.some(request => request.path.startsWith("/settings/values/effective?") && request.path.includes("keys=ui.title_art")),
+        "Home title-art read",
+    );
     if (!tv.fake.heldReplies) {
-        await tv.eventually(async () => tv.fake.requests.some(request => request.path.startsWith("/settings/values/effective?") && request.path.includes("keys=ui.title_art")), "Home title-art read");
+        await tv.eventually(async () => tv.pendingReplies === 0, "Home launch reads settled");
         await afterPaint(tv);
     }
     return { tv, details, settings };
@@ -177,6 +181,7 @@ test("popovers and failure alerts clear inert and aria-hidden from all retained 
         await tv.page.locator(".details-people .browse-card").first().waitFor();
         await tv.page.locator(".details-extras .browse-card").first().waitFor();
         await tv.page.locator(".details-hero .details-logo").waitFor();
+        await tv.page.locator('[data-focus="watchlist"][aria-pressed]').waitFor();
 
         const readSectionStates = (): Promise<unknown[]> => tv.page.evaluate(() => {
             const nodes = [
