@@ -294,6 +294,31 @@ export class FocusHost {
         }
     }
 
+    /** Updates active focus zones in place without rebuilding DOM or resetting scroll positions. */
+    updateZones(zones: readonly Zone[], focus?: FocusTarget): void {
+        if (this.view === undefined) return;
+        this.view = { ...this.view, zones };
+        this.zoneLookup = undefined;
+        if (focus !== undefined) {
+            this.cancelPress();
+            this.focusFirst([focus]);
+            return;
+        }
+        const active = this.locate(document.activeElement);
+        if (active !== undefined) {
+            if (this.press?.item.element !== active.item.element || !enabled(active.item.element)) this.cancelPress();
+            else this.press.item = active.item;
+            this.zoneLookup = { element: active.item.element, zone: active.zone.id };
+            this.memory.set(active.zone.id, active.item.key);
+            this.lastZone = active.zone.id;
+            if (this.tracksContent(active.zone.id)) this.contentZone = active.zone.id;
+            this.navigationItem = active.item;
+            return;
+        }
+        this.cancelPress();
+        this.focusFirst([this.view.focus]);
+    }
+
     focused(): FocusTarget | undefined {
         const found = this.locate(document.activeElement);
         return found === undefined ? undefined : { zone: found.zone.id, key: found.item.key };

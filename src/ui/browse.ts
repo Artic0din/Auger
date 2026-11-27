@@ -34,7 +34,7 @@ import type { PublicStorage } from "../session/deviceIdentity.ts";
 import type { TizenKeyManager } from "../session/secretStore.ts";
 import { Skyline } from "./skyline.ts";
 import { decodeImageCapabilities, detailArtworkQuery, episodeArtworkQuery, type ImageCapabilities, homeArtworkQuery } from "../contracts/v2/images.ts";
-import { FocusHost, type FocusTarget } from "./browseFocus.ts";
+import { FocusHost, type FocusTarget, type Zone } from "./browseFocus.ts";
 import { type Destination, type PlayRequest, applySeriesLine, artworkUrl, destinationOf, seriesLineFor, playChoices, visibleLibraries, withStartAudioLanguage } from "./browseModel.ts";
 import { errorState, failureBody, failureState, failureText, hasData, newPages, newRoute, PAGE_SIZE, type Pages, type Route, routeView } from "./browseRoutes.ts";
 import { browsableRows, shownRows } from "./recommendationsView.ts";
@@ -664,7 +664,11 @@ export function mountBrowse(root: HTMLElement, options: BrowseOptions): Browse {
                 }
             }
             if (fromProbe) {
-                render(focus?.key === "requests" && !capability.enabled ? { zone: "nav", key: "home" } : focus);
+                const target = focus?.zone === "nav" && focus.key === "requests" && !capability.enabled
+                    ? { zone: "nav", key: "home" }
+                    : focus?.zone === "selector" ? host.focused() : focus;
+                if (top()?.kind === "search" || top()?.kind === "requests") render(target);
+                else refreshChrome(target);
             }
         },
         onStale: () => {
@@ -2076,9 +2080,22 @@ export function mountBrowse(root: HTMLElement, options: BrowseOptions): Browse {
         options.onChooseProfile();
     };
 
+    let lastRoot: { readonly route: Route; readonly viewName: string; readonly baseZones: readonly Zone[] } | undefined;
+
     const render = (focus?: FocusTarget): void => {
         // Focus that a render moves itself is not a viewer's move.
         try { draw(focus); } finally { renderedInteractions = interactions; }
+    };
+
+    const refreshChrome = (focus?: FocusTarget): void => {
+        const current = top();
+        if (!torn && !playing && settingsScreen === undefined && !foreground.busy() && !cardActions.active && !requestMenu.active
+            && current !== undefined && current === lastRoot?.route && host.name === lastRoot.viewName
+            && !(current.kind === "library" && current.discovery?.panel !== undefined) && shuffleFailure?.route !== current) {
+            host.updateZones(shell.syncChrome(lastRoot.baseZones), focus);
+            return;
+        }
+        render(focus);
     };
 
     const draw = (focus?: FocusTarget): void => {
@@ -2187,6 +2204,7 @@ export function mountBrowse(root: HTMLElement, options: BrowseOptions): Browse {
             // A marquee rest armed on remembered rows must not read their card once Home is empty.
             if (current.kind === "home" && !preview) homeDetails.suspend();
             const modal = browsing && (current.discovery?.panel !== undefined || shuffleFailure?.route === current);
+            lastRoot = modal ? undefined : { route: current, viewName: view.name, baseZones: view.zones };
             const decorated = shell.decorate(view, selected, preview, modal ? () => { view.back?.(); } : current.kind === "personal" || isHubRoot(current) ? () => {
                 if (host.focused()?.zone === "nav") pop();
                 else render(tabFocus(current));
@@ -2197,6 +2215,7 @@ export function mountBrowse(root: HTMLElement, options: BrowseOptions): Browse {
             if (nav !== null) { nav.inert = modal || nav.inert; if (nav.inert) nav.setAttribute("aria-hidden", "true"); else nav.removeAttribute("aria-hidden"); }
             host.show({ ...decorated, ...(current.kind === "library" ? { ready: hasData(current) } : {}), ...(modal ? { zones: view.zones, back: view.back } : {}) }, focus);
         } else {
+            lastRoot = undefined;
             const removedEpisodeRetry = host.focused()?.key === "retry-episodes" && !view.zones.some(zone => zone.items.some(item => item.key === "retry-episodes"));
             host.holdVisit();
             shell.hide();
@@ -2526,7 +2545,7 @@ export function mountBrowse(root: HTMLElement, options: BrowseOptions): Browse {
         ...(options.onSignOut === undefined ? {} : { signOut: options.onSignOut }),
         ...(session.account ? { accountName: session.account.username } : {}),
         lastAccount: signOutRemovesServer(() => server.accounts.directory.list(), context.baseUrl),
-    }, focus => render(focus), options.publicStorage, `silo.skyline.scope:${JSON.stringify([server.server.serverId, session.activeProfile.id])}`, context.baseUrl);
+    }, focus => refreshChrome(focus), options.publicStorage, `silo.skyline.scope:${JSON.stringify([server.server.serverId, session.activeProfile.id])}`, context.baseUrl);
     languagePrefs.subscribe(() => {
         if (!torn && !playing && settingsScreen === undefined) reconcileLanguage(true);
     });

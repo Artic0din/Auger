@@ -342,6 +342,32 @@ export class Skyline {
         replaceNodes(profile.element, [avatar]);
     }
 
+    private syncSurfaceState(): void {
+        this.nav.inert = this.confirmation;
+        this.body.inert = this.confirmation;
+        if (this.confirmation) {
+            this.nav.setAttribute("aria-hidden", "true");
+            this.body.setAttribute("aria-hidden", "true");
+        } else {
+            this.nav.removeAttribute("aria-hidden");
+            this.body.removeAttribute("aria-hidden");
+        }
+    }
+
+    private buildChromeZones(selected: string): Zone[] {
+        const zones: Zone[] = [{ id: "nav", layout: "row", items: this.items, entry: selected }];
+        if (!this.selector.hidden) zones.push({ id: "selector", layout: this.confirmation ? "row" : "column", items: this.panel });
+        if (!this.flyout.hidden) zones.push({ id: "flyout", layout: "column", items: this.flyoutItems });
+        return zones;
+    }
+
+    /** Recomputes chrome inert/hidden state and focus zones in place without redrawing page content. */
+    syncChrome(baseZones: readonly Zone[]): readonly Zone[] {
+        this.syncSurfaceState();
+        const zones = this.buildChromeZones(this.selected);
+        return this.confirmation ? zones.filter(zone => zone.id === "selector") : [...zones, ...baseZones];
+    }
+
     decorate(view: View, selected: string, preview: boolean, routeBack?: () => void, libraryKey?: string): View {
         const libraryRoot = selected === "movies" || selected === "series" || selected === "music" || selected === "audiobooks";
         if (libraryRoot && this.shortcutSelection !== undefined && libraryKey?.startsWith(`${this.shortcutSelection}:`)) selected = this.shortcutSelection;
@@ -362,9 +388,7 @@ export class Skyline {
             item.element.setAttribute("aria-current", current);
             if (item.element.getAttribute("role") === "tab") item.element.setAttribute("aria-selected", String(item.key === selected));
         }
-        const zones: Zone[] = [{ id: "nav", layout: "row", items: this.items, entry: selected }];
-        if (!this.selector.hidden) zones.push({ id: "selector", layout: this.confirmation ? "row" : "column", items: this.panel });
-        if (!this.flyout.hidden) zones.push({ id: "flyout", layout: "column", items: this.flyoutItems });
+        const zones = this.buildChromeZones(selected);
         const prepare = (): void => {
             // FocusHost has saved the viewport before child views move cached nodes.
             view.prepare?.();
@@ -389,10 +413,7 @@ export class Skyline {
             });
             while (this.body.children.length > view.content.length) this.body.lastElementChild?.remove();
         };
-        this.nav.inert = this.confirmation;
-        this.body.inert = this.confirmation;
-        if (this.confirmation) { this.nav.setAttribute("aria-hidden", "true"); this.body.setAttribute("aria-hidden", "true"); }
-        else { this.nav.removeAttribute("aria-hidden"); this.body.removeAttribute("aria-hidden"); }
+        this.syncSurfaceState();
         if (preview && !this.translationArmed) this.armTranslation();
         // The bar, its menus and the hero layers are the shell's, not the view's: FocusHost leaves their direction to the page.
         for (const node of [this.scrim, this.nav, this.selector, this.flyout, this.leaving, this.marquee]) node.setAttribute("data-chrome", "");
@@ -1060,15 +1081,14 @@ export class Skyline {
     /** A row appearing or going while the menu is open replaces every row, so focus returns to the row it was on. */
     private rebuildProfile(): void {
         const focusedKey = this.panel.find(item => item.element === document.activeElement)?.key;
-        this.openProfile(false, false);
-        if (focusedKey !== undefined) this.panel.find(item => item.key === focusedKey)?.element.focus({ preventScroll: true });
+        this.openProfile(false, false, focusedKey);
     }
 
     /**
      * The dwell opens a passive preview with focus left on the avatar (silo-apple 5780c84 `TVMainTabView.swift:802-831`);
      * Select opens the menu and enters its first row, also when the dwell already opened it (`:835-853`).
      */
-    private openProfile(enter = false, fade = true): void {
+    private openProfile(enter = false, fade = true, preserveKey?: string): void {
         if (!this.visible) return;
         if (fade && this.profileOpen && !this.selector.hidden) {
             if (enter) this.panel[0]?.element.focus({ preventScroll: true });
@@ -1123,7 +1143,7 @@ export class Skyline {
         this.anchorOrigin(this.items.find(item => item.key === "profiles")?.element ?? this.selector);
         this.scrim.hidden = true;
         this.updateChrome();
-        this.refresh();
+        this.refresh(preserveKey === undefined ? undefined : { zone: "selector", key: preserveKey });
         if (enter) this.panel[0]?.element.focus({ preventScroll: true });
     }
 
