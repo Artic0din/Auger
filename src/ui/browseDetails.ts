@@ -22,7 +22,7 @@ import { seasonName, seriesEpisodesView } from "./seriesEpisodesView.ts";
 import { shownLanguage } from "../i18n/language.ts";
 import { durationText } from "../i18n/duration.ts";
 import { integerText } from "../i18n/numbers.ts";
-import { translate } from "../i18n/translate.ts";
+import { textLanguage, translate } from "../i18n/translate.ts";
 import { heroBackdrop, type Tints } from "./heroBackdrop.ts";
 import { detailDate, episodeAirDate, episodeRuntime } from "./episodeCaption.ts";
 import { TMDB_LOGO_PATH } from "./acknowledgements.ts";
@@ -36,6 +36,71 @@ export const detailPalette = new Map<string, Tints>();
 const LOGO_CROSSFADE_MS = 200;
 /** Logo URLs that have decoded on a visible Details page. Later paints of the same visit seed that image, as TVDecodedLogoTitle does from the pipeline cache (silo-apple e28300c61f044a9322f588203c8819d6f06e6197, TVDetailHero.swift). */
 const decodedTitleLogos = new Set<string>();
+
+interface RetainedBlock {
+    readonly key: string;
+    readonly deps: readonly unknown[];
+    readonly content: readonly HTMLElement[];
+    readonly zones: readonly Zone[];
+}
+
+interface DetailsDomCache {
+    currentContext?: ViewContext | undefined;
+    currentPlay?: ((request: PlayRequest) => void) | undefined;
+    hero?: {
+        readonly backdropKey: string;
+        readonly wash: HTMLElement;
+        readonly layout: HTMLElement;
+        readonly background: HTMLElement;
+    } | undefined;
+    title?: {
+        readonly key: string;
+        readonly element: HTMLElement;
+        readonly armed: boolean;
+        readonly guard: (() => boolean) | undefined;
+    } | undefined;
+    cast?: RetainedBlock | undefined;
+    trailers?: RetainedBlock | undefined;
+    boxSet?: RetainedBlock | undefined;
+    related?: RetainedBlock | undefined;
+    facts?: RetainedBlock | undefined;
+}
+
+const retainedDetails = new WeakMap<DetailsState, DetailsDomCache>();
+
+function clearRetainedNodes(nodes: readonly HTMLElement[]): void {
+    for (const node of nodes) {
+        node.inert = false;
+        node.removeAttribute("aria-hidden");
+    }
+}
+
+function clearHeroLoadingState(hero: HTMLElement): void {
+    hero.removeAttribute("tabindex");
+    delete hero.dataset.focus;
+    hero.removeAttribute("aria-busy");
+    hero.removeAttribute("aria-label");
+}
+
+function sameDeps(left: readonly unknown[], right: readonly unknown[]): boolean {
+    return left.length === right.length && left.every((value, index) => Object.is(value, right[index]));
+}
+
+function useRetained(
+    cache: DetailsDomCache | undefined,
+    slot: "cast" | "trailers" | "boxSet" | "related" | "facts",
+    key: string,
+    deps: readonly unknown[],
+    build: () => { readonly content: readonly HTMLElement[]; readonly zones: readonly Zone[] },
+): { readonly content: readonly HTMLElement[]; readonly zones: readonly Zone[]; readonly prepare?: (() => void) | undefined } {
+    const existing = cache?.[slot];
+    if (existing !== undefined && existing.key === key && sameDeps(existing.deps, deps)) {
+        return { ...existing, prepare: () => clearRetainedNodes(existing.content) };
+    }
+    const fresh = build();
+    if (cache !== undefined) cache[slot] = { key, deps, ...fresh };
+    return fresh;
+}
 
 /** OverlayData.advisoryAgeBadgeLabel at silo-apple e28300c6. */
 function advisoryAgeBadgeLabel(age: number | undefined, source: string | undefined): string | undefined {
@@ -214,11 +279,18 @@ interface PlaybackReadout {
     readonly subtitles: string;
 }
 
-function detailHeader(detail: ItemDetail, context: ViewContext, actions: readonly FocusItem[], state?: DetailsState, summary?: PlaybackReadout, showsSummary = true): HTMLElement[] {
-    const nodes: HTMLElement[] = [];
-    const label = episodeLabel(detail.seasonNumber, detail.episodeNumber);
-    if (detail.type === "episode" && (detail.seriesTitle !== undefined || label !== undefined)) {
-        nodes.push(el("p", "browse-kicker", [detail.seriesTitle, label].filter((part) => part !== undefined).join(" · ")));
+function retainedTitle(detail: ItemDetail, context: ViewContext, state: DetailsState | undefined, cache: DetailsDomCache | undefined): HTMLElement {
+    const logo = artworkUrl(detail.extra?.logoUrl, context.baseUrl);
+    const live = state?.generationGuard();
+    const isLive = live?.() ?? false;
+    const titleArt = context.titleArt?.() ?? false;
+    const key = JSON.stringify([detail.title, logo ?? null, titleArt]);
+    const existing = cache?.title;
+    if (
+        existing !== undefined && existing.key === key
+        && (logo === undefined || !titleArt || existing.element.querySelector(".details-logo") !== null || (existing.armed ? existing.guard?.() === true : !isLive))
+    ) {
+        return existing.element;
     }
     const title = heading(detail.title);
     title.classList.add("requests-detail-title");
@@ -229,9 +301,56 @@ function detailHeader(detail: ItemDetail, context: ViewContext, actions: readonl
         title.replaceChildren(primary);
         if (secondary !== undefined) title.appendChild(secondary);
     };
-    const live = state?.generationGuard();
-    decodedLogoTitle(title, artworkUrl(detail.extra?.logoUrl, context.baseUrl), detail.title, () => (live?.() ?? false) && (context.titleArt?.() ?? false), showText, "details-logo");
-    nodes.push(title);
+    if (cache !== undefined) cache.title = { key, element: title, armed: Boolean(titleArt && logo !== undefined && isLive), guard: live };
+    decodedLogoTitle(title, logo, detail.title, () => (live?.() ?? false) && (context.titleArt?.() ?? false) && (cache?.title === undefined || cache.title.element === title), showText, "details-logo");
+    return title;
+}
+
+function retainedHero(detail: ItemDetail, context: ViewContext, hideBackdrop: boolean, info: HTMLElement, cache: DetailsDomCache | undefined): { readonly wash: HTMLElement; readonly layout: HTMLElement; readonly prepare: () => void } {
+    const backdrop = artworkUrl(detail.backdropUrl, context.baseUrl) ?? "";
+    const backdropKey = JSON.stringify([detail.type, backdrop, detail.backdropThumbhash ?? "", hideBackdrop]);
+    const lift = detail.type === "series" && (context.posterScale?.() ?? 1) > 1 ? 32 : 0;
+    const height = detail.type === "series" ? `${690 - lift}px` : "";
+    if (detail.type === "series") info.style.paddingTop = `${116 - lift}px`;
+    if (cache?.hero !== undefined && cache.hero.backdropKey === backdropKey) {
+        const { wash, layout, background } = cache.hero;
+        return {
+            wash,
+            layout,
+            prepare: () => {
+                clearRetainedNodes([wash, layout]);
+                clearHeroLoadingState(layout);
+                if (layout.style.height !== height) layout.style.height = height;
+                if (layout.firstElementChild !== background) {
+                    layout.replaceChildren(background, info);
+                } else {
+                    while (layout.children.length > 1) layout.lastElementChild?.remove();
+                    layout.appendChild(info);
+                }
+            },
+        };
+    }
+    const layout = el("div", "details-hero");
+    layout.dataset.mediaType = detail.type;
+    const background = heroBackdrop(backdrop, detail.backdropThumbhash, detailPalette, true, true);
+    const frame = background.querySelector<HTMLElement>(".skyline-art-frame");
+    if (hideBackdrop && frame !== null) blurEpisodeStill(frame);
+    const wash = background.querySelector<HTMLElement>(".skyline-tint-wash")!;
+    wash.classList.add("details-page-wash");
+    wash.remove();
+    if (layout.style.height !== height) layout.style.height = height;
+    layout.replaceChildren(background, info);
+    if (cache !== undefined) cache.hero = { backdropKey, wash, layout, background };
+    return { wash, layout, prepare: () => undefined };
+}
+
+function detailHeader(detail: ItemDetail, context: ViewContext, actions: readonly FocusItem[], state?: DetailsState, summary?: PlaybackReadout, showsSummary = true, cache?: DetailsDomCache): { readonly content: readonly HTMLElement[]; readonly prepare: () => void } {
+    const nodes: HTMLElement[] = [];
+    const label = episodeLabel(detail.seasonNumber, detail.episodeNumber);
+    if (detail.type === "episode" && (detail.seriesTitle !== undefined || label !== undefined)) {
+        nodes.push(el("p", "browse-kicker", [detail.seriesTitle, label].filter((part) => part !== undefined).join(" · ")));
+    }
+    nodes.push(retainedTitle(detail, context, state, cache));
     const episode = state?.series?.episodes?.find(item => item.id === state.heroEpisodeId);
     const playback = state?.nextEpisodeState;
     const row = metadataRow(detail, state, episode);
@@ -261,23 +380,8 @@ function detailHeader(detail: ItemDetail, context: ViewContext, actions: readonl
         if (row !== undefined) fitRatings(row);
         fitReadout(readout);
     });
-    const layout = el("div", "details-hero");
-    layout.dataset.mediaType = detail.type;
-    // TVDetailHero draws only the backdrop. Without one the page keeps TVDetailPageSurface's fallback tint.
-    const backdrop = artworkUrl(detail.backdropUrl, context.baseUrl);
-    const background = heroBackdrop(backdrop ?? "", detail.backdropThumbhash, detailPalette, true, true);
-    // Without a backdrop there is no frame, and nothing to blur.
-    const frame = background.querySelector<HTMLElement>(".skyline-art-frame");
-    if (presentation.hideBackdrop && frame !== null) blurEpisodeStill(frame);
-    const wash = background.querySelector<HTMLElement>(".skyline-tint-wash")!;
-    wash.classList.add("details-page-wash");
-    wash.remove();
-    layout.appendChild(background);
     const info = el("div", "details-editorial");
     if (detail.type === "series") {
-        const lift = (context.posterScale?.() ?? 1) > 1 ? 32 : 0;
-        layout.style.height = `${690 - lift}px`;
-        info.style.paddingTop = `${116 - lift}px`;
         const editorial = el("div", "details-series-editorial");
         const primary = el("div", "details-series-primary");
         const disclosure = el("div", "details-series-disclosure");
@@ -290,8 +394,8 @@ function detailHeader(detail: ItemDetail, context: ViewContext, actions: readonl
     // TVMovieDetailView.actionColumn: a movie's pill sits under the action row. A series draws it in the episode block.
     const status = detail.type === "series" ? undefined : trailerStatus(state);
     if (status !== undefined) info.append(status);
-    layout.appendChild(info);
-    return [wash, layout];
+    const hero = retainedHero(detail, context, presentation.hideBackdrop, info, cache);
+    return { content: [hero.wash, hero.layout], prepare: hero.prepare };
 }
 
 function trailerStatus(state: DetailsState | undefined): HTMLElement | undefined {
@@ -307,6 +411,23 @@ function trailerStatus(state: DetailsState | undefined): HTMLElement | undefined
 
 export function itemView(detail: ItemDetail, seasons: readonly Season[], context: ViewContext, play: (request: PlayRequest) => void, back: () => void, state?: DetailsState, boxSet?: BoxSetRowState): View {
     detail = state === undefined ? detail : { ...detail, versions: state.detail.versions };
+    let cache = state === undefined ? undefined : retainedDetails.get(state);
+    if (state !== undefined && cache === undefined) {
+        cache = {};
+        retainedDetails.set(state, cache);
+    }
+    if (cache !== undefined) {
+        cache.currentContext = context;
+        cache.currentPlay = play;
+    }
+    const deferredContext: ViewContext = cache === undefined ? context : {
+        ...context,
+        open: destination => (cache.currentContext ?? context).open(destination),
+        ...(context.quickActions === undefined ? {} : {
+            quickActions: (card, options) => (cache.currentContext ?? context).quickActions?.(card, options),
+        }),
+    };
+    const deferredPlay = (request: PlayRequest): void => (cache?.currentPlay ?? play)(request);
     const tracks = state?.nextEpisodeState ?? state;
     const playbackDetail = tracks?.detail ?? detail;
     const playbackChoices = playChoices(playbackDetail, tracks?.selectedFileId, tracks?.preferredQuality);
@@ -455,7 +576,9 @@ export function itemView(detail: ItemDetail, seasons: readonly Season[], context
     // TVSeriesDetailView shows the readout while episodes load or while it has a target episode. Tizen reads a target's
     // playback detail only for the next-up episode, so the readout also hides once nothing is loading and no values came.
     const showsSummary = (detail.type !== "series" && detail.type !== "season") || state?.series === undefined || state.series.loading || state.nextEpisodeLoading || summary !== undefined;
-    const content = [...detailHeader(detail, context, actions.map(detailAction), state, summary, showsSummary), ...lines(notes), ...personal?.notes ?? []];
+    const header = detailHeader(detail, context, actions.map(detailAction), state, summary, showsSummary, cache);
+    const content = [...header.content, ...lines(notes), ...personal?.notes ?? []];
+    const prepareSteps: (() => void)[] = [header.prepare];
     // A save in flight holds Play; a failed one leaves Play live so pressing it re-sends the save.
     for (const action of actions.filter(action => ["play", "resume", "next-episode", "start-over-episode"].includes(action.key))) {
         if (playbackChoices !== undefined) action.element.setAttribute("aria-disabled", String(savePending));
@@ -480,11 +603,16 @@ export function itemView(detail: ItemDetail, seasons: readonly Season[], context
         { id: "actions", layout: "row", items: focusable, restoreEntry: focusable.find(action => ["resume", "play", "next-episode"].includes(action.key))?.key ?? "watchlist" },
         ...series?.zones ?? [{ id: "seasons", layout: "row" as const, items: seasonItems }],
     ];
+    const language = shownLanguage();
+    const catalogLanguage = textLanguage();
+    const posterScale = context.posterScale?.() ?? 1;
+    const spoilers = context.spoilers?.() ?? { hidesImages: false, hidesOverviews: false };
     const credits = detail.extra?.cast ?? [];
-    if (credits.length > 0) {
+    const castBlock = useRetained(cache, "cast", JSON.stringify([context.baseUrl, language, catalogLanguage]), [credits], () => {
+        if (credits.length === 0) return { content: [], zones: [] };
         const occurrences = new Map<string, number>();
         const people = credits.slice(0, 24).map(credit => {
-            const item = creditCard(credit, context);
+            const item = creditCard(credit, deferredContext);
             // Always key by identity/role/occurrence, including singleton credits.
             // A conditional key format used to rename a focused card when another
             // role for the same person appeared or disappeared, so FocusHost could
@@ -499,63 +627,109 @@ export function itemView(detail: ItemDetail, seasons: readonly Season[], context
             item.element.dataset.focus = key;
             return { ...item, key };
         });
-        content.push(el("h2", "browse-section-title", translate("detail.cast")), zoneNode("browse-row details-people", people));
-        // TVDetailCastRail.swift:37-38: tvDefaultFocus lands every entry on the first person.
-        zones.push({ id: "people", layout: "row", items: people, entry: people[0]?.key });
-    }
+        return {
+            content: [el("h2", "browse-section-title", translate("detail.cast")), zoneNode("browse-row details-people", people)],
+            // TVDetailCastRail.swift:37-38: tvDefaultFocus lands every entry on the first person.
+            zones: [{ id: "people", layout: "row", items: people, entry: people[0]?.key }],
+        };
+    });
+    content.push(...castBlock.content);
+    zones.push(...castBlock.zones);
+    if (castBlock.prepare !== undefined) prepareSteps.push(castBlock.prepare);
     if (state !== undefined && (detail.type === "movie" || detail.type === "series")) {
-        // Hide unplayable remote YouTube cards until a Samsung YouTube handoff is proven (TVTrailersRail.swift:259-265).
-        const extras = trailerCards(detail.extras, detail.videos, false).map(card => trailerCard(card, context, state, play));
-        if (extras.length > 0) {
-            content.push(el("h2", "browse-section-title", translate("detail.trailers")), zoneNode("browse-row details-extras", extras));
-            // TVTrailersRail is a focus section with user-initiated default focus
-            // on the first card, so every entry lands there, as in Cast and Related.
-            zones.push({ id: "extras", layout: "row", items: extras, entry: extras[0]?.key });
-            if (state.extraPending !== undefined) content.push(...lines(["Loading extra…"]));
-            if (state.extraFailed !== undefined) content.push(...lines(["Could not load extra. Select its card to retry."], "error"));
-        }
-    }
+        const trailersBlock = useRetained(
+            cache,
+            "trailers",
+            JSON.stringify([detail.type, state.extraPending ?? null, state.extraFailed ?? null, context.baseUrl, language, catalogLanguage]),
+            [detail.extras, detail.videos],
+            () => {
+                // Hide unplayable remote YouTube cards until a Samsung YouTube handoff is proven (TVTrailersRail.swift:259-265).
+                const extras = trailerCards(detail.extras, detail.videos, false).map(card => trailerCard(card, deferredContext, state, deferredPlay));
+                if (extras.length === 0) return { content: [], zones: [] };
+                const nodes = [
+                    el("h2", "browse-section-title", translate("detail.trailers")),
+                    zoneNode("browse-row details-extras", extras),
+                    ...(state.extraPending !== undefined ? lines(["Loading extra…"]) : []),
+                    ...(state.extraFailed !== undefined ? lines(["Could not load extra. Select its card to retry."], "error") : []),
+                ];
+                // TVTrailersRail is a focus section with user-initiated default focus
+                // on the first card, so every entry lands there, as in Cast and Related.
+                return { content: nodes, zones: [{ id: "extras", layout: "row", items: extras, entry: extras[0]?.key }] };
+            },
+        );
+        content.push(...trailersBlock.content);
+        zones.push(...trailersBlock.zones);
+        if (trailersBlock.prepare !== undefined) prepareSteps.push(trailersBlock.prepare);
+    } else if (cache !== undefined) cache.trailers = undefined;
     // TVMovieDetailView.swift:107-119: Cast, Trailers & More, then the box set.
-    const movieRow = boxSet === undefined ? undefined : boxSetMovieRow(boxSet, detail.id, context);
-    if (movieRow !== undefined) {
-        content.push(...movieRow.content);
-        zones.push(movieRow.zone);
-    }
+    const overlaySnapshot = context.cardOverlays?.();
+    const boxSetBlock = useRetained(
+        cache,
+        "boxSet",
+        JSON.stringify([detail.id, context.baseUrl, posterScale, spoilers.hidesImages, spoilers.hidesOverviews, context.overlays ?? null, overlaySnapshot ?? null, context.seriesYears ?? null, context.continueWatching ?? null, language, catalogLanguage]),
+        [boxSet, boxSet?.detail],
+        () => {
+            const movieRow = boxSet === undefined ? undefined : boxSetMovieRow(boxSet, detail.id, deferredContext);
+            return movieRow === undefined ? { content: [], zones: [] } : { content: movieRow.content, zones: [movieRow.zone] };
+        },
+    );
+    content.push(...boxSetBlock.content);
+    zones.push(...boxSetBlock.zones);
+    if (boxSetBlock.prepare !== undefined) prepareSteps.push(boxSetBlock.prepare);
     if (state !== undefined) {
-        // TVSimilarRail passes neither overlayData nor userState to TVMediaCard.
-        // AppRouter.openRelatedTitle: a related pick replaces a page that a related pick opened.
-        const openRelated = (destination: Destination): void => context.open(destination.kind === "item" ? { ...destination, fromRelated: true } : destination);
-        const related = titleCards((state.related ?? []).map(card => ({ ...card, played: undefined, episodesLeft: undefined })), { ...context, open: openRelated, overlays: undefined, cardOverlays: () => undefined });
-        if (!(state.offline && state.related === undefined) && !state.relatedFailed && (state.related === undefined || related.length > 0)) {
-            const section = zoneNode("browse-row", related);
-            section.setAttribute("data-detail-section", "related");
-            content.push(el("h2", "browse-section-title", translate(detail.type === "movie" ? "detail.relatedMovies" : "detail.recommendedSeries")));
-            // TVSimilarRail.swift:96-111: four untitled 220x330 cards while it loads; every entry lands on the first card.
-            if (state.related === undefined) {
-                for (let index = 0; index < 4; index++) { const placeholder = el("div", "details-related-placeholder"); placeholder.setAttribute("aria-hidden", "true"); section.append(placeholder); }
-            } else zones.push({ id: "related", layout: "row", items: related, entry: related[0]?.key });
-            content.push(section);
+        const relatedBlock = useRetained(
+            cache,
+            "related",
+            JSON.stringify([detail.type, state.offline, state.relatedFailed, context.baseUrl, posterScale, spoilers.hidesImages, spoilers.hidesOverviews, context.seriesYears ?? null, language, catalogLanguage]),
+            [state.related],
+            () => {
+                // TVSimilarRail passes neither overlayData nor userState to TVMediaCard.
+                // AppRouter.openRelatedTitle: a related pick replaces a page that a related pick opened.
+                const openRelated = (destination: Destination): void => (cache?.currentContext ?? context).open(destination.kind === "item" ? { ...destination, fromRelated: true } : destination);
+                const related = titleCards((state.related ?? []).map(card => ({ ...card, played: undefined, episodesLeft: undefined })), { ...deferredContext, open: openRelated, overlays: undefined, cardOverlays: () => undefined });
+                if ((state.offline && state.related === undefined) || state.relatedFailed || (state.related !== undefined && related.length === 0)) {
+                    return { content: [], zones: [] };
+                }
+                const section = zoneNode("browse-row", related);
+                section.setAttribute("data-detail-section", "related");
+                // TVSimilarRail.swift:96-111: four untitled 220x330 cards while it loads; every entry lands on the first card.
+                if (state.related === undefined) {
+                    for (let index = 0; index < 4; index++) { const placeholder = el("div", "details-related-placeholder"); placeholder.setAttribute("aria-hidden", "true"); section.append(placeholder); }
+                }
+                return {
+                    content: [el("h2", "browse-section-title", translate(detail.type === "movie" ? "detail.relatedMovies" : "detail.recommendedSeries")), section],
+                    zones: state.related === undefined ? [] : [{ id: "related", layout: "row", items: related, entry: related[0]?.key }],
+                };
+            },
+        );
+        content.push(...relatedBlock.content);
+        zones.push(...relatedBlock.zones);
+        if (relatedBlock.prepare !== undefined) prepareSteps.push(relatedBlock.prepare);
+    }
+    const factsBlock = useRetained(cache, "facts", JSON.stringify([language, catalogLanguage]), [detail.extra?.crew, detail.extra?.facts], () => {
+        const facts: { label: string; value: string }[] = [];
+        const crew = detail.extra?.crew ?? [];
+        const directors = creditLine(crew, ["director"]);
+        if (directors !== undefined) facts.push({ label: translate("detail.director"), value: directors });
+        const writers = creditLine(crew, ["writer", "screenplay", "story"]);
+        if (writers !== undefined) facts.push({ label: writerFactLabel(crew), value: writers });
+        facts.push(...(detail.extra?.facts ?? []).map(fact => ({ label: translate(fact.label), value: "date" in fact ? detailDate(fact.date) : fact.value })));
+        // TVDetailFactsSection: the "Details" header always shows; only the facts grid hides when empty.
+        const factsPanel = el("div", "details-facts");
+        factsPanel.setAttribute("aria-label", translate("detail.details"));
+        factsPanel.appendChild(el("h2", "browse-section-title", translate("detail.details")));
+        const outZones: Zone[] = [];
+        if (facts.length > 0) {
+            const table = el("dl", "details-facts-table");
+            for (const fact of facts) { const row = el("div", "details-fact-row"); row.append(el("dt", "", fact.label.toLocaleUpperCase(language)), el("dd", "", fact.value)); table.append(row); }
+            table.tabIndex = -1; table.dataset.focus = "fact:0"; factsPanel.append(table);
+            outZones.push({ id: "facts", layout: "column", items: [{ key: "fact:0", element: table }] });
         }
-    }
-    const facts: { label: string; value: string }[] = [];
-    const crew = detail.extra?.crew ?? [];
-    const directors = creditLine(crew, ["director"]);
-    if (directors !== undefined) facts.push({ label: translate("detail.director"), value: directors });
-    const writers = creditLine(crew, ["writer", "screenplay", "story"]);
-    if (writers !== undefined) facts.push({ label: writerFactLabel(crew), value: writers });
-    facts.push(...(detail.extra?.facts ?? []).map(fact => ({ label: translate(fact.label), value: "date" in fact ? detailDate(fact.date) : fact.value })));
-    // TVDetailFactsSection: the "Details" header always shows; only the facts grid hides when empty.
-    const factsPanel = el("div", "details-facts");
-    factsPanel.setAttribute("aria-label", translate("detail.details"));
-    factsPanel.appendChild(el("h2", "browse-section-title", translate("detail.details")));
-    content.push(factsPanel);
-    if (facts.length > 0) {
-        const table = el("dl", "details-facts-table");
-        for (const fact of facts) { const row = el("div", "details-fact-row"); row.append(el("dt", "", fact.label.toLocaleUpperCase(shownLanguage())), el("dd", "", fact.value)); table.append(row); }
-        table.tabIndex = -1; table.dataset.focus = "fact:0"; factsPanel.append(table);
-        const items = [{ key: "fact:0", element: table }];
-        zones.push({ id: "facts", layout: "column", items });
-    }
+        return { content: [factsPanel], zones: outZones };
+    });
+    content.push(...factsBlock.content);
+    zones.push(...factsBlock.zones);
+    if (factsBlock.prepare !== undefined) prepareSteps.push(factsBlock.prepare);
     const first = focusable[0] ?? seasonItems[0];
     // TVDetailActions.entryAction (TVDetailActions.swift:720-727): Watchlist stands in while episodes load;
     // once Play gets a title, FocusHost.settlePrimaryFocus claims it once unless the viewer moved or selected.
@@ -568,17 +742,19 @@ export function itemView(detail: ItemDetail, seasons: readonly Season[], context
         ? content.find(node => node.classList.contains("details-hero"))
         : undefined;
     if (loading !== undefined) {
-        loading.tabIndex = -1;
-        loading.dataset.focus = "loading";
-        loading.setAttribute("aria-busy", "true");
-        loading.setAttribute("aria-label", translate("detail.episodes.loading"));
+        prepareSteps.push(() => {
+            loading.tabIndex = -1;
+            loading.dataset.focus = "loading";
+            loading.setAttribute("aria-busy", "true");
+            loading.setAttribute("aria-label", translate("detail.episodes.loading"));
+        });
         zones[0] = zones[0] === undefined ? { id: "actions", layout: "row", items: [{ key: "loading", element: loading }] } : { ...zones[0], items: [{ key: "loading", element: loading }, ...zones[0].items] };
     }
     const focus = loadingWatchlist !== undefined
         ? { zone: "actions", key: loadingWatchlist.key }
         : loading !== undefined ? { zone: "actions", key: "loading" }
         : first === undefined ? undefined : { zone: focusable[0] === undefined ? "seasons" : "actions", key: first.key };
-    const view: View = { name: `item:${detail.id}`, content, zones, focus, back };
+    const view: View = { name: `item:${detail.id}`, content, zones, focus, back, prepare: () => { for (const step of prepareSteps) step(); } };
     if (state?.panel === "audio") {
         const options = [undefined, ...audio.map((_track, index) => index)].map(ordinal => {
             const item = actionButton(`audio:${ordinal ?? "auto"}`, ordinal === undefined ? autoLabel : audioRowTitle(ordinal), () => { if (tracks !== undefined) state.noteEpisodePreference(tracks.detail.id); tracks?.selectAudio(ordinal); if (tracks !== state) state.closePanel(); });
@@ -709,9 +885,12 @@ export function withDetailsAlert(view: View, state: DetailsState | undefined): V
     const buttons = discard === undefined ? [ok] : [discard, ok];
     // The page behind may hold cached nodes (the episode rail) that later renders reuse, so it is only made inert and
     // covered by a dim layer; centredDialog's own treatment strips focus keys and disables buttons for good.
-    for (const node of view.content) { node.inert = true; node.setAttribute("aria-hidden", "true"); }
+    const prepare = (): void => {
+        view.prepare?.();
+        for (const node of view.content) { node.inert = true; node.setAttribute("aria-hidden", "true"); }
+    };
     const dialog = centredDialog({ style: "alert", id: alert.id, title: alert.title, message: alert.message, buttons: buttons.map(item => item.element), ...(discard === undefined ? {} : { destructive: discard.element }), behind: [] });
-    return { name: `${view.name}:alert`, content: [...view.content, el("div", "details-alert-dim"), ...dialog], zones: [{ id: "alert", layout: buttons.length > 1 ? "column" : "row", items: buttons }], focus: { zone: "alert", key: ok.key }, back: dismiss };
+    return { name: `${view.name}:alert`, content: [...view.content, el("div", "details-alert-dim"), ...dialog], zones: [{ id: "alert", layout: buttons.length > 1 ? "column" : "row", items: buttons }], focus: { zone: "alert", key: ok.key }, back: dismiss, prepare };
 }
 
 /** TVSeriesDetailView.shuffleSeason: the season on screen, outside the series overview, once it has two episodes with files. */
@@ -937,13 +1116,19 @@ export function seasonView(name: string, title: string, episodes: readonly Episo
         content.push(zoneNode("browse-actions", fallback));
     }
     if (header !== undefined && state?.panel !== undefined) {
-        for (const node of content) if (!node.matches(".skyline-selector, .skyline-dropdown-scrim")) { node.inert = true; node.setAttribute("aria-hidden", "true"); }
-        return { ...header, content };
+        return {
+            ...header,
+            content,
+            prepare: () => {
+                header.prepare?.();
+                for (const node of content) if (!node.matches(".skyline-selector, .skyline-dropdown-scrim")) { node.inert = true; node.setAttribute("aria-hidden", "true"); }
+            },
+        };
     }
     const zones: Zone[] = [
         { id: "episodes", layout: "column", items },
         { id: "status", layout: "row", items: fallback },
     ];
     const first = items[0] ?? fallback[0];
-    return { name, content, zones: [...header?.zones.filter((zone) => zone.id === "actions") ?? [], ...zones, ...header?.zones.filter((zone) => zone.id !== "actions") ?? []], focus: first === undefined ? undefined : { zone: items[0] === undefined ? "status" : "episodes", key: first.key }, back };
+    return { name, content, zones: [...header?.zones.filter((zone) => zone.id === "actions") ?? [], ...zones, ...header?.zones.filter((zone) => zone.id !== "actions") ?? []], focus: first === undefined ? undefined : { zone: items[0] === undefined ? "status" : "episodes", key: first.key }, back, ...(header?.prepare === undefined ? {} : { prepare: header.prepare }) };
 }
