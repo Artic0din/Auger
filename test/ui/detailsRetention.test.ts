@@ -481,3 +481,36 @@ test("opening a movie track popover keeps the retained title mounted until prepa
         await tv.page.context().close();
     }
 });
+
+test("transiently failing Details hero backdrop retries and loads on the next episode focus repaint", async () => {
+    const { tv, details } = await startDetails();
+    let backdropHits = 0;
+    let allowBackdrop = false;
+    try {
+        await routeSeries(tv, details);
+        const seriesBody = details.route("GET", "/catalog/items/series%3As1", "p-owner")?.body as Record<string, unknown>;
+        await tv.page.route("**/api/v2/catalog/items/series%3As1?**", route => route.fulfill({
+            json: { ...seriesBody, backdrop_url: "/art/harbor.svg", logo_url: "/art/last-signal-logo.svg", extras: [LOCAL_TRAILER] },
+        }));
+        await tv.page.route("**/art/harbor.svg", route => {
+            backdropHits++;
+            if (!allowBackdrop) return route.fulfill({ status: 500 });
+            return route.fallback();
+        });
+
+        await tv.page.locator('[data-section="recently_added"] [data-focus="series:s1"]').first().click();
+        await tv.page.locator('[data-focus="episode:ret:4"]').waitFor();
+        await tv.page.locator('.details-hero .skyline-art-frame[data-art="failed"]').waitFor();
+
+        allowBackdrop = true;
+        const hitsBeforeMove = backdropHits;
+        await tv.page.locator('[data-focus="episode:ret:1"]').focus();
+        await tv.jump(150);
+        await tv.remote(39);
+        await tv.page.locator('.details-hero .skyline-art-frame[data-art="loaded"], .details-hero .skyline-art-frame[data-art="cached"]').waitFor();
+        assert.ok(backdropHits > hitsBeforeMove, `expected hero backdrop retry request, saw ${backdropHits} (before move ${hitsBeforeMove})`);
+        assert.deepEqual(tv.console, []);
+    } finally {
+        await tv.page.context().close();
+    }
+});

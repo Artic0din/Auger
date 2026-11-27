@@ -317,7 +317,7 @@ function retainedHero(detail: ItemDetail, context: ViewContext, hideBackdrop: bo
     const lift = detail.type === "series" && (context.posterScale?.() ?? 1) > 1 ? 32 : 0;
     const height = detail.type === "series" ? `${690 - lift}px` : "";
     if (detail.type === "series") info.style.paddingTop = `${116 - lift}px`;
-    if (cache?.hero !== undefined && cache.hero.backdropKey === backdropKey) {
+    if (cache?.hero !== undefined && cache.hero.backdropKey === backdropKey && cache.hero.background.querySelector('.skyline-art-frame[data-art="failed"]') === null) {
         const { wash, layout, background } = cache.hero;
         return {
             wash,
