@@ -9,7 +9,7 @@ import { FakeAudiobooks } from "../native/support/fakeAudiobooks.ts";
 import { FakeDetails } from "../native/support/fakeDetails.ts";
 import { FakeSettings } from "../native/support/fakeSettings.ts";
 import { registerSourceCatalogs } from "../native/support/catalogs.ts";
-import { launchBrowser, openTv, type Tv } from "./support/tv.ts";
+import { afterPaint, launchBrowser, openTv, type Tv } from "./support/tv.ts";
 
 registerSourceCatalogs();
 
@@ -55,6 +55,10 @@ async function withDetails(language: "ar" | undefined, body: (tv: Tv, year: numb
         await tv.page.evaluate(() => window.browseHarness.selectProfile("p-owner"));
         await tv.page.evaluate(() => window.browseHarness.mount(true));
         await tv.page.locator('[data-view="home"]').waitFor();
+        if (language !== undefined) {
+            await tv.eventually(async () => await tv.page.evaluate(() => document.documentElement.getAttribute("lang")) === language, `${language} language applied`);
+            await afterPaint(tv);
+        }
         await body(tv, detail.year);
         assert.deepEqual(tv.console, []);
     } finally { await tv.page.context().close(); }
@@ -141,6 +145,8 @@ test("in Arabic an audiobook's credits line and its narration rows read their ye
         await tv.page.evaluate(() => window.browseHarness.selectProfile("p-owner"));
         await tv.page.evaluate(() => window.browseHarness.mount(true));
         await tv.page.locator('[data-view="home"]').waitFor();
+        await tv.eventually(async () => await tv.page.evaluate(() => document.documentElement.getAttribute("lang")) === "ar", "ar language applied");
+        await afterPaint(tv);
         await tv.page.locator('[data-section="shelf"] [data-focus="audiobook:tide"]').click();
         await tv.page.locator('[data-view="audiobook:audiobook:tide"]').waitFor();
         const facts = await tv.page.locator(".audiobook-fact-value").allInnerTexts();
