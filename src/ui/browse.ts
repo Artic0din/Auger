@@ -1179,9 +1179,13 @@ export function mountBrowse(root: HTMLElement, options: BrowseOptions): Browse {
                 }
             }
             const shownShell = shown?.kind === "home" || shown?.kind === "for_you" || shown?.kind === "library" || shown?.kind === "personal" || shown?.kind === "calendar";
-            // The page in front has to take the new buttons. Calendar and For You can open
-            // before this read finishes (TVMainTabView reconcileVisibleRootsChange, TVMainTabView.swift:1065).
-            if (!playing && shownShell && settingsScreen === undefined && !cardActions.active) render(focus);
+            // Library views (for serverLibrary/canShuffle) and Favorites after an audiobooks change rebuild body content;
+            // other shell routes only need chrome/zone sync so Home DOM stays intact when a dropdown is open.
+            const needsFullRender = shown?.kind === "library" || (audiobooksChanged && shown?.kind === "personal" && shown.source === "favorites");
+            if (!playing && shownShell && settingsScreen === undefined && !cardActions.active) {
+                if (needsFullRender) render(focus);
+                else refreshChrome(focus);
+            }
         }, (error: unknown) => {
             if (signal.aborted || torn || (error instanceof ApiError && error.aborted)) return;
             if (error instanceof ApiError) {

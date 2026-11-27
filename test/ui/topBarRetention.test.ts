@@ -297,14 +297,21 @@ test("deferred Home libraries arrival while a dropdown is open preserves Home DO
         await tv.page.locator('[data-focus="for_you"]').focus();
         await tv.jump(250);
         await tv.page.locator('.skyline-selector [data-focus="watchlist"]').waitFor();
-        heldLibraries.release();
-        await tv.eventually(async () => tv.pendingReplies <= tv.fake.heldReplies, "libraries delivered while dropdown open");
-        assert.equal(await tv.page.locator('.browse-nav [data-focus="movies"]').count(), 0, "nav rebuild defers until dropdown closes");
         await tv.page.evaluate(() => {
             (window as unknown as { __homeSubtree: Element[] }).__homeSubtree = Array.from(
                 document.querySelectorAll(".browse > .skyline-content, .browse > .skyline-content *"),
             );
         });
+        heldLibraries.release();
+        await tv.eventually(async () => tv.pendingReplies <= tv.fake.heldReplies, "libraries delivered while dropdown open");
+        await afterPaint(tv);
+        assert.equal(await tv.page.locator('.browse-nav [data-focus="movies"]').count(), 0, "nav rebuild defers until dropdown closes");
+        const subtreeIdenticalAfterDelivery = await tv.page.evaluate(() => {
+            const prev = (window as unknown as { __homeSubtree: Element[] }).__homeSubtree;
+            const current = Array.from(document.querySelectorAll(".browse > .skyline-content, .browse > .skyline-content *"));
+            return current.length > 0 && current.length === prev.length && current.every((el, i) => el === prev[i]);
+        });
+        assert.equal(subtreeIdenticalAfterDelivery, true, "libraries response preserves the Home subtree while the dropdown is open");
 
         await tv.remote(10009);
         await tv.page.locator('.browse-nav [data-focus="movies"]').waitFor();
