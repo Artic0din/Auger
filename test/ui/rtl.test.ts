@@ -1116,6 +1116,7 @@ test("reusing a cached Details episode row after a live LTR-to-RTL switch clears
     const settings = new FakeSettings(tv.fake);
     settings.revision = 28;
     settings.profile().set(APP_LANGUAGE_KEY, "ar");
+    let held: { release(): void }[] = [];
     try {
         const listed = details.route("GET", "/catalog/series/series%3As1/seasons", "p-owner")?.body as { items: Record<string, unknown>[] };
         const first = details.route("GET", "/catalog/series/series%3As1/seasons/1/episodes", "p-owner")?.body as { items: Record<string, unknown>[] };
@@ -1129,7 +1130,7 @@ test("reusing a cached Details episode row after a live LTR-to-RTL switch clears
         await tv.eventually(() => tv.page.evaluate(() => window.browseHarness.loginPhase === "signed_in"), "login");
         await tv.page.evaluate(() => window.browseHarness.selectProfile("p-owner"));
         await tv.page.evaluate(() => window.browseHarness.seedAppLanguage("en"));
-        const held = Array.from({ length: 4 }, () => tv.fake.hold(`/settings/values/effective?keys=${APP_LANGUAGE_KEY}`, true));
+        held = Array.from({ length: 4 }, () => tv.fake.hold(`/settings/values/effective?keys=${APP_LANGUAGE_KEY}`, true));
         await tv.page.evaluate(() => window.browseHarness.mount(true));
         await tv.page.locator('[data-view="home"]').waitFor();
         assert.equal(await direction(tv), null, "launched left to right from kept English");
@@ -1153,7 +1154,8 @@ test("reusing a cached Details episode row after a live LTR-to-RTL switch clears
         assert.notEqual(ltr.inlinePr, "", "LTR prepareEpisodeRow set inline paddingRight");
         assert.ok(ltr.sl > 0, `LTR episode rail scrolled positively (${ltr.sl})`);
 
-        for (const hold of held) hold.release();
+        held.forEach(hold => hold.release());
+        held = [];
         await waitForDirection(tv, "rtl");
         await tv.eventually(async () => await tv.focused() === "episode:rail:1:11", "focus stays on episode 12");
         const rtl = await tv.page.locator(".details-episodes").evaluate(node => {
@@ -1173,5 +1175,8 @@ test("reusing a cached Details episode row after a live LTR-to-RTL switch clears
         assert.ok(rtl.sl < 0, `RTL episode rail scrolled negatively (${rtl.sl})`);
         const card = await onScreen(tv);
         assert.ok(card !== undefined && card.left >= 0 && card.right <= 1920, `episode 12 on screen at ${card?.left}..${card?.right}`);
-    } finally { await tv.page.context().close(); }
+    } finally {
+        held.forEach(hold => hold.release());
+        await tv.page.context().close();
+    }
 });
