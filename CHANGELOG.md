@@ -6,6 +6,12 @@ All notable changes to this project are documented in this file.
 
 <!-- changelog:releases -->
 
+## [0.15.0] - 2026-11-27
+
+### Features
+
+- **Playback**: Wire AVPlay bandwidth throughput and status phases ([#959](https://github.com/Artic0din/Auger-Tizen/pull/959), [`9de1f657`](https://github.com/Artic0din/Auger-Tizen/commit/9de1f657))
+
 ## [0.14.18] - 2026-11-26
 
 ### Fixes
