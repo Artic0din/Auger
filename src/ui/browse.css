@@ -1943,8 +1943,9 @@ svg.library-empty-icon { width: auto; }
 .personal-history .catalog-grid { grid-template-columns: repeat(var(--grid-columns, 6), minmax(0, 1fr)); column-gap: 40px; row-gap: 60px; justify-items: center; width: 1664px; margin: 0; padding: 0; }
 .personal-history .catalog-grid .browse-card { --card-caption-gap: 22px; }
 .personal-history .catalog-grid .browse-card-title { margin-top: 22px; }
-/* Left to right the text starts at the left; right to left the shared server-text rule at the top of this file aligns it by the layout, as SwiftUI's Text is. */
+/* Left to right the text starts at the left; right to left it aligns right by the layout (above .catalog-grid's centred rule), as SwiftUI's Text is. */
 :root:not([dir="rtl"]) :is(.personal-lists .personal-grid, .personal-history .catalog-grid) :is(.browse-card-title, .browse-card-subtitle) { text-align: start; }
+:root[dir="rtl"] :is(.personal-lists .personal-grid, .personal-history .catalog-grid, .browse[data-view^="person:"] .catalog-grid) :is(.browse-card-title, .browse-card-subtitle) { text-align: right; }
 
 /* ErrorView, shared with the Requests hub: 48pt icon, 36 semibold headline, 26 body, Try Again 200 wide. */
 .personal-lists .personal-failure,
