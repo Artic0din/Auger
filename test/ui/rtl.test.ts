@@ -311,6 +311,8 @@ test("in Arabic Left walks a Details episode rail to its last episode and keeps 
             const card = await onScreen(tv);
             assert.equal(await tv.focused(), `episode:rail:1:${step}`);
             const row = await tv.page.locator(".details-episodes").evaluate(node => { const style = getComputedStyle(node); return { sl: node.scrollLeft, sw: node.scrollWidth, cw: node.clientWidth, pl: style.paddingLeft, pr: style.paddingRight, ml: style.marginLeft, mr: style.marginRight, rect: node.getBoundingClientRect().left + ".." + node.getBoundingClientRect().right }; });
+            assert.ok(row.sl <= 0, `Arabic episode rail scrollLeft ${row.sl} should stay non-positive at step ${step}`);
+            if (step === 11) assert.ok(row.sl < 0, `Arabic episode rail scrolled negatively (${row.sl})`);
             assert.ok(card !== undefined && card.left >= 0 && card.right <= 1920, `episode ${step} at ${card?.left}..${card?.right}`);
         }
         for (let step = 0; step < 11; step++) await tv.remote(RIGHT);
@@ -873,7 +875,7 @@ test("in Arabic Search's People rail still lands Down on the title column at or 
     });
 });
 
-test("in Arabic on a root route that is not mirrored yet (a library's Recommended page), the top bar still reads right to left and its keys stay swapped", async () => {
+test("in Arabic on a library's Recommended page, both the top bar and content mirror right to left with swapped card keys", async () => {
     await withHome({ stored: "ar" }, async tv => {
         await waitForDirection(tv, "rtl");
         await tv.page.locator('[data-focus="movies"]').click();
@@ -882,14 +884,210 @@ test("in Arabic on a root route that is not mirrored yet (a library's Recommende
             bar: getComputedStyle(document.querySelector(".browse-nav") as Element).direction,
             content: getComputedStyle(document.querySelector(".skyline-content") as Element).direction,
             barPinned: document.querySelector(".browse-nav")?.hasAttribute("dir") ?? true,
+            contentPinned: document.querySelector(".skyline-content")?.hasAttribute("dir") ?? true,
         }));
-        assert.deepEqual(view, { bar: "rtl", content: "ltr", barPinned: false }, "the bar mirrors, the page body stays left to right");
-        // Left in the mirrored bar moves to the tab on its left, from a tab that is not the first.
+        assert.deepEqual(view, { bar: "rtl", content: "rtl", barPinned: false, contentPinned: false });
+        // Left in the mirrored bar moves to the tab on its left.
         await tv.page.locator('[data-focus="home"]').focus();
         await tv.remote(LEFT);
         assert.equal(await tv.focused(), "movies", "Left in the mirrored top bar moves to the tab on its left");
         await tv.remote(RIGHT);
         assert.equal(await tv.focused(), "home");
+
+        const cards = tv.page.locator('[data-view="library:12"] .home-section .browse-card');
+        const firstCard = await cards.nth(0).evaluate(node => ({ key: node.getAttribute("data-focus"), left: node.getBoundingClientRect().left, mr: getComputedStyle(node).marginRight, ml: getComputedStyle(node).marginLeft }));
+        const secondCard = await cards.nth(1).evaluate(node => ({ key: node.getAttribute("data-focus"), left: node.getBoundingClientRect().left }));
+        assert.ok(firstCard.left > secondCard.left, `first card (${firstCard.left}) sits right of second (${secondCard.left})`);
+        assert.equal(firstCard.mr, "0px");
+        assert.equal(firstCard.ml, "40px");
+        await cards.nth(0).focus();
+        await tv.remote(LEFT);
+        assert.equal(await tv.focused(), secondCard.key, "Left advances toward the end of the mirrored row");
+        await tv.remote(RIGHT);
+        assert.equal(await tv.focused(), firstCard.key, "Right returns to the first card");
+    });
+});
+
+test("in Arabic For You mirrors right to left and Left/Right step across its cards", async () => {
+    await withHome({ stored: "ar" }, async tv => {
+        await waitForDirection(tv, "rtl");
+        await tv.page.route("**/api/v2/recommendations/discover**", route => route.fulfill({
+            json: {
+                items: [{
+                    type: "popular",
+                    title: "For You Picks",
+                    kind: "popular",
+                    items: ["m0001", "m0002", "m0003"].map((id, index) => ({
+                        content_id: `movie:${id}`, type: "movie", title: `Movie 000${index + 1}`, poster_url: `/art/${id}.svg`,
+                    })),
+                }],
+            },
+        }));
+        await tv.page.locator('[data-focus="for_you"]').click();
+        await tv.page.locator('[data-view="for_you"] .home-section .browse-card').first().waitFor();
+        const layout = await tv.page.evaluate(() => ({
+            contentDir: getComputedStyle(document.querySelector(".skyline-content") as Element).direction,
+            contentPinned: document.querySelector(".skyline-content")?.hasAttribute("dir") ?? true,
+        }));
+        assert.deepEqual(layout, { contentDir: "rtl", contentPinned: false });
+        const cards = tv.page.locator('[data-view="for_you"] .home-section .browse-card');
+        const firstBox = await cards.nth(0).evaluate(node => ({ key: node.getAttribute("data-focus"), left: node.getBoundingClientRect().left, mr: getComputedStyle(node).marginRight, ml: getComputedStyle(node).marginLeft }));
+        const secondBox = await cards.nth(1).evaluate(node => ({ key: node.getAttribute("data-focus"), left: node.getBoundingClientRect().left }));
+        assert.ok(firstBox.left > secondBox.left, `first card (${firstBox.left}) sits right of second (${secondBox.left})`);
+        assert.equal(firstBox.mr, "0px");
+        assert.equal(firstBox.ml, "40px");
+        await cards.nth(0).focus();
+        await tv.remote(LEFT);
+        assert.equal(await tv.focused(), secondBox.key);
+        await tv.remote(RIGHT);
+        assert.equal(await tv.focused(), firstBox.key);
+    });
+});
+
+test("in Arabic Collections and collection detail mirror right to left with Left/Right grid navigation", async () => {
+    await withHome({ stored: "ar" }, async tv => {
+        await waitForDirection(tv, "rtl");
+        await tv.page.route("**/api/v2/library/12/collections**", route => route.fulfill({
+            json: {
+                library_id: "12",
+                collections: [
+                    { id: "highlights", library_id: "12", library_ids: ["12"], group_id: "curated", title: "Library Highlights", poster_url: "", item_count: 6, poster_is_collage: false },
+                    { id: "favorites", library_id: "12", library_ids: ["12"], group_id: "curated", title: "Viewer Favorites", poster_url: "", item_count: 4, poster_is_collage: false },
+                ],
+                groups: [{
+                    id: "curated", name: "Curated", kind: "admin", sort_mode: "name_asc", sort_order: 0,
+                    collections: [
+                        { id: "highlights", library_id: "12", library_ids: ["12"], group_id: "curated", title: "Library Highlights", poster_url: "", item_count: 6, poster_is_collage: false },
+                        { id: "favorites", library_id: "12", library_ids: ["12"], group_id: "curated", title: "Viewer Favorites", poster_url: "", item_count: 4, poster_is_collage: false },
+                    ],
+                }],
+                ungrouped: { sort_order: 1, collections: [] },
+            },
+        }));
+        await tv.page.locator('[data-focus="movies"]').click();
+        await tv.page.locator('[data-view="library:12"] .home-section').first().waitFor();
+        await selectLibraryMode(tv, "Collections");
+        await tv.page.locator('[data-focus="collection:highlights"]').waitFor();
+        const collectionsDir = await tv.page.evaluate(() => ({
+            dir: getComputedStyle(document.querySelector(".discovery-collection-grid") as Element).direction,
+            pinned: document.querySelector(".discovery-collection-grid")?.hasAttribute("dir") ?? true,
+            cardAlign: getComputedStyle(document.querySelector(".discovery-collection-grid .browse-card-title") as Element).textAlign,
+        }));
+        assert.deepEqual(collectionsDir, { dir: "rtl", pinned: false, cardAlign: "center" });
+        const firstCol = await box(tv, '[data-focus="collection:highlights"]');
+        const secondCol = await box(tv, '[data-focus="collection:favorites"]');
+        assert.ok(firstCol.left > secondCol.left, `first collection (${firstCol.left}) sits right of second (${secondCol.left})`);
+        await tv.page.locator('[data-focus="collection:highlights"]').focus();
+        await tv.remote(LEFT);
+        assert.equal(await tv.focused(), "collection:favorites");
+        await tv.remote(RIGHT);
+        assert.equal(await tv.focused(), "collection:highlights");
+
+        await tv.page.keyboard.press("Enter");
+        await tv.page.locator('[data-view^="results:"] .collection-detail-grid .browse-card').first().waitFor();
+        const detailAlign = await tv.page.evaluate(() => ({
+            dir: getComputedStyle(document.querySelector('[data-view^="results:"]') as Element).direction,
+            headingAlign: getComputedStyle(document.querySelector(".collection-detail-title") as Element).textAlign,
+            cardAlign: getComputedStyle(document.querySelector(".collection-detail-grid .browse-card-title") as Element).textAlign,
+        }));
+        assert.deepEqual(detailAlign, { dir: "rtl", headingAlign: "center", cardAlign: "right" });
+        const titles = tv.page.locator('[data-view^="results:"] .collection-detail-grid .browse-card');
+        const t0 = await titles.nth(0).evaluate(node => ({ key: node.getAttribute("data-focus"), left: node.getBoundingClientRect().left }));
+        const t1 = await titles.nth(1).evaluate(node => ({ key: node.getAttribute("data-focus"), left: node.getBoundingClientRect().left }));
+        assert.ok(t0.left > t1.left, `first title (${t0.left}) sits right of second (${t1.left})`);
+        await titles.nth(0).focus();
+        await tv.remote(LEFT);
+        assert.equal(await tv.focused(), t1.key);
+        await tv.remote(RIGHT);
+        assert.equal(await tv.focused(), t0.key);
+    });
+});
+
+test("in Arabic Details rails use logical RTL spacing, clip paths, and Left/Right navigation across cast and related rows", async () => {
+    await withArabicSeries(2, 6, async tv => {
+        await tv.page.locator('[data-detail-section="related"] .browse-card').first().waitFor();
+        await tv.page.locator(".details-facts > .browse-section-title").first().waitFor();
+        const metrics = await tv.page.evaluate(() => {
+            const season = getComputedStyle(document.querySelector(".details-season-chips .browse-button") as Element);
+            const episode = getComputedStyle(document.querySelector(".details-series-rail .browse-card") as Element);
+            const episodesRow = getComputedStyle(document.querySelector(".details-series-rail .details-episodes") as Element);
+            const related = getComputedStyle(document.querySelector('[data-detail-section="related"] .browse-card') as Element);
+            const factsHeading = getComputedStyle(document.querySelector(".details-facts > .browse-section-title") as Element);
+            return {
+                season: { mr: season.marginRight, ml: season.marginLeft },
+                episode: { mr: episode.marginRight, ml: episode.marginLeft },
+                episodesClip: episodesRow.clipPath.replace(/px/g, ""),
+                related: { mr: related.marginRight, ml: related.marginLeft },
+                factsHeading: { mr: factsHeading.marginRight, ml: factsHeading.marginLeft },
+            };
+        });
+        assert.deepEqual(metrics, {
+            season: { mr: "0px", ml: "12px" },
+            episode: { mr: "0px", ml: "40px" },
+            episodesClip: "inset(0 100 0 0)",
+            related: { mr: "0px", ml: "44px" },
+            factsHeading: { mr: "12px", ml: "0px" },
+        });
+
+        const seasonPair = await tv.page.evaluate(() => {
+            const buttons = Array.from(document.querySelectorAll(".details-season-chips .browse-button"));
+            return {
+                s0: { key: buttons[0]?.getAttribute("data-focus"), left: buttons[0]?.getBoundingClientRect().left ?? 0 },
+                s1: { key: buttons[1]?.getAttribute("data-focus"), left: buttons[1]?.getBoundingClientRect().left ?? 0 },
+            };
+        });
+        assert.ok(seasonPair.s0.left > seasonPair.s1.left, `season 1 (${seasonPair.s0.left}) sits right of season 2 (${seasonPair.s1.left})`);
+        await tv.page.locator(".details-season-chips .browse-button").nth(0).focus();
+        await tv.remote(LEFT);
+        assert.equal(await tv.focused(), seasonPair.s1.key);
+        await tv.remote(RIGHT);
+        assert.equal(await tv.focused(), seasonPair.s0.key);
+
+        const relPair = await tv.page.evaluate(() => {
+            const cards = Array.from(document.querySelectorAll('[data-detail-section="related"] .browse-card'));
+            return {
+                r0: { key: cards[0]?.getAttribute("data-focus"), left: cards[0]?.getBoundingClientRect().left ?? 0 },
+                r1: { key: cards[1]?.getAttribute("data-focus"), left: cards[1]?.getBoundingClientRect().left ?? 0 },
+            };
+        });
+        assert.ok(relPair.r0.left > relPair.r1.left, `related 0 (${relPair.r0.left}) sits right of related 1 (${relPair.r1.left})`);
+        await tv.page.locator('[data-detail-section="related"] .browse-card').nth(0).focus();
+        await tv.remote(LEFT);
+        assert.equal(await tv.focused(), relPair.r1.key);
+        await tv.remote(RIGHT);
+        assert.equal(await tv.focused(), relPair.r0.key);
+
+        await tv.remote(BACK);
+        const movieCard = tv.page.locator('[data-section="recently_added"] [data-focus="movie:m0001"]').first();
+        await movieCard.waitFor();
+        await movieCard.click();
+        await tv.page.locator('[data-view="item:movie:m0001"]').waitFor();
+        await tv.page.locator('[data-view="item:movie:m0001"] [data-detail-section="related"] .browse-card').first().waitFor();
+        await tv.page.locator('[data-view="item:movie:m0001"] .details-people .details-person').nth(1).waitFor();
+        await tv.page.locator('[data-view="item:movie:m0001"] .details-facts-table').first().waitFor();
+        const movieMetrics = await tv.page.evaluate(() => {
+            const person = getComputedStyle(document.querySelector(".details-people .details-person") as Element);
+            const factsTable = getComputedStyle(document.querySelector(".details-facts-table") as Element);
+            const castTitle = getComputedStyle(document.querySelector(".details-people .browse-card-title") as Element);
+            const people = Array.from(document.querySelectorAll(".details-people .details-person"));
+            return {
+                person: { mr: person.marginRight, ml: person.marginLeft },
+                factsTable: { mr: factsTable.marginRight, ml: factsTable.marginLeft },
+                castTitleAlign: castTitle.textAlign,
+                p0: { key: people[0]?.getAttribute("data-focus"), left: people[0]?.getBoundingClientRect().left ?? 0 },
+                p1: { key: people[1]?.getAttribute("data-focus"), left: people[1]?.getBoundingClientRect().left ?? 0 },
+            };
+        });
+        assert.deepEqual(
+            { person: movieMetrics.person, factsTable: movieMetrics.factsTable, castTitleAlign: movieMetrics.castTitleAlign },
+            { person: { mr: "0px", ml: "60px" }, factsTable: { mr: "12px", ml: "0px" }, castTitleAlign: "center" },
+        );
+        assert.ok(movieMetrics.p0.left > movieMetrics.p1.left, `cast 0 (${movieMetrics.p0.left}) sits right of cast 1 (${movieMetrics.p1.left})`);
+        await tv.page.locator(".details-people .details-person").nth(0).focus();
+        await tv.remote(LEFT);
+        assert.equal(await tv.focused(), movieMetrics.p1.key);
+        await tv.remote(RIGHT);
+        assert.equal(await tv.focused(), movieMetrics.p0.key);
     });
 });
 
@@ -910,3 +1108,75 @@ for (const cardNumber of [4, 10] as const) {
         });
     });
 }
+
+test("reusing a cached Details episode row after a live LTR-to-RTL switch clears stale inline padding and sets RTL inset and scroll", async () => {
+    const tv = await openTv(browser, { app: "browse", locale: "en-AU" });
+    const details = new FakeDetails();
+    tv.fake.catalog = details;
+    const settings = new FakeSettings(tv.fake);
+    settings.revision = 28;
+    settings.profile().set(APP_LANGUAGE_KEY, "ar");
+    let held: { release(): void }[] = [];
+    try {
+        const listed = details.route("GET", "/catalog/series/series%3As1/seasons", "p-owner")?.body as { items: Record<string, unknown>[] };
+        const first = details.route("GET", "/catalog/series/series%3As1/seasons/1/episodes", "p-owner")?.body as { items: Record<string, unknown>[] };
+        await tv.page.route("**/api/v2/catalog/series/series%3As1/seasons?**", route => route.fulfill({ json: { items: [listed.items[0]], next_cursor: null } }));
+        await tv.page.route("**/api/v2/catalog/series/series%3As1/seasons/1/episodes?**", route => route.fulfill({ json: { items: Array.from({ length: 12 }, (_, index) => ({ ...first.items[0], content_id: `episode:rail:1:${index}`, season_number: 1, episode_number: index + 1 })), next_cursor: null } }));
+        await tv.page.emulateMedia({ reducedMotion: "reduce" });
+        await tv.page.evaluate(() => window.browseHarness.connect());
+        await tv.eventually(async () => tv.fake.devices.size > 0, "device code");
+        tv.fake.approve([...tv.fake.devices.keys()][0] ?? "");
+        await tv.jump(5000);
+        await tv.eventually(() => tv.page.evaluate(() => window.browseHarness.loginPhase === "signed_in"), "login");
+        await tv.page.evaluate(() => window.browseHarness.selectProfile("p-owner"));
+        await tv.page.evaluate(() => window.browseHarness.seedAppLanguage("en"));
+        held = Array.from({ length: 4 }, () => tv.fake.hold(`/settings/values/effective?keys=${APP_LANGUAGE_KEY}`, true));
+        await tv.page.evaluate(() => window.browseHarness.mount(true));
+        await tv.page.locator('[data-view="home"]').waitFor();
+        assert.equal(await direction(tv), null, "launched left to right from kept English");
+
+        await tv.page.locator('[data-section="recently_added"] [data-focus="series:s1"]').first().click();
+        await tv.page.locator('[data-focus="episode:rail:1:0"]').waitFor();
+        await tv.page.locator('[data-focus="episode:rail:1:0"]').focus();
+        for (let step = 1; step < 12; step++) await tv.remote(RIGHT);
+        assert.equal(await tv.focused(), "episode:rail:1:11");
+        const ltr = await tv.page.locator(".details-episodes").evaluate(node => {
+            (window as unknown as { __cachedEpisodeRow?: Element }).__cachedEpisodeRow = node;
+            const style = getComputedStyle(node);
+            return {
+                dir: style.direction,
+                pl: style.paddingLeft,
+                inlinePr: node.style.paddingRight,
+                sl: node.scrollLeft,
+            };
+        });
+        assert.equal(ltr.dir, "ltr");
+        assert.notEqual(ltr.inlinePr, "", "LTR prepareEpisodeRow set inline paddingRight");
+        assert.ok(ltr.sl > 0, `LTR episode rail scrolled positively (${ltr.sl})`);
+
+        held.forEach(hold => hold.release());
+        held = [];
+        await waitForDirection(tv, "rtl");
+        await tv.eventually(async () => await tv.focused() === "episode:rail:1:11", "focus stays on episode 12");
+        const rtl = await tv.page.locator(".details-episodes").evaluate(node => {
+            const style = getComputedStyle(node);
+            return {
+                reused: node === (window as unknown as { __cachedEpisodeRow?: Element }).__cachedEpisodeRow,
+                dir: style.direction,
+                pr: style.paddingRight,
+                inlinePr: node.style.paddingRight,
+                sl: node.scrollLeft,
+            };
+        });
+        assert.equal(rtl.reused, true, "reused the cached episode row across direction switch");
+        assert.equal(rtl.dir, "rtl");
+        assert.equal(rtl.inlinePr, "", "stale LTR inline paddingRight cleared");
+        assert.equal(rtl.pr, ltr.pl, `RTL leading paddingRight (${rtl.pr}) matches LTR leading paddingLeft (${ltr.pl})`);
+        assert.ok(rtl.sl < 0, `RTL episode rail scrolled negatively (${rtl.sl})`);
+        const card = await onScreen(tv);
+        assert.ok(card !== undefined && card.left >= 0 && card.right <= 1920, `episode 12 on screen at ${card?.left}..${card?.right}`);
+    } finally {
+        held.forEach(hold => hold.release());
+        await tv.page.context().close();
+    }
+});

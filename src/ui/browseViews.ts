@@ -134,7 +134,7 @@ export function exploreAllCard(rowTitle: string, key: string, wide: boolean, onP
     if (wide) element.classList.add("skyline-continue");
     const tile = el("span", "browse-art skyline-explore-tile");
     const icon = el("span", "skyline-explore-icon");
-    icon.innerHTML = '<svg viewBox="0 0 24 24" aria-hidden="true" focusable="false"><path d="M4 12h15M13 6l6 6-6 6" fill="none" stroke="currentColor" stroke-width="2.6" stroke-linecap="round" stroke-linejoin="round"/></svg>';
+    icon.innerHTML = '<svg class="icon-forward" viewBox="0 0 24 24" aria-hidden="true" focusable="false"><path d="M4 12h15M13 6l6 6-6 6" fill="none" stroke="currentColor" stroke-width="2.6" stroke-linecap="round" stroke-linejoin="round"/></svg>';
     const label = el("span", "skyline-explore-label", exploreAll);
     tile.append(icon, label);
     element.appendChild(tile);
