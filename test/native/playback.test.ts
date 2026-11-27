@@ -7005,3 +7005,83 @@ test("fresh transport open() and warmRestore() reset setDisplayRect deduplicatio
     ]);
     r.controller.destroy();
 });
+
+test("persistent setDisplayRect failure in prepared() routes to recovery instead of reporting playing (#759)", async () => {
+    const r = await autoplayRig(true);
+    r.avplay.setDisplayRect = (): void => {
+        throw new Error("InvalidStateError");
+    };
+    r.controller.play(EPISODE);
+    await r.h.clock.advance(0);
+    r.avplay.finishPrepare();
+    await r.h.clock.advance(0);
+    while (r.avplay.calls.at(-1)?.startsWith("seekTo")) {
+        r.avplay.finishSeek();
+        await r.h.clock.advance(0);
+    }
+    const view = last(r.views);
+    assert.notEqual(view.phase, "playing");
+    assert.equal(view.phase, "loading");
+    assert.equal(r.avplay.displayRects.length, 0);
+    const replan = only(bodies(r.h, "/replan"));
+    assert.equal(replan.operation, "failure_recovery");
+    assert.deepEqual(replan.failure, { classification: "avplay_play_failed" });
+    r.controller.destroy();
+});
+
+test("EOF credits skip accepted while restoreAsync is pending publishes Up Next on finishRestore() while paused (#759)", async () => {
+    const r = await creditsAutoplayRig(true, false);
+    await playMovie(r, EPISODE);
+    for (let step = 0; step < 6; step++) await r.h.clock.advance(0);
+    r.controller.setPaused(true);
+    r.controller.suspend();
+    r.controller.restore();
+    await r.h.clock.advance(0);
+    const beforeRestore = r.avplay.displayRects.length;
+    const seeksBefore = r.avplay.calls.filter(call => call.startsWith("seekTo")).length;
+
+    r.controller.skipCredits(7200);
+    assert.equal(r.avplay.calls.filter(call => call.startsWith("seekTo")).length, seeksBefore, "credits skip does not seek to EOF while restoring");
+    assert.equal(r.avplay.displayRects.length, beforeRestore, "no setDisplayRect while restoreAsync is pending");
+    assert.equal(last(r.views).phase, "loading");
+
+    r.avplay.finishRestore();
+    await r.h.clock.advance(0);
+    const restored = last(r.views);
+    assert.equal(restored.phase, "paused");
+    assert.equal(restored.upNext?.countdown, 10);
+    assert.deepEqual(r.avplay.displayRects.slice(beforeRestore), [[180, 112, 760, 428]]);
+    r.controller.destroy();
+});
+
+test("deferred discovery resolving during restoreAsync withholds Up Next and preview rect until finishRestore() (#759)", async () => {
+    const r = await autoplayRig(true);
+    const episodePart = "/catalog/series/series%3As1/seasons?image_size=small";
+    const deckPart = "/home/sections?image_size=small";
+    const held = await playMovieWith(r, EPISODE, () => ({
+        episode: r.h.fake.hold(episodePart),
+        deck: r.h.fake.hold(deckPart),
+    }));
+    r.avplay.tick(7180_000);
+    await r.h.clock.advance(0);
+    r.controller.setPaused(true);
+    r.controller.suspend();
+    r.controller.restore();
+    await r.h.clock.advance(0);
+    const beforeRestore = r.avplay.displayRects.length;
+
+    held.episode.release();
+    held.deck.release();
+    await r.h.clock.advance(0);
+    await r.h.clock.advance(0);
+    assert.equal(last(r.views).phase, "loading");
+    assert.equal(r.avplay.displayRects.length, beforeRestore, "deferred discovery does not call setDisplayRect while restoreAsync is pending");
+
+    r.avplay.finishRestore();
+    await r.h.clock.advance(0);
+    const restored = last(r.views);
+    assert.equal(restored.phase, "paused");
+    assert.equal(restored.upNext?.next?.contentId, "episode:s1e13");
+    assert.deepEqual(r.avplay.displayRects.slice(beforeRestore), [[180, 112, 760, 428]]);
+    r.controller.destroy();
+});

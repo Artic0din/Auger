@@ -2395,6 +2395,10 @@ export class PlaybackController implements PlayerControls {
                 if (attempt.paused) {
                     this.deps.avplay.pause();
                 }
+                if (attempt.rectPending) {
+                    this.setDisplayRect(attempt);
+                    attempt.rectPending = false;
+                }
             } catch (error) {
                 const name = error instanceof Error && error.name ? error.name : "error";
                 noteAvplay(attempt, `play:${name}`);
@@ -3679,7 +3683,11 @@ export class PlaybackController implements PlayerControls {
                 if (attempt.recovery?.active === true) attempt.recovery.recovered(this.deps.clock.now());
                 if (attempt.plan !== undefined && attempt.subtitles.alignOpenStream(attempt.plan) !== "aligned") return;
                 attempt.appliedRect = undefined;
-                this.paintRect(attempt);
+                this.updatePrompt(attempt);
+                if (attempt.appliedRect === undefined) {
+                    this.setDisplayRect(attempt);
+                    attempt.rectPending = false;
+                }
                 this.showPlayback(attempt);
                 if (attempt.plan !== undefined) attempt.subtitles.consumePreparedChoices(attempt.plan);
             } catch {
@@ -3801,6 +3809,7 @@ export class PlaybackController implements PlayerControls {
                         // The next key tries again.
                     }
                     attempt.appliedRect = undefined;
+                    this.updatePrompt(attempt);
                     this.paintRect(attempt);
                     this.showPlayback(attempt);
                     resolve(true);
@@ -3996,6 +4005,7 @@ export class PlaybackController implements PlayerControls {
         if (!this.inPromptWindow(attempt)) {
             attempt.promptDismissed = false;
             if (!attempt.offer.manual && !attempt.offer.credits) this.clearPrompt(attempt);
+            else if (attempt.prompt === undefined) this.publishOffer(attempt);
             else this.paintRect(attempt);
             return;
         }
