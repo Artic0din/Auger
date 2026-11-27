@@ -184,10 +184,6 @@ export function detailPanel(view: View, state: DetailsState, title: string, item
         if (auto !== undefined && name !== "more") auto.element.append(el("small", "details-option-subtext", translate(name === "audio" ? "detail.autoAudio" : name === "subtitles" ? "detail.autoSubtitles" : "detail.autoVersion")));
     }
     const scrim = el("div", "skyline-dropdown-scrim");
-    if (popover) {
-        const trigger = underlying.flatMap(node => Array.from(node.querySelectorAll<HTMLElement>(`[data-focus="${name}"]`)))[0];
-        trigger?.setAttribute("aria-expanded", "true");
-    }
     scrim.addEventListener("click", () => state.closePanel());
     // TVActionPopoverMenu.onMoveCommand: Left or Right closes any popover and focus returns to its trigger.
     if (popover) panel.addEventListener("keydown", event => {
@@ -195,8 +191,15 @@ export function detailPanel(view: View, state: DetailsState, title: string, item
             event.preventDefault(); event.stopPropagation(); state.closePanel();
         }
     });
-    for (const node of underlying) { node.inert = true; node.setAttribute("aria-hidden", "true"); }
-    return { name: `${view.name}:${name}`, content: [...underlying, ...popover ? [] : [scrim], panel], zones: [{ id: name, layout: "column", items: popover ? enabled : items }], focus: initial === undefined ? undefined : { zone: name, key: initial.key }, back: () => state.closePanel() };
+    const prepare = (): void => {
+        view.prepare?.();
+        if (popover) {
+            const trigger = underlying.flatMap(node => Array.from(node.querySelectorAll<HTMLElement>(`[data-focus="${name}"]`)))[0];
+            trigger?.setAttribute("aria-expanded", "true");
+        }
+        for (const node of underlying) { node.inert = true; node.setAttribute("aria-hidden", "true"); }
+    };
+    return { name: `${view.name}:${name}`, content: [...underlying, ...popover ? [] : [scrim], panel], zones: [{ id: name, layout: "column", items: popover ? enabled : items }], focus: initial === undefined ? undefined : { zone: name, key: initial.key }, back: () => state.closePanel(), prepare };
 }
 
 /** SF Symbol checkmark at 20pt bold, in the row's 26pt leading slot. */
