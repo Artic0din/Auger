@@ -236,6 +236,8 @@ test("focused avatar paints Apple's inset white ring above loaded artwork", asyn
     const tv = await openTv(browser, { app: "browse" });
     try {
         await start(tv);
+        await tv.eventually(async () => tv.pendingReplies === 0, "launch reads settled");
+        await afterPaint(tv);
         const avatar = tv.page.locator('[data-focus="profiles"]');
         await avatar.locator('.navigation-avatar').evaluate(node => {
             const image = document.createElement("img");
@@ -428,6 +430,9 @@ test("the For You menu is 460 wide, centred under its tab, with filled icons, sc
     try {
         await tv.page.emulateMedia({ reducedMotion: "reduce" });
         await start(tv);
+        await tv.eventually(async () => tv.pendingReplies === 0, "launch reads delivered");
+        await tv.page.locator('[data-focus="movies"]').waitFor();
+        await afterPaint(tv);
         const tab = tv.page.locator('[data-focus="for_you"]');
         assert.equal(await tab.getAttribute("aria-description"), "Rest to choose Watchlist, Favorites, or Recommendations");
         await tab.focus();

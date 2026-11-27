@@ -3,7 +3,7 @@ import { after, before, test } from "node:test";
 import type { Browser } from "playwright";
 import { FakeWatchParty, ROOM_FILE_ID, ROOM_ID } from "../native/support/fakeWatchParty.ts";
 import { problem } from "../native/support/fakeSilo.ts";
-import { jumpUntil, launchBrowser, openTv, pauseTvClock, type Tv } from "./support/tv.ts";
+import { afterPaint, jumpUntil, launchBrowser, openTv, pauseTvClock, type Tv } from "./support/tv.ts";
 import { button, menuTitles, openHub, start } from "./support/watchParty.ts";
 import { focusSettingsRow, holdSettingsRow } from "./support/settingsRowPress.ts";
 import { assertPressedLook } from "./support/pressed.ts";
@@ -984,7 +984,8 @@ test("host-pick lobby shows guest suggestions on the right; host can queue or lo
         assert.deepEqual([Math.round(poster?.width ?? 0), Math.round(poster?.height ?? 0)], [120, 180]);
         // Clicking queues (stages) the suggestion as the host's pick.
         await button(tv, "host-suggestion:m0004").click();
-        await tv.eventually(async () => fake.selectedContentId === "movie:m0004", "host staged the guest suggestion");
+        await tv.eventually(async () => fake.selectedContentId === "movie:m0004" && tv.pendingReplies === 0, "host staged the guest suggestion");
+        await afterPaint(tv);
         // Context menu on a suggestion card offers Remove suggestion and deletes it.
         await button(tv, "host-suggestion:m0005").click({ button: "right" });
         await view(tv, "watchParty:suggestionMenu").waitFor();
@@ -1010,7 +1011,8 @@ test("ballot cards open a long-press menu with Start this one and Remove suggest
         assert.equal(await button(tv, "suggestion-remove").textContent(), "Remove suggestion");
         await button(tv, "suggestion-remove").click();
         await view(tv, "watchParty:lobby").waitFor();
-        await tv.eventually(async () => (await cards(tv)).length === 1, "m0005 removed from ballot");
+        await tv.eventually(async () => (await cards(tv)).length === 1 && tv.pendingReplies === 0, "m0005 removed from ballot");
+        await afterPaint(tv);
         // Start this one promotes the suggestion and opens playback.
         await button(tv, "suggestion:m0004").click({ button: "right" });
         await view(tv, "watchParty:suggestionMenu").waitFor();
