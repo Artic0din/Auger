@@ -6,6 +6,16 @@ All notable changes to this project are documented in this file.
 
 <!-- changelog:releases -->
 
+## [0.16.1] - 2026-11-27
+
+### Fixes
+
+- **Diagnostics**: Stop adding ELI5 sections to relay-filed issues ([#965](https://github.com/Artic0din/Auger-Tizen/pull/965), [`f4716fbf`](https://github.com/Artic0din/Auger-Tizen/commit/f4716fbf))
+
+### Tests
+
+- **Interface**: Stabilize delayed-answer audiobook, popover, text-scale, and home-language checks ([#967](https://github.com/Artic0din/Auger-Tizen/pull/967), [`cb1e8637`](https://github.com/Artic0din/Auger-Tizen/commit/cb1e8637))
+
 ## [0.16.0] - 2026-11-27
 
 ### Features

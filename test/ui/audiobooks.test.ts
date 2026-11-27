@@ -9,7 +9,7 @@ import type { Browser, Route } from "playwright";
 import { FakeAudiobooks } from "../native/support/fakeAudiobooks.ts";
 import { problem } from "../native/support/fakeSilo.ts";
 import { selectLibraryMode } from "./support/library.ts";
-import { launchBrowser, openTv, type Tv } from "./support/tv.ts";
+import { afterPaint, launchBrowser, openTv, type Tv } from "./support/tv.ts";
 
 const BACK = 10009;
 const ENTER = 13;
@@ -167,9 +167,10 @@ audiobookTest("Start Over hides without resume progress, and Favorite and Finish
     assert.equal(await tv.focused(), "favorite");
     assert.ok(catalog.mutations.includes("PUT /favorites/audiobook%3Ahail"));
     await tv.eventually(
-      async () => tv.fake.requests.filter(r => r.path.startsWith("/favorites/audiobook%3Ahail")).length >= 3,
+      async () => tv.fake.requests.filter(r => r.path.startsWith("/favorites/audiobook%3Ahail")).length >= 3 && tv.pendingReplies === 0,
       "favorite write and readback settled",
     );
+    await afterPaint(tv);
 
     await finished.focus();
     assert.equal(await finished.locator("svg").getAttribute("data-symbol"), "checkmark.circle");
