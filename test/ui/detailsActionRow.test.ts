@@ -163,6 +163,7 @@ test("focused controls cast Apple's black shadows, never a halo", () => openMovi
 for (const reduced of [false, true]) {
     test(`Details Play presses to 0.98 of its 1.025 focus scale, as Apple's pill does (reduced motion: ${reduced})`, () => openMovie(catalog => { catalog.progress.delete("movie:m0001"); }, async tv => {
         await tv.page.emulateMedia({ reducedMotion: reduced ? "reduce" : "no-preference" });
+        await tv.eventually(async () => await tv.page.locator('[data-focus="version"]').getAttribute("aria-disabled") === "false", "playback detail arrived");
         await assertPressedLook(tv, tv.page.locator('[data-focus="play"]'), { focusScale: 1.025, heldScale: 1.025 * 0.98, heldOpacity: 1, animates: "scale" }, reduced);
     }));
 }

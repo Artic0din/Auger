@@ -1,11 +1,13 @@
 import assert from "node:assert/strict";
 import type { Locator } from "playwright";
-import type { Tv } from "./tv.ts";
+import { afterPaint, type Tv } from "./tv.ts";
 
 /** Reads the rendered look and samples real CSS transitions without advancing app timers. */
 export async function assertSelectLook(tv: Tv, key: string, expected: {
     focusScale: number; heldScale: number; opacity: number; focusMs: number; pressMs?: number; face?: string;
 }): Promise<void> {
+    await tv.eventually(async () => tv.pendingReplies <= tv.fake.heldReplies, "pending replies settled before press check");
+    await afterPaint(tv);
     const control = tv.page.locator(`[data-focus="${key}"]`);
     const handle = await control.elementHandle();
     assert.ok(handle !== null);
@@ -85,6 +87,8 @@ export interface PressedExpectation {
  * Layout scale is the transform times the individual `scale` property.
  */
 export async function assertPressedLook(tv: Tv, control: Locator, expected: PressedExpectation, reduced: boolean): Promise<void> {
+    await tv.eventually(async () => tv.pendingReplies <= tv.fake.heldReplies, "pending replies settled before press check");
+    await afterPaint(tv);
     const handle = await control.elementHandle();
     assert.ok(handle !== null);
     const read = (): Promise<{ scale: number; opacity: number; transitions: { property: string; duration: number; easing: string }[] }> =>
