@@ -353,7 +353,7 @@ Swept once for #605 (`rg "getBoundingClientRect\(\)\.(left|right)|offsetLeft|scr
 | Library letter rail (`.browse-letters` and its slide translates) | rail beside the grid | mirrored: on the left in rtl, as Apple does |
 | `cardActions` `menuPosition`, `detailsActions` popover `left` | place a menu or popover beside or under its anchor | not focus calculations; physical placement, left unchanged |
 
-One Arabic test per zone in `test/ui/rtl.test.ts`: rows (a row steps and scrolls, and keeps Apple's 80 px end inset), rails (episodes to S02E06, the picked season pill), the letter rail (Browse grid and rail), Search landing, and Settings (Left from the categories enters the rows).
+One Arabic test per zone in `test/ui/rtl.test.ts`: rows (a row steps and scrolls, and keeps Apple's 80 px end inset), For You, Library Recommended, Collections and Collection detail, Details rails (episodes to S02E06, the picked season pill, Cast, Related, and logical spacing), the letter rail (Browse grid and rail), Search landing, and Settings (Left from the categories enters the rows).
 
 ## Player Keys
 

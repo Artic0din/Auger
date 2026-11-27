@@ -6,8 +6,9 @@
 :where(:root[dir="rtl"]) :is(.browse-card-title, .browse-card-subtitle, .discovery-collection-name, .browse-overview, .skyline-title, .skyline-synopsis, .skyline-meta,
 .requests-title-primary, .requests-title-secondary, .requests-synopsis, .watch-party-overview, .watch-party-choice-overview, .watch-party-hero-title,
 .watch-party-seat-name, .watch-party-candidate-title, .watch-party-candidate-line, .watch-party-choice-title, .watch-party-episodes-title, .watch-party-episode-title,
-.skyline-menu-label, .skyline-profile-title, .settings-profile-name, .collection-detail-title, .details-person-hero .browse-title,
-.audiobook-title, .audiobook-series, .audiobook-credits, .audiobook-state-line, .audiobook-about, .audiobook-passage, .audiobook-fact-value, .audiobook-row-title, .audiobook-section-title, .audiobook-description-title, .audiobook-description-series):not([dir="ltr"] *) { unicode-bidi: plaintext; text-align: right; }
+.skyline-menu-label, .skyline-profile-title, .settings-profile-name, .collection-group-title, .collection-detail-title,
+.audiobook-title, .audiobook-series, .audiobook-credits, .audiobook-state-line, .audiobook-about, .audiobook-passage, .audiobook-fact-value, .audiobook-row-title, .audiobook-section-title, .audiobook-description-title, .audiobook-description-series):where(:not([dir="ltr"] *)),
+:where(:root[dir="rtl"] .details-person-hero) .browse-title:where(:not([dir="ltr"] *)) { unicode-bidi: plaintext; text-align: right; }
 /* Native browse screens, 1920x1080, targeting Tizen 8.0's Chromium 108 engine. */
 .browse.section-catalog { padding: 56px 80px; font-weight: 400; }
 .section-catalog * { font-family: var(--silo-font); font-weight: inherit; }
@@ -174,17 +175,18 @@
 .browse:has(> .details-page-wash) { isolation: isolate; }
 .details-page-wash { position: fixed; inset: 0; z-index: -1; pointer-events: none; }
 /* ratingBadge: 18 bold (TVDetailHero.swift:434-441). Untightened, the scaled chip keeps The Rookie's meta line ending where the Apple TV capture does. */
-.details-rating-badge { flex-shrink: 0; margin-right: 14px; padding: 4px 10px; border: 1.5px solid rgba(255,255,255,.78); border-radius: 5px; color: #fff; font-size: calc(18px * var(--silo-sf-cap-scale)); font-weight: 700; letter-spacing: 0; }
+.details-rating-badge { flex-shrink: 0; margin-inline-end: 14px; padding: 4px 10px; border: 1.5px solid rgba(255,255,255,.78); border-radius: 5px; color: #fff; font-size: calc(18px * var(--silo-sf-cap-scale)); font-weight: 700; letter-spacing: 0; }
 .details-editorial { position: relative; padding-top: 116px; margin-inline-start: 100px; width: 1080px; }
 .details-editorial .browse-title { max-width: 1080px; margin: 0 0 14px; }
 .details-editorial .browse-meta { font-size: 24px; line-height: 36px; margin: 0 0 14px; }
 .details-logo { display: block; max-width: 650px; max-height: 160px; object-fit: contain; object-position: left center; }
+:root[dir="rtl"] .details-logo { object-position: right center; }
 .details-editorial .browse-overview { max-width: 1080px; font-size: 26px; line-height: 36px; max-height: 108px; margin-bottom: 14px; display: -webkit-box; -webkit-line-clamp: 3; -webkit-box-orient: vertical; overflow: hidden; }
 .details-editorial .browse-overview.has-translation-status { -webkit-line-clamp: 2; max-height: 72px; margin-bottom: 3px; }
 .details-editorial .browse-overview.is-translating { opacity: 0.5; }
 .description-translation-status { margin: 0 0 14px; font-size: 21px; line-height: 26px; font-weight: 500; color: var(--silo-secondary); }
 .details-editorial .browse-actions { margin-bottom: 0; }
-.details-editorial .browse-button { padding: 18px 28px; margin-right: 16px; }
+.details-editorial .browse-button { padding: 18px 28px; margin-inline-end: 16px; }
 .details-director, .details-playback-summary { margin: 0 0 20px; color: var(--silo-secondary); font-size: 20px; line-height: 26px; }
 .details-playback-summary { display: flex; gap: 8px; width: 1031px; height: 44px; margin-bottom: 18px; }
 .details-playback-summary > div { display: flex; align-items: baseline; gap: 6px; overflow: hidden; font-size: 23px; }
@@ -199,7 +201,7 @@
 .details-hero[data-media-type="series"] { overflow: visible; }
 .details-hero:not([data-media-type="series"]) { height: auto; min-height: 690px; }
 .details-series-primary { height: 351px; overflow: hidden; }
-.details-series-disclosure { position: absolute; bottom: 0; left: 0; width: 1080px; height: 80px; }
+.details-series-disclosure { position: absolute; bottom: 0; inset-inline-start: 0; width: 1080px; height: 80px; }
 .details-series-disclosure .details-director { height: 28px; margin: 0 0 8px; overflow: hidden; white-space: nowrap; }
 .details-series-disclosure .details-playback-summary { margin-bottom: 0; }
 .details-hero[data-media-type="series"] .details-editorial .browse-actions { margin-top: 6px; }
@@ -228,7 +230,7 @@
 .details-hero[data-media-type="box-set"] .browse-kicker { display: inline-block; margin: 0; border-radius: 30px; background: rgba(0,0,0,.55); box-shadow: inset 0 0 0 1px rgba(255,255,255,.18); padding: 8px 16px; font-size: calc(18px * var(--silo-sf-cap-scale)); font-weight: 600; line-height: 22px; letter-spacing: 1.33px; color: #fff; }
 .details-hero[data-media-type="box-set"] .details-editorial .browse-title { margin: 16px 0 14px; }
 .details-hero[data-media-type="box-set"] .box-set-facts { display: flex; align-items: center; gap: 14px; margin: 0 0 14px; font-size: calc(24px * var(--silo-sf-cap-scale)); font-weight: 500; color: rgba(255,255,255,.88); white-space: nowrap; }
-.details-hero[data-media-type="box-set"] .box-set-facts > :not(:first-child)::before { content: "·"; margin-right: 14px; font-size: calc(22px * var(--silo-sf-cap-scale)); font-weight: 600; color: rgba(255,255,255,.45); }
+.details-hero[data-media-type="box-set"] .box-set-facts > :not(:first-child)::before { content: "·"; margin-inline-end: 14px; font-size: calc(22px * var(--silo-sf-cap-scale)); font-weight: 600; color: rgba(255,255,255,.45); }
 .details-hero[data-media-type="box-set"] .details-playback-summary { margin-top: 0; margin-bottom: 20px; opacity: 0; }
 /* TVCirclePillSurface (TVDetailActions.swift:340-381): a 76 circle that widens to a pill over 0.28 s, the title fading in 0.06 s later. */
 :is(.details-editorial, .audiobook-actions) .details-circle { min-width: 76px; padding: 0; gap: 0; transition: padding .28s ease-in-out, transform .12s ease-out; }
@@ -237,16 +239,16 @@
 :is(.details-editorial, .audiobook-actions) .details-circle:is(:active, [data-pressed]) { transform: scale(.95); }
 .details-external-rating { display: inline-flex; align-items: center; gap: 10px; margin: 0 14px; }
 .details-external-rating img { width: 54px; height: 20px; }
-.details-rating-divider { height: 22px; border-left: 1px solid rgba(255,255,255,.45); }
-.details-genres { margin-left: 14px; }
+.details-rating-divider { height: 22px; border-inline-start: 1px solid rgba(255,255,255,.45); }
+.details-genres { margin-inline-start: 14px; }
 /* TVSimilarRail.loadingPlaceholder: 220x330 at every card size, SiloTheme.cornerRadius, siloSurfaceElevated. */
-.details-related-placeholder { display: inline-block; width: 220px; height: 330px; margin-right: 44px; border-radius: 12px; background: var(--silo-elevated); }
+.details-related-placeholder { display: inline-block; width: 220px; height: 330px; margin-inline-end: 44px; border-radius: 12px; background: var(--silo-elevated); }
 .details-versions { margin-bottom: 28px; padding-bottom: 12px; }
 .details-versions .browse-button[aria-pressed="true"] { background: rgba(255,255,255,.14); border-color: rgba(255,255,255,.4); }
 .details-versions .browse-button:focus { background: #fff; color: #000; }
-.browse-row .browse-card.details-person { width: 200px; margin-right: 60px; border: 0; border-radius: 0; }
+.browse-row .browse-card.details-person { width: 200px; margin-inline-end: 60px; border: 0; border-radius: 0; }
 .browse-row .browse-art.details-photo { width: 200px; height: 200px; border-radius: 100px; }
-.details-people { margin-bottom: 36px; margin-right: -88px; padding-top: 12px; padding-bottom: 12px; padding-right: 88px; }
+.details-people { margin-bottom: 36px; margin-inline-end: -88px; padding-top: 12px; padding-bottom: 12px; padding-inline-end: 88px; }
 .details-people .browse-card-title { padding: 0; min-height: 48px; line-height: 24px; font-weight: 600; white-space: normal; text-align: center; display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; color: rgba(237,237,237,.88); }
 .details-people .browse-card-subtitle { padding: 0; text-align: center; }
 /* TVDetailCastRail: name 20 semibold, character 17 regular (TVDetailCastRail.swift:92,98). Search's people rail keeps its sizes. */
@@ -258,12 +260,12 @@
 .details-photo .browse-art-fallback::before { content: ""; position: absolute; top: 64px; left: 80px; width: 40px; height: 40px; border-radius: 50%; background: var(--silo-secondary); }
 .details-photo .browse-art-fallback::after { content: ""; position: absolute; top: 110px; left: 62px; width: 76px; height: 30px; border-radius: 38px 38px 8px 8px; background: var(--silo-secondary); }
 .details-season-chips { margin-bottom: 14px; padding: 4px 0; }
-.details-season-chips .browse-button { height: 52px; font-size: 22px; font-weight: 500; padding: 0 24px; margin-right: 12px; border-radius: 28px; border-color: transparent; background: rgba(255,255,255,.05); }
+.details-season-chips .browse-button { height: 52px; font-size: 22px; font-weight: 500; padding: 0 24px; margin-inline-end: 12px; border-radius: 28px; border-color: transparent; background: rgba(255,255,255,.05); }
 .details-season-chips .browse-button[aria-pressed="true"] { font-weight: 600; }
 .details-season-chips .browse-button[aria-pressed="true"] { background: rgba(255,255,255,.20); }
 .details-season-chips .browse-button:focus { background: #fff; color: #000; }
 .details-series-rail .browse-row { padding-top: 12px; }
-.browse .details-series-rail .browse-card { margin-right: 54px; }
+.browse .details-series-rail .browse-card { margin-inline-end: 54px; }
 .details-series-rail .browse-card { scroll-margin-top: 24px; }
 /* TVDetailLayout.pageBottomPadding is 140, shared by Movie and Series. */
 .browse:has(.details-hero) { padding-bottom: 140px; }
@@ -279,11 +281,11 @@
 .browse [data-detail-section="related"] .browse-card, .browse [data-detail-section="related"] .browse-art { width: calc(220px * var(--poster-scale, 1)); }
 .browse [data-detail-section="related"] .browse-art { height: calc(330px * var(--poster-scale, 1)); }
 /* TVMediaCard frames the caption at the poster width and centres it. A 2px card border made that frame 4px narrower. */
-.browse [data-detail-section="related"] .browse-card { margin-right: 44px; border: 0; }
+.browse [data-detail-section="related"] .browse-card { margin-inline-end: 44px; border: 0; }
 .details-facts .browse-text { padding: 12px; font-size: 24px; border: 2px solid transparent; border-radius: 12px; }
 .details-facts .browse-text:focus { outline: none; border-color: #fff; }
 /* tvOS person portrait is 300×450, not the 260×390 poster. siloSmall capsules, 12px radius. */
-.details-person-hero .person-portrait { width: 300px; height: 450px; margin-right: 0; margin-inline-end: 48px; border-radius: 12px; border: 1px solid rgba(255, 255, 255, 0.10); background: var(--silo-elevated); }
+.details-person-hero .person-portrait { width: 300px; height: 450px; margin-inline-end: 48px; border-radius: 12px; border: 1px solid rgba(255, 255, 255, 0.10); background: var(--silo-elevated); }
 /* PersonDetailView.swift:466 pads the name column 10pt. The name at line 451 is
    .system(size: 72, weight: .bold). That face's line height is 84.796875
    (ascender 69.609375, descender -15.1875, leading 0) and SwiftUI lays the
@@ -297,7 +299,7 @@
 .details-person-hero .browse-overview { max-width: 920px; max-height: none; margin-bottom: 22px; line-height: 1.35; display: -webkit-box; -webkit-line-clamp: 7; -webkit-box-orient: vertical; overflow: hidden; }
 .person-facts { margin: 0 0 10px; }
 /* Fact capsules: siloSmall 20 regular, 16/8 padding (PersonDetailView.swift:475-483, Typography.swift:34); SF Pro's 23.56 line rounds to 24. */
-.person-fact { display: inline-block; margin: 0 12px 12px 0; padding: 8px 16px; border-radius: 999px; background: #0e0f12; color: var(--silo-text); font-size: calc(20px * var(--silo-sf-cap-scale)); font-weight: 400; line-height: 24px; letter-spacing: -.15px; }
+.person-fact { display: inline-block; margin: 0 0 12px; margin-inline-end: 12px; padding: 8px 16px; border-radius: 999px; background: #0e0f12; color: var(--silo-text); font-size: calc(20px * var(--silo-sf-cap-scale)); font-weight: 400; line-height: 24px; letter-spacing: -.15px; }
 /* PersonMetadataRefreshIndicator: ProgressView + text 8 apart, siloSecondaryText on siloSurfaceVariant at 0.72 (PersonDetailView.swift:725-740). */
 .person-fact.person-metadata-loading { display: inline-flex; align-items: center; gap: 8px; vertical-align: middle; color: var(--silo-secondary); background: rgba(14, 15, 18, 0.72); }
 .person-fact.person-metadata-loading .marquee-spinner { width: 18px; height: 18px; border-width: 2px; opacity: 1; color: var(--silo-text); }
@@ -385,7 +387,7 @@
 /* TVBoxSetRow: TVMediaCard.artworkSize scales 220 by the card size; TVMediaCard and SectionExploreAllCard round by 12. */
 .box-set-row.browse-row .browse-card, .box-set-row.browse-row .browse-art { width: calc(220px * var(--poster-scale, 1)); }
 .box-set-row.browse-row .browse-art { height: calc(330px * var(--poster-scale, 1)); border-radius: 12px; }
-.box-set-row.browse-row .browse-card { margin-right: 44px; }
+.box-set-row.browse-row .browse-card { margin-inline-end: 44px; }
 .box-set-current-outline { position: absolute; inset: 0; border: 4px solid rgba(255,255,255,.8); border-radius: inherit; pointer-events: none; }
 .box-set-row .browse-card:focus .box-set-current-outline { border-color: transparent; }
 /* SectionExploreAllCard's tvOS label is siloPosterTitle, 24 (SectionExploreAllCard.swift:95-98, Typography.swift:22). */
@@ -393,7 +395,7 @@
 /* TVBoxSetRow's and TVCatalogGrid's TVMediaCard caption: siloPosterTitle 24 and siloPosterMetadata 20 (TVMediaCard.swift:259,267). */
 .box-set-row .browse-card-title, .box-set-grid .browse-card-title { font-size: calc(24px * var(--silo-sf-cap-scale)); }
 .box-set-row .browse-card-subtitle, .box-set-grid .browse-card-subtitle { font-size: calc(20px * var(--silo-sf-cap-scale)); }
-.box-set-current-label { position: absolute; left: 12px; bottom: 12px; padding: 4px 9px; border-radius: 999px; background: #fff; color: #000; font-size: calc(16px * var(--silo-sf-cap-scale)); font-weight: 800; letter-spacing: 1.78px; text-transform: uppercase; line-height: 1; }
+.box-set-current-label { position: absolute; inset-inline-start: 12px; bottom: 12px; padding: 4px 9px; border-radius: 999px; background: #fff; color: #000; font-size: calc(16px * var(--silo-sf-cap-scale)); font-weight: 800; letter-spacing: 1.78px; text-transform: uppercase; line-height: 1; }
 .search-scene .search-people-rail { display: flex; gap: 60px; width: 1920px; height: 328px; margin: 0 -76px 18px; padding: 14px 238px 30px; --reveal-end: 318px; }
 .search-overflow-rail .search-rail-outside:not(:focus) { opacity: 0; pointer-events: none; }
 .search-scene .search-people-rail .details-person { flex: 0 0 200px; width: 200px; margin: 0; padding: 0; border: 0; background: transparent; }
@@ -668,7 +670,8 @@
 
 .browse-button {
     display: inline-block;
-    margin: 0 24px 0 0;
+    margin: 0;
+    margin-inline-end: 24px;
     padding: 20px 40px;
     border: 2px solid var(--silo-hairline);
     border-radius: 40px;
@@ -709,7 +712,8 @@
 .browse-row {
     overflow: hidden;
     white-space: nowrap;
-    padding: 8px 0 8px 8px;
+    padding-block: 8px;
+    padding-inline: 8px 0;
 }
 
 .browse-grid {
@@ -718,7 +722,8 @@
     grid-column-gap: 24px;
     grid-row-gap: 24px;
     width: 1728px;
-    padding: 16px 0 0 12px;
+    padding-block: 16px 0;
+    padding-inline: 12px 0;
 }
 .browse-grid .browse-card { margin: 0; }
 
@@ -726,7 +731,8 @@
     display: inline-block;
     vertical-align: top;
     width: 256px;
-    margin: 0 24px 24px 0;
+    margin: 0 0 24px;
+    margin-inline-end: 24px;
     padding: 0;
     border: 2px solid transparent;
     border-radius: 12px;
@@ -858,7 +864,7 @@
     flex: 0 0 auto;
     width: 400px;
     height: 600px;
-    margin-right: 64px;
+    margin-inline-end: 64px;
 }
 
 .browse-detail-info {
@@ -885,7 +891,8 @@
 
 .browse-episodes {
     width: 1500px;
-    padding: 8px 0 0 8px;
+    padding-block: 8px 0;
+    padding-inline: 8px 0;
 }
 
 .browse-episode {
@@ -906,7 +913,7 @@
     flex: 0 0 auto;
     width: 320px;
     height: 180px;
-    margin-right: 32px;
+    margin-inline-end: 32px;
 }
 
 .browse-episode-info {
@@ -1100,17 +1107,19 @@ svg.library-empty-icon { width: auto; }
 .library-empty-body { margin: 0; padding: 0 60px; font-size: calc(22px * var(--silo-sf-cap-scale)); line-height: 27px; color: var(--silo-secondary); }
 /* TVLibraryBrowseView.swift:84-89: .caption (25pt on tvOS), default padding, on .ultraThinMaterial at the bottom edge. */
 .library-incomplete { position: fixed; left: 0; right: 0; bottom: 0; width: fit-content; margin: 0 auto; padding: 16px; font-size: calc(25px * var(--silo-sf-cap-scale)); line-height: 30px; color: var(--silo-text); background: rgba(40,40,44,.55); -webkit-backdrop-filter: blur(30px); backdrop-filter: blur(30px); pointer-events: none; }
-.browse .discovery-collection { position: relative; width: 430px; height: 234px; flex-shrink: 0; padding: 24px; margin: 0; border-radius: 16px; white-space: normal; overflow-wrap: break-word; background: linear-gradient(#2e3036,#121316); border: 2px solid rgba(255,255,255,.12); }
-.browse .browse-row .discovery-collection { width: 430px; margin-right: 24px; }
-.discovery-collection-art { position: absolute; left: 28px; top: 36px; width: 104px; height: 156px; transform: rotate(-8deg); overflow: hidden; border-radius: 8px; }
+.browse .discovery-collection { position: relative; width: 430px; height: 234px; flex-shrink: 0; padding: 24px; margin: 0; border-radius: 16px; white-space: normal; overflow-wrap: break-word; text-align: start; background: linear-gradient(#2e3036,#121316); border: 2px solid rgba(255,255,255,.12); }
+.browse .browse-row .discovery-collection { width: 430px; margin-inline-end: 24px; }
+.discovery-collection-art { position: absolute; inset-inline-start: 28px; top: 36px; width: 104px; height: 156px; transform: rotate(-8deg); overflow: hidden; border-radius: 8px; }
+:root[dir="rtl"] .discovery-collection:not([data-collage="true"]) .discovery-collection-art { transform: rotate(8deg); }
 .discovery-collection-art img { width: 100%; height: 100%; object-fit: cover; }
 .discovery-collection[data-collage="true"] .discovery-collection-art { width: 156px; transform: none; }
-.discovery-collection-name, .discovery-collection-count { display: block; margin-left: 170px; text-align: start; }
+.discovery-collection-name, .discovery-collection-count { display: block; margin-inline-start: 170px; }
 .discovery-collection-name { font-size: 25px; font-weight: 700; }
 .discovery-collection-count { margin-top: 12px; font-size: 17px; }
 .browse .discovery-collection:focus { border-color: #fff; background: linear-gradient(#2e3036,#121316); color: #ededed; }
 .discovery-collection-art { background: #252830; }
 .skyline-scope { float: right; font-size: 18px; color: rgba(237,237,237,.6); }
+:root[dir="rtl"] .skyline-scope { float: left; }
 .browse-row .browse-card.skyline-continue { width: 376px; }
 .browse-row .skyline-continue .browse-art { width: 372px; height: 209px; }
 /* ProgressBar.swift: 3pt, radius 2, white 20% track, siloOnSurface fill. The art's overflow clips it to the 12pt card corner. */
@@ -1180,23 +1189,23 @@ svg.library-empty-icon { width: auto; }
 .skyline-meta, .skyline-meta * { letter-spacing: 0; }
 .skyline-library .skyline-meta { font-size: calc(19px * var(--silo-sf-cap-scale)); }
 /* SwiftUI's strokeBorder sits inside the 10x5 padding; a CSS border sits outside it, so the padding drops 1px. */
-.skyline-chip { flex-shrink: 0; display: inline-block; margin-right: 10px; padding: 4px 9px; border: 1px solid rgba(255,255,255,.24); border-radius: 6px; background: rgba(255,255,255,.07); color: rgba(255,255,255,.92); font-size: calc(15px * var(--silo-sf-cap-scale)); font-weight: 600; letter-spacing: 1.65px; line-height: 18px; }
+.skyline-chip { flex-shrink: 0; display: inline-block; margin-inline-end: 10px; padding: 4px 9px; border: 1px solid rgba(255,255,255,.24); border-radius: 6px; background: rgba(255,255,255,.07); color: rgba(255,255,255,.92); font-size: calc(15px * var(--silo-sf-cap-scale)); font-weight: 600; letter-spacing: 1.65px; line-height: 18px; }
 /* lineSpacing(6) adds 6px between lines only, a 33px line pitch in the capture. CSS line-height also pads above the
    first line and below the last, so the margins take that back. */
 .skyline-synopsis { max-width: 780px; margin: -3px 0 9px; overflow: hidden; font-size: calc(22px * var(--silo-sf-cap-scale)); line-height: 33px; letter-spacing: -0.35px; color: rgba(237,237,237,.6); display: -webkit-box; -webkit-line-clamp: 3; -webkit-box-orient: vertical; }
 .skyline-synopsis.is-translating { opacity: 0.5; }
 .skyline-translation-visible .skyline-synopsis { -webkit-line-clamp: 2; }
 .skyline-title-wrapped.skyline-translation-visible .skyline-synopsis, .skyline-library .skyline-translation-visible .skyline-synopsis { -webkit-line-clamp: 1; }
-.skyline-translation-status { flex: none; margin-right: 18px; font-size: 0.85em; font-weight: 500; }
+.skyline-translation-status { flex: none; margin-inline-end: 18px; font-size: 0.85em; font-weight: 500; }
 .skyline-title-wrapped .skyline-synopsis, .skyline-library .skyline-synopsis { -webkit-line-clamp: 2; }
 .skyline-meta-lead, .skyline-meta-trailing { min-width: 0; overflow: hidden; text-overflow: ellipsis; }
 .skyline-meta-dot { flex-shrink: 0; white-space: pre; }
 /* Apple RatingEntryView at the meta size: a dimmed semibold text mark at 0.87x, 0.35x apart from a bold score. */
 .skyline-rating { flex-shrink: 0; }
-.skyline-rating-mark { margin-right: 7px; font-size: calc(17px * var(--silo-sf-cap-scale)); font-weight: 600; opacity: .72; }
+.skyline-rating-mark { margin-inline-end: 7px; font-size: calc(17px * var(--silo-sf-cap-scale)); font-weight: 600; opacity: .72; }
 .skyline-rating-score { font-weight: 700; font-variant-numeric: tabular-nums; }
 /* TMDB's approved logo replaces its text mark at the score's cap height (0.7x), undimmed, on the baseline. */
-.skyline-rating-logo { height: 14px; width: auto; margin-right: 7px; vertical-align: baseline; }
+.skyline-rating-logo { height: 14px; width: auto; margin-inline-end: 7px; vertical-align: baseline; }
 .skyline-library .skyline-rating-logo { height: 13px; }
 /* Apple TVMarqueeBlock titleSlot (TVFocusMarquee.swift): resizable aspect-fit
    inside maxWidth 880 and maxHeight scale.logoMaxHeight, alignment .leading
@@ -1225,7 +1234,7 @@ svg.library-empty-icon { width: auto; }
 .browse-row .browse-art { width: 208px; height: 312px; border-radius: 12px; }
 .browse-card-title { font-size: 20px; }
 .skyline-library .skyline-content:has(.library-media-shelf) { left: 72px; width: 1776px; padding-left: 16px; padding-right: 16px; }
-.library-media-shelf .browse-row { margin-left: -16px; padding: 32px 24px; }
+.library-media-shelf .browse-row { margin-inline-start: -16px; padding: 32px 24px; }
 .library-media-shelf .browse-card:focus { transform: none; border-color: transparent; box-shadow: none; }
 .library-media-shelf .browse-art { transition: transform var(--silo-fast) ease-out, box-shadow var(--silo-fast) ease-out; }
 .library-media-shelf .browse-card-title { font-weight: 500; color: rgba(237,237,237,.45); }
@@ -1270,7 +1279,7 @@ svg.library-empty-icon { width: auto; }
 .card-overlay-icon { display: block; flex: none; fill: currentColor; stroke: none; }
 /* Home rows: Apple MediaRow, MediaCard and EpisodeThumbCard (silo-apple 1a7ccee). The content reaches into a
    40px gutter so a lifted first card is never clipped; cards still start at the 88px edge. */
-.skyline-preview:not(.skyline-library):not(.skyline-home) .skyline-content { left: 48px; width: 1824px; padding-left: 40px; }
+.skyline-preview:not(.skyline-library):not(.skyline-home) .skyline-content { left: 48px; width: 1824px; padding-inline-start: 40px; }
 .home-section { margin: 0; }
 /* Apple MediaRow header: siloHeadline 36pt semibold, play.circle.fill at 32pt, HStack(spacing: 14) (silo-apple 85679e7).
    The size is 36 times --silo-sf-cap-scale and the tracking is tuned so the "Continue Watching" ink runs x134-439 as in
@@ -1280,12 +1289,9 @@ svg.library-empty-icon { width: auto; }
 .home-row-glyph { position: relative; display: inline-block; vertical-align: -4px; width: 33px; height: 33px; margin: 0; margin-inline: 3px 17px; border-radius: 50%; background: #ededed; }
 .home-row-glyph::after { content: ""; position: absolute; top: 10px; left: 11px; border-style: solid; border-width: 7px 0 7px 12px; border-color: transparent transparent transparent #000; }
 /* Top is the 20px title gap plus Skyline's 14px card padding. Bottom is that 14px, not MediaRow's 24px default. */
-.home-section .browse-row { margin-left: -40px; padding: 34px 40px 14px; }
-.home-section .browse-card { width: 176px; margin: 0 40px 0 0; border: 0; border-radius: 0; transition: none; scroll-margin-top: 20px; }
+.home-section .browse-row { margin-inline-start: -40px; padding: 34px 40px 14px; }
+.home-section .browse-card { width: 176px; margin: 0; margin-inline-end: 40px; border: 0; border-radius: 0; transition: none; scroll-margin-top: 20px; }
 .home-section .browse-card:focus { transform: none; box-shadow: none; }
-/* Home mirrors its card gap and row inset; the Details and library rails that share these row rules keep their own physical spacing. */
-:root[dir="rtl"] [data-view="home"] .home-section .browse-card { margin-right: 0; margin-left: 40px; }
-:root[dir="rtl"] [data-view="home"] .home-section .browse-row { margin-left: 0; }
 .home-section .browse-art { width: 176px; height: 264px; border-radius: 12px; transition: transform var(--silo-fast) ease-out, box-shadow var(--silo-fast) ease-out; }
 .home-section .browse-card.skyline-continue { width: 360px; }
 /* EpisodeThumbCard.swift:352-356 rests at radius 8, y 4; CSS blur is twice the SwiftUI radius. Explore all has only the shared lift (SectionExploreAllCard.swift:37). */
@@ -1299,7 +1305,7 @@ svg.library-empty-icon { width: auto; }
 /* TVMediaCardCaption frames the title at the artwork width (densePosterCardWidth 176 times the poster scale) and does not clip it. The subtitle is the clipped line. clientWidth floors that frame and scrollWidth ceils the ink, so a line Apple draws in full at about 152px is replaced by an ellipsis. The extra 2px is that floor plus that ceil. The negative margin keeps the card at the artwork width, and a longer line still truncates. */
 /* siloPosterTitle 24pt and siloPosterMetadata 20pt (Typography.swift:22, :25) times --silo-sf-cap-scale. Untracked Inter at
    that size keeps the Apple TV capture's 152px "The Dog Stars". */
-.home-section .browse-card-title { width: calc(100% + 2px); margin: 22px -2px 0 0; font-size: calc(24px * var(--silo-sf-cap-scale)); letter-spacing: 0; font-weight: 500; color: rgba(237,237,237,.45); }
+.home-section .browse-card-title { width: calc(100% + 2px); margin: 22px 0 0; margin-inline-end: -2px; font-size: calc(24px * var(--silo-sf-cap-scale)); letter-spacing: 0; font-weight: 500; color: rgba(237,237,237,.45); }
 .home-section .browse-card-subtitle { margin: 4px 0 0; font-size: calc(20px * var(--silo-sf-cap-scale)); letter-spacing: 0; font-weight: 400; color: rgba(237,237,237,.32); }
 .home-section .skyline-continue .browse-card-title { margin-top: 14px; }
 /* TVCollectionPosterCard: Home and library Recommended collection cards use 16px spacing and centred captions. */
@@ -1406,13 +1412,13 @@ svg.library-empty-icon { width: auto; }
 .details-track-popover .details-audio-options { gap: 2px; }
 .details-popover-scroll { position: relative; max-height: 504px; overflow-y: auto; scrollbar-width: none; }
 .details-popover-scroll::-webkit-scrollbar { display: none; }
-.details-track-popover .browse-button { position: relative; box-sizing: border-box; flex-shrink: 0; padding: 13px 18px 13px 58px; border-radius: 14px; font-size: calc(22px * var(--silo-sf-cap-scale)); font-weight: 600; line-height: 28px; color: rgba(255,255,255,.9); }
+.details-track-popover .browse-button { position: relative; box-sizing: border-box; flex-shrink: 0; padding-block: 13px; padding-inline: 58px 18px; border-radius: 14px; font-size: calc(22px * var(--silo-sf-cap-scale)); font-weight: 600; line-height: 28px; color: rgba(255,255,255,.9); }
 .skyline-selector.details-track-popover .browse-button:focus { background: #fff; color: #000; box-shadow: none; }
 .skyline-selector.details-track-popover .browse-button[aria-checked="true"]:not(:focus) { background: transparent; }
 .details-track-popover .browse-button[aria-disabled="true"] { opacity: .4; }
 .details-track-popover .details-option-subtext { margin-top: 2px; font-size: calc(17px * var(--silo-sf-cap-scale)); font-weight: 500; line-height: 20px; opacity: .7; }
 .details-track-popover .details-option-title, .details-track-popover .details-option-subtext { display: block; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-.details-more-icon, .details-option-check { position: absolute; left: 18px; top: 50%; transform: translateY(-50%); width: 26px; height: 20px; }
+.details-more-icon, .details-option-check { position: absolute; inset-inline-start: 18px; top: 50%; transform: translateY(-50%); width: 26px; height: 20px; }
 .details-more-popover .browse-button { --icon-ink: #000; }
 .details-more-popover .browse-button:focus { --icon-ink: #fff; }
 @media (prefers-reduced-motion: reduce) {
@@ -1434,7 +1440,7 @@ svg.library-empty-icon { width: auto; }
 .browse .signin-alert .signin-actions .browse-button.skyline-destructive:focus { color: #000; }
 .details-option-subtext { display: block; font-size: 20px; line-height: 26px; opacity: .65; }
 /* Detail metrics are scoped here after the shared Home card and heading rules. */
-.browse:has(.details-hero) > .browse-section-title, .browse:has(.details-hero) .details-facts > .browse-section-title { margin-left: 12px; margin-bottom: 14px; font-size: calc(36px * var(--silo-sf-cap-scale)); line-height: 43.2px; font-weight: 600; }
+.browse:has(.details-hero) > .browse-section-title, .browse:has(.details-hero) .details-facts > .browse-section-title { margin-inline-start: 12px; margin-bottom: 14px; font-size: calc(36px * var(--silo-sf-cap-scale)); line-height: 43.2px; font-weight: 600; }
 .details-editorial .browse-title:has(.details-logo) { display: flex; align-items: flex-end; height: 160px; }
 .details-editorial .browse-meta { line-height: 29px; }
 .details-hero[data-media-type="series"] .browse-meta { height: 36px; }
@@ -1463,12 +1469,12 @@ svg.library-empty-icon { width: auto; }
 .details-external-rating { margin: 0; gap: 8px; }
 .details-external-rating img { width: auto; height: 16.8px; }
 .details-rating-score { font-weight: 700; color: #fff; }
-.details-genres { margin-left: 0; }
+.details-genres { margin-inline-start: 0; }
 /* TVDetailHero factsRow: chips, then text facts, ratings and one source token. */
 .details-editorial .browse-meta:not(.box-set-facts) { display: flex; align-items: center; column-gap: 14px; overflow: hidden; white-space: nowrap; }
 .details-hero:not([data-media-type="series"]) .details-editorial .browse-meta:not(.box-set-facts) { height: 33px; }
-.details-editorial .browse-meta:not(.box-set-facts) > .details-rating-badge { margin-right: 0; }
-.details-editorial .browse-meta:not(.box-set-facts) > :not(.details-rating-badge) + :not(.details-rating-badge)::before { content: "·"; margin-right: 14px; font-size: calc(22px * var(--silo-sf-cap-scale)); font-weight: 600; color: rgba(255, 255, 255, 0.45); }
+.details-editorial .browse-meta:not(.box-set-facts) > .details-rating-badge { margin-inline-end: 0; }
+.details-editorial .browse-meta:not(.box-set-facts) > :not(.details-rating-badge) + :not(.details-rating-badge)::before { content: "·"; margin-inline-end: 14px; font-size: calc(22px * var(--silo-sf-cap-scale)); font-weight: 600; color: rgba(255, 255, 255, 0.45); }
 .details-editorial .details-fact,
 .details-editorial .details-external-rating,
 .details-editorial .details-rating-badge { flex-shrink: 0; }
@@ -1485,11 +1491,11 @@ svg.library-empty-icon { width: auto; }
 .details-editorial .details-external-rating span:not(.details-rating-score) { font-size: calc(21px * var(--silo-sf-cap-scale)); font-weight: 600; opacity: 0.72; }
 .details-editorial .details-rating-score { font-size: calc(24px * var(--silo-sf-cap-scale)); letter-spacing: 0; font-variant-numeric: tabular-nums; }
 /* RatingEntryView spaces the TMDB logo and score by round(24 x 0.35) = 8, the row gap; Home's 7px logo margin does not apply. */
-.details-editorial .skyline-rating-logo { margin-right: 0; }
+.details-editorial .skyline-rating-logo { margin-inline-end: 0; }
 /* TVDetailLayout.horizontalInset = 100; the surrounding section starts at 88. */
 .details-season-chips { padding: 4px calc(100px - 88px); }
 /* Swift's scrollClipDisabled paints past the mode viewport's trailing inset. */
-.details-season-chips { margin-right: -88px; padding-right: 100px; }
+.details-season-chips { margin-inline-end: -88px; padding-inline-end: 100px; }
 /* Paint to the screen edges while retaining the logical scroll viewport.
    The row starts at x=0 so the predecessor can sit in the lookbehind.
    TVEpisodeRail's lookbehind is one card step (width + spacing) and its
@@ -1502,7 +1508,8 @@ svg.library-empty-icon { width: auto; }
    An earlier season that is not loaded keeps the spacing in the slot. */
 .details-series-rail { --episode-spacing: 40px; --episode-origin-shift: 0px; }
 .details-series-rail .details-episodes[data-window-origin="series-start"] { --episode-origin-shift: 40px; }
-.details-series-rail .details-episodes { --episode-paint-end: 88px; margin-left: -88px; margin-right: -88px; padding: 12px calc(100px + var(--episode-spacing) - var(--episode-origin-shift) + 360px * var(--poster-scale, 1) * .025 + 2px); clip-path: inset(0 0 0 100px); }
+.details-series-rail .details-episodes { --episode-paint-end: 88px; margin-inline: -88px; padding: 12px calc(100px + var(--episode-spacing) - var(--episode-origin-shift) + 360px * var(--poster-scale, 1) * .025 + 2px); clip-path: inset(0 0 0 100px); }
+:where(:root[dir="rtl"]) .details-series-rail .details-episodes { clip-path: inset(0 100px 0 0); }
 .details-playback-summary span:empty { align-self: center; width: 128px; height: 16px; border-radius: 4px; background: rgba(255,255,255,.1); }
 .details-playback-summary [data-track-summary="audio"] span:empty { width: 166px; }
 .details-playback-summary [data-track-summary="subtitles"] span:empty { width: 77px; }
@@ -1527,7 +1534,7 @@ svg.library-empty-icon { width: auto; }
 /* RatingEntryView draws in white; only its text mark dims to .72. */
 .details-editorial .details-external-rating { color: #fff; }
 /* The rating is an 8px-gap flex row, so its divider keeps 6 of Apple's 14 after the dot. */
-.details-editorial .browse-meta:not(.box-set-facts) > :not(.details-rating-badge).details-external-rating::before { margin-right: 6px; }
+.details-editorial .browse-meta:not(.box-set-facts) > :not(.details-rating-badge).details-external-rating::before { margin-inline-end: 6px; }
 /* DescriptionTranslationStatusLabel: the translate symbol and text 6 apart, 21 medium, pulsing while translating. */
 .details-editorial .description-translation-status { display: flex; align-items: center; gap: 6px; font-size: calc(21px * var(--silo-sf-cap-scale)); }
 .description-translation-status svg { width: 1.1em; height: 1.1em; flex-shrink: 0; }
@@ -1562,6 +1569,7 @@ svg.library-empty-icon { width: auto; }
 .details-loading-title { position: relative; display: flex; align-items: flex-end; width: 700px; height: 132px; }
 /* silo-apple 3651342 TVItemDetailLoadingView.swift:125-129 and TVDetailHero.swift:596-606: 700 by 132, bottom leading. */
 .details-loading-title .details-logo { max-width: 700px; max-height: 132px; object-position: left bottom; }
+:root[dir="rtl"] .details-loading-title .details-logo { object-position: right bottom; }
 .details-loading-title .details-title-exit { top: auto; bottom: 0; }
 .details-loading-title-text { max-width: 700px; overflow: hidden; display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; font-size: calc(64px * var(--silo-sf-cap-scale)); font-weight: 700; line-height: 75.37px; letter-spacing: -.8px; color: #fff; }
 .details-loading-meta { display: flex; align-items: center; height: 36px; max-width: 1720px; overflow: hidden; white-space: pre; text-overflow: ellipsis; font-size: calc(24px * var(--silo-sf-cap-scale)); font-weight: 600; color: rgba(255,255,255,.76); }
@@ -1573,19 +1581,19 @@ svg.library-empty-icon { width: auto; }
 .details-loading-readout > div { display: flex; flex-direction: column; align-items: flex-start; gap: 5px; }
 .details-loading-label { font-size: calc(12px * var(--silo-sf-cap-scale)); font-weight: 700; line-height: 14.13px; letter-spacing: 1.6px; color: rgba(255,255,255,.42); }
 .details-loading-actions { display: flex; gap: 14px; margin-top: 6px; }
-.details-loading-rail { display: flex; flex-direction: column; gap: 14px; margin-left: 12px; overflow: hidden; }
+.details-loading-rail { display: flex; flex-direction: column; gap: 14px; margin-inline-start: 12px; overflow: hidden; }
 .details-loading-cards { display: flex; }
 .details-episodes .skyline-progress { bottom: 8px; left: 10px; right: 10px; height: 4px; border-radius: 999px; background: rgba(0,0,0,.55); box-shadow: 0 0 0 1px rgba(0,0,0,.35), 0 1px 3px rgba(0,0,0,.45); }
 .details-episodes .skyline-progress-fill { border-radius: 999px; background: var(--silo-text); box-sizing: border-box; box-shadow: inset 0 0 0 0.5px rgba(0,0,0,.4); }
 .browse:has(.details-hero) > .browse-row:has(+ .browse-section-title) { margin-bottom: 35px; }
 /* TVTrailersRail rail padding 12 plus body section spacing 64 is the 76px caption-to-heading gap.
    The body inset is 100, and scrollClipDisabled paints through the trailing 88px to the screen edge. */
-.browse:has(.details-hero) > .browse-row.details-extras { margin-bottom: 64px; margin-right: -88px; padding: 12px 0 12px 12px; }
-.browse .browse-row.details-extras .details-extra { box-sizing: border-box; width: 470px; margin: 0 48px 0 0; border: 0; text-align: center; background: transparent; box-shadow: none; appearance: none; }
-.browse .browse-row.details-extras .details-extra:last-child { margin-right: 0; }
+.browse:has(.details-hero) > .browse-row.details-extras { margin-bottom: 64px; margin-inline-end: -88px; padding-block: 12px; padding-inline: 12px 0; }
+.browse .browse-row.details-extras .details-extra { box-sizing: border-box; width: 470px; margin: 0; margin-inline-end: 48px; border: 0; text-align: center; background: transparent; box-shadow: none; appearance: none; }
+.browse .browse-row.details-extras .details-extra:last-child { margin-inline-end: 0; }
 .browse .browse-row.details-extras .browse-still { width: 470px; height: 264px; border-radius: 18px; background: #15171c; box-shadow: 0 4px 16px rgba(0,0,0,.3); }
-.browse .browse-row.details-extras .details-extra .browse-card-title { margin: 14px 0 0; padding: 0; font-size: calc(21px * var(--silo-sf-cap-scale)); font-weight: 600; line-height: normal; color: rgba(237,237,237,.92); }
-.browse .browse-row.details-extras .details-extra .browse-card-subtitle { margin: 5px 0 0; padding: 0; font-size: calc(17px * var(--silo-sf-cap-scale)); font-weight: 500; color: rgba(237,237,237,.6); }
+.browse .browse-row.details-extras .details-extra .browse-card-title { margin: 14px 0 0; padding: 0; text-align: center; font-size: calc(21px * var(--silo-sf-cap-scale)); font-weight: 600; line-height: normal; color: rgba(237,237,237,.92); }
+.browse .browse-row.details-extras .details-extra .browse-card-subtitle { margin: 5px 0 0; padding: 0; text-align: center; font-size: calc(17px * var(--silo-sf-cap-scale)); font-weight: 500; color: rgba(237,237,237,.6); }
 .browse .details-extra .browse-art-fallback { display: flex; align-items: center; justify-content: center; height: 100%; padding: 0; color: rgba(237,237,237,.6); }
 .browse .details-extra .details-extra-play { position: absolute; z-index: 1; left: 50%; top: 50%; width: 60px; height: 60px; margin: -30px 0 0 -30px; display: flex; align-items: center; justify-content: center; border-radius: 50%; background: rgba(0,0,0,.55); box-shadow: 0 3px 16px rgba(0,0,0,.35); }
 .browse .details-extra .details-extra-play svg { display: block; width: 24px; height: 24px; }
@@ -1602,19 +1610,19 @@ svg.library-empty-icon { width: auto; }
    insets 88, so padding that reaches horizontalInset 100 keeps the first
    portrait there. The scrollport itself starts at the screen edge: the
    terminal step places a 200px portrait at x=60, and a clip at 88 would cut it. */
-.browse:has(.details-hero) > .details-people { margin-left: -88px; padding-top: 12px; padding-right: 100px; padding-left: 100px; }
-.browse:has(.details-hero) > .browse-row[data-detail-section="related"] { margin-right: -88px; padding-left: 12px; padding-right: 0; }
-.browse:has(.details-hero) > .details-people .details-person:last-child { margin-right: 0; }
-.browse .details-series-rail .browse-card { margin-right: var(--episode-spacing); }
+.browse:has(.details-hero) > .details-people { margin-inline-start: -88px; padding-top: 12px; padding-inline: 100px; }
+.browse:has(.details-hero) > .browse-row[data-detail-section="related"] { margin-inline-end: -88px; padding-inline: 12px 0; }
+.browse:has(.details-hero) > .details-people .details-person:last-child { margin-inline-end: 0; }
+.browse .details-series-rail .browse-card { margin-inline-end: var(--episode-spacing); }
 .browse .details-series-rail .browse-card .browse-card-title { padding: 0; font-size: calc(20px * var(--silo-sf-cap-scale)); font-weight: 600; line-height: 28px; margin-top: 18px; }
 .browse .details-series-rail .browse-card .browse-card-subtitle { padding: 0; line-height: 24px; }
-.details-facts-table { position: relative; margin-left: 12px; }
+.details-facts-table { position: relative; margin-inline-start: 12px; }
 .details-facts-table:focus { background: transparent; }
 /* TVDetailFactsSection rounds its focus fill by SiloTheme.smallCornerRadius 8. */
 .details-facts-table:focus::before { content: ""; position: absolute; inset: -14px -28px; border-radius: 8px; background: rgba(255,255,255,.06); pointer-events: none; }
 /* TVSeriesModeTab: 22pt, medium or semibold when selected, 24pt sides, 52pt tall capsule, 12pt apart, white text.
    Text is 22 times --silo-sf-cap-scale with tracking tuned so Season 1 to 8 spans x100-1297 as in the Apple TV capture. */
-.browse .details-season-chips .browse-button { box-sizing: border-box; height: 52px; padding: 0 24px; margin-right: 12px; border: 0; border-radius: 26px; color: #fff; font-size: calc(22px * var(--silo-sf-cap-scale)); letter-spacing: -.06px; transition: background-color var(--silo-fast) ease-out, color var(--silo-fast) ease-out, box-shadow var(--silo-fast) ease-out; }
+.browse .details-season-chips .browse-button { box-sizing: border-box; height: 52px; padding: 0 24px; margin-inline-end: 12px; border: 0; border-radius: 26px; color: #fff; font-size: calc(22px * var(--silo-sf-cap-scale)); letter-spacing: -.06px; transition: background-color var(--silo-fast) ease-out, color var(--silo-fast) ease-out, box-shadow var(--silo-fast) ease-out; }
 /* TVSeriesModeTabStyle's focused shadow (.28, radius 10, y 4); an unselected tab paints white after a 70ms dwell. */
 .browse .details-season-chips .browse-button:focus { background: #fff; color: #000; box-shadow: 0 4px 20px rgba(0,0,0,.28); transition-delay: 70ms; }
 .browse .details-season-chips .browse-button[aria-pressed="true"]:focus { transition-delay: 0ms; }
@@ -1623,7 +1631,7 @@ svg.library-empty-icon { width: auto; }
 .details-season-placeholders-hidden { visibility: hidden; }
 .details-season-placeholder { flex: none; width: 170px; height: 48px; border-radius: 10px; background: rgba(255,255,255,.1); }
 /* TVEpisodeRailPlaceholder inside the anchored rail's reserved height: still + 74pt caption + 24pt padding. */
-.details-series-rail .details-episodes-placeholder { box-sizing: border-box; display: flex; gap: 40px; height: calc(200px * var(--poster-scale, 1) + 98px); margin: 0 -88px 0 0; padding: 12px 0 12px 12px; overflow: hidden; clip-path: none; }
+.details-series-rail .details-episodes-placeholder { box-sizing: border-box; display: flex; gap: 40px; height: calc(200px * var(--poster-scale, 1) + 98px); margin: 0; margin-inline-end: -88px; padding-block: 12px; padding-inline: 12px 0; overflow: hidden; clip-path: none; }
 .details-episode-placeholder { flex: none; display: flex; flex-direction: column; width: calc(360px * var(--poster-scale, 1)); }
 .details-episode-placeholder-still { height: calc(200px * var(--poster-scale, 1)); border-radius: 18px; background: var(--silo-elevated); }
 .details-episode-placeholder-title { width: 112px; height: 15px; margin-top: 18px; border-radius: 4px; background: rgba(255,255,255,.22); }
@@ -1935,8 +1943,9 @@ svg.library-empty-icon { width: auto; }
 .personal-history .catalog-grid { grid-template-columns: repeat(var(--grid-columns, 6), minmax(0, 1fr)); column-gap: 40px; row-gap: 60px; justify-items: center; width: 1664px; margin: 0; padding: 0; }
 .personal-history .catalog-grid .browse-card { --card-caption-gap: 22px; }
 .personal-history .catalog-grid .browse-card-title { margin-top: 22px; }
-/* Left to right the text starts at the left; right to left the shared server-text rule at the top of this file aligns it by the layout, as SwiftUI's Text is. */
+/* Left to right the text starts at the left; right to left it aligns right by the layout (above .catalog-grid's centred rule), as SwiftUI's Text is. */
 :root:not([dir="rtl"]) :is(.personal-lists .personal-grid, .personal-history .catalog-grid) :is(.browse-card-title, .browse-card-subtitle) { text-align: start; }
+:root[dir="rtl"] :is(.personal-lists .personal-grid, .personal-history .catalog-grid, .browse[data-view^="person:"] .catalog-grid) :is(.browse-card-title, .browse-card-subtitle) { text-align: right; }
 
 /* ErrorView, shared with the Requests hub: 48pt icon, 36 semibold headline, 26 body, Try Again 200 wide. */
 .personal-lists .personal-failure,

@@ -239,7 +239,7 @@ export class FocusHost {
             && (focus === undefined || (focus.zone === kept.zone && focus.key === kept.key))
             && view.zones.find(zone => zone.id === kept.zone)?.items.find(candidate => candidate.key === kept.key)?.element === previous?.item.element;
         place(this.container, view.content);
-        // Home, Search, Requests, Calendar, Details, Settings, Change Account, Watch Party, the Watchlist, Favorites and History pages, the Person page and Browse are mirrored in a right-to-left page; the other views are not yet (#571) and keep their left-to-right layout and keys. The shell's own nodes (data-chrome) follow the page.
+        // Home, For You, section catalogs, Library views (Recommended, Collections, Browse), Collection detail, Box Set detail, Search, Requests, Calendar, Details, Settings, Change Account, Watch Party, the Watchlist, Favorites and History pages and the Person page are mirrored in a right-to-left page; the other views keep their left-to-right layout and keys. The shell's own nodes (data-chrome) follow the page.
         const mirrored = MIRRORED_VIEW.test(view.name) || this.container.classList.contains("library-browse");
         for (const node of view.content) { if (node.hasAttribute("data-chrome")) continue; if (mirrored) node.removeAttribute("dir"); else node.setAttribute("dir", "ltr"); }
         this.applyVisit(visit);
@@ -974,8 +974,8 @@ function stepWithin(zone: Pick<Zone, "layout" | "columns">, count: number, index
 }
 
 /** Makes `nodes` the container's children; a node already in its place is not moved, so it keeps focus. */
-/** The views that follow the page's direction: Home, Search, Requests, Calendar, Settings, Change Account and its sibling screens, Details pages and their seasons (`item:` and `season:`), the Watchlist, Favorites and History pages (`personal:`), the Person page (`person:`), and a library's Browse page (the `library-browse` container class). */
-const MIRRORED_VIEW = /^(home(:|$)|item:|audiobook:|season:|search$|requests:|calendar$|settings(:|$)|watchParty:|personal:|person:|accounts-|change-account$|account-expired$)/;
+/** The views that follow the page's direction: Home, For You, section catalogs (`homeSection:`, `libraryResults:`), Library views (`library:`), Collection detail (`results:`), Box Set detail (`boxSet:`), Search, Requests, Calendar, Settings, Change Account and its sibling screens, Details pages and their seasons (`item:` and `season:`), Audiobooks (`audiobook:`), the Watchlist, Favorites and History pages (`personal:`), the Person page (`person:`), and a library's Browse page (`library-browse`). */
+const MIRRORED_VIEW = /^(home(:|$)|for_you(:|$)|homeSection:|library:|libraryResults:|results:|item:|audiobook:|boxSet:|season:|search$|requests:|calendar$|settings(:|$)|watchParty:|personal:|person:|accounts-|change-account$|account-expired$)/;
 
 function place(container: HTMLElement, nodes: readonly HTMLElement[]): void {
     // Remove replaced siblings first so retained focus/press hosts never need a DOM move.

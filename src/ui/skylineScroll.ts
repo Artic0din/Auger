@@ -131,15 +131,17 @@ export class SkylineScroll {
         const first = cards[0], last = cards.at(-1);
         if (first === undefined || last === undefined) return 0;
         // A right-to-left row starts at its right edge: its leading inset is the right padding and its trailing space the left.
-        const style = getComputedStyle(row), rightToLeft = style.direction === "rtl";
+        // Clear stale leading padding first so a direction flip on a cached episode row reads its stylesheet inset,
+        // without mutating style attributes while the cached row keeps the same direction.
+        const rightToLeft = getComputedStyle(row).direction === "rtl";
         const prop = rightToLeft ? "paddingLeft" : "paddingRight";
         const other = rightToLeft ? "paddingRight" : "paddingLeft";
         const previous = SkylineScroll.episodePadding.get(row);
-        if (previous !== undefined && previous.prop !== prop) row.style[other] = "";
-        const inset = parseFloat(rightToLeft ? style.paddingRight : style.paddingLeft);
+        if ((previous !== undefined && previous.prop !== prop) || row.style[other] !== "") row.style[other] = "";
+        const style = getComputedStyle(row), inset = parseFloat(rightToLeft ? style.paddingRight : style.paddingLeft);
         const cardStyle = getComputedStyle(first);
         // offsetWidth rounds Compact's 309.6px still before multiplying the pitch.
-        const width = parseFloat(cardStyle.width), spacing = parseFloat(cardStyle.marginRight);
+        const width = parseFloat(cardStyle.width), spacing = parseFloat(rightToLeft ? cardStyle.marginLeft : cardStyle.marginRight);
         const contentWidth = cards.length * width + (cards.length - 1) * spacing;
         // Extra right-edge paint must not move the stepped terminal boundary.
         const paintEnd = parseFloat(style.getPropertyValue("--episode-paint-end")) || 0;
