@@ -6,6 +6,16 @@ All notable changes to this project are documented in this file.
 
 <!-- changelog:releases -->
 
+## [0.16.0] - 2026-11-27
+
+### Features
+
+- **Languages**: Mirror Collections, For You, and Details rails in RTL ([#961](https://github.com/Artic0din/Auger-Tizen/pull/961), [`cd313269`](https://github.com/Artic0din/Auger-Tizen/commit/cd313269))
+
+### Fixes
+
+- **Languages**: Keep Person and Personal grid captions right-aligned in RTL ([#962](https://github.com/Artic0din/Auger-Tizen/pull/962), [`95874a77`](https://github.com/Artic0din/Auger-Tizen/commit/95874a77))
+
 ## [0.15.0] - 2026-11-27
 
 ### Features
