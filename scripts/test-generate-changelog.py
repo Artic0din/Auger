@@ -641,13 +641,13 @@ class CheckPrReleaseNotesTest(unittest.TestCase):
             ),
         )
         # BREAKING CHANGE: written only in the PR body is discarded by GitHub's COMMIT_MESSAGES squash mode.
-        self.assertTrue(
-            changelog.check_pr_release_notes(
-                "feat(settings): add sync",
-                pr_body("## Release Notes\n\n### Breaking Changes\n\n- Sign in again.") + "\nBREAKING CHANGE: sign in again.\n",
-                commits=[Commit("feat(settings): add sync")],
-            )
+        discarded = changelog.check_pr_release_notes(
+            "feat(settings): add sync",
+            pr_body("## Release Notes\n\n### New\n\n- Sync settings across TVs.") + "\nBREAKING CHANGE: sign in again.\n",
+            commits=[Commit("feat(settings): add sync")],
         )
+        self.assertEqual(1, len(discarded))
+        self.assertIn("discarded", discarded[0])
         # Single-commit PR whose PR title and commit headline imply different SemVer bumps or categories.
         self.assertTrue(
             changelog.check_pr_release_notes(
@@ -658,10 +658,34 @@ class CheckPrReleaseNotesTest(unittest.TestCase):
         )
         self.assertTrue(
             changelog.check_pr_release_notes(
+                "perf(ci): cache bundle check",
+                "",
+                commits=[Commit("fix(ci): cache bundle check")],
+            )
+        )
+        self.assertTrue(
+            changelog.check_pr_release_notes(
                 "chore(repo): tidy",
                 "",
                 commits=[Commit("feat(player): add chapters")],
             )
+        )
+        # Equivalent non-releasing or patch types with identical release effects remain allowed.
+        self.assertEqual(
+            [],
+            changelog.check_pr_release_notes(
+                "docs: clarify release checks",
+                "",
+                commits=[Commit("chore: clarify release checks")],
+            ),
+        )
+        self.assertEqual(
+            [],
+            changelog.check_pr_release_notes(
+                "fix(player): undo broken chapters",
+                pr_body("## Release Notes\n\n### Fixed\n\n- Restored the previous timeline layout."),
+                commits=[Commit("revert(player): undo broken chapters")],
+            ),
         )
         # Wording edits to a 1-commit PR title that preserve commit type, bump, and category remain allowed.
         self.assertEqual(

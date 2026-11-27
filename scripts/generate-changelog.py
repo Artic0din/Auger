@@ -518,6 +518,13 @@ def commit_kind(subject: str) -> str:
     return "revert" if stripped.startswith('Revert "') else ""
 
 
+def pr_note_rule(commit: CommitMessage) -> tuple[release.BumpLevel, list[Category], bool]:
+    bump = release.classify_commit(commit)
+    categories = [entry.category for entry in entries_for(commit)]
+    is_perf_patch = bump == release.BumpLevel.PATCH and commit_kind(commit.subject) == "perf"
+    return bump, categories, is_perf_patch
+
+
 def squash_commit_for_pr(
     title: str,
     cleaned_body: str,
@@ -553,11 +560,7 @@ def squash_commit_for_pr(
         )
     if is_single_commit:
         title_commit = CommitMessage(title, commits[0].body)
-        if (
-            release.classify_commit(title_commit) != release.classify_commit(effective)
-            or [entry.category for entry in entries_for(title_commit)] != [entry.category for entry in entries_for(effective)]
-            or commit_kind(title) != commit_kind(commits[0].subject)
-        ):
+        if pr_note_rule(title_commit) != pr_note_rule(effective):
             errors.append(
                 "Single-commit PRs squash with the commit headline under `COMMIT_OR_PR_TITLE`; "
                 "align the PR title and commit headline so both imply the same SemVer bump and category."
