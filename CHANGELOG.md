@@ -6,6 +6,16 @@ All notable changes to this project are documented in this file.
 
 <!-- changelog:releases -->
 
+## [0.16.4] - 2026-11-27
+
+### Fixes
+
+- **Nav**: Sync top-bar chrome after SkylineShell.update ([#973](https://github.com/Artic0din/Auger-Tizen/pull/973), [`74968a0d`](https://github.com/Artic0din/Auger-Tizen/commit/74968a0d))
+
+### Tests
+
+- **Interface**: Settle stored connection read before checking connection speed lines ([#971](https://github.com/Artic0din/Auger-Tizen/pull/971), [`e32af020`](https://github.com/Artic0din/Auger-Tizen/commit/e32af020))
+
 ## [0.16.3] - 2026-11-27
 
 ### Performance
