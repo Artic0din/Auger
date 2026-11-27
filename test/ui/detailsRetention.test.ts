@@ -442,3 +442,42 @@ test("box-set rail rebuilds on an asset-only CardOverlayPrefs object replacement
         await page.close();
     }
 });
+
+test("opening a movie track popover keeps the retained title mounted until prepare so anchor geometry stays aligned", async () => {
+    const { tv } = await startDetails();
+    try {
+        await tv.page.locator('[data-section="recently_added"] [data-focus="movie:m0001"]').first().click();
+        await tv.page.locator('[data-focus="audio"]').waitFor();
+        await tv.page.locator(".details-hero .details-logo").waitFor();
+        await afterPaint(tv);
+
+        const beforeBottom = await tv.page.evaluate(() => {
+            const trigger = document.querySelector<HTMLElement>('.details-editorial [data-focus="audio"]');
+            return trigger === null ? null : trigger.getBoundingClientRect().bottom;
+        });
+        assert.ok(beforeBottom !== null);
+
+        await tv.page.locator('[data-focus="audio"]').click();
+        await tv.page.locator(".details-track-popover").waitFor();
+        await afterPaint(tv);
+
+        const after = await tv.page.evaluate(() => {
+            const panel = document.querySelector<HTMLElement>(".details-track-popover");
+            const trigger = document.querySelector<HTMLElement>('.details-editorial [data-focus="audio"]');
+            return panel === null || trigger === null ? null : {
+                panelTop: parseFloat(panel.style.top),
+                origin: panel.style.transformOrigin,
+                afterBottom: trigger.getBoundingClientRect().bottom,
+                hasTitle: document.querySelector(".details-hero .requests-detail-title") !== null,
+            };
+        });
+        assert.ok(after !== null);
+        assert.equal(after.hasTitle, true);
+        assert.equal(after.origin, "center top");
+        assert.ok(Math.abs(after.afterBottom - beforeBottom) < 1, `expected trigger bottom unchanged (${beforeBottom} vs ${after.afterBottom})`);
+        assert.ok(Math.abs(after.panelTop - (after.afterBottom + 14)) < 2, `expected popover top (${after.panelTop}) aligned under trigger (${after.afterBottom + 14})`);
+        assert.deepEqual(tv.console, []);
+    } finally {
+        await tv.page.context().close();
+    }
+});

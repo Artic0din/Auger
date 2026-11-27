@@ -355,7 +355,9 @@ function detailHeader(detail: ItemDetail, context: ViewContext, actions: readonl
     if (detail.type === "episode" && (detail.seriesTitle !== undefined || label !== undefined)) {
         nodes.push(el("p", "browse-kicker", [detail.seriesTitle, label].filter((part) => part !== undefined).join(" · ")));
     }
-    nodes.push(retainedTitle(detail, context, state, cache));
+    const title = retainedTitle(detail, context, state, cache);
+    const titleSlot = title.isConnected ? el("span", "") : undefined;
+    nodes.push(titleSlot ?? title);
     const episode = state?.series?.episodes?.find(item => item.id === state.heroEpisodeId);
     const playback = state?.nextEpisodeState;
     const row = metadataRow(detail, state, episode);
@@ -400,7 +402,11 @@ function detailHeader(detail: ItemDetail, context: ViewContext, actions: readonl
     const status = detail.type === "series" ? undefined : trailerStatus(state);
     if (status !== undefined) info.append(status);
     const hero = retainedHero(detail, context, presentation.hideBackdrop, info, cache);
-    return { content: [hero.wash, hero.layout], prepare: hero.prepare };
+    const prepare = (): void => {
+        titleSlot?.replaceWith(title);
+        hero.prepare();
+    };
+    return { content: [hero.wash, hero.layout], prepare };
 }
 
 function trailerStatus(state: DetailsState | undefined): HTMLElement | undefined {
