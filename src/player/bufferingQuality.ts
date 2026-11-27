@@ -241,8 +241,11 @@ export class BufferingQualityController {
     linkThroughputKbps: () => number | null = () => null;
     /** A stall of at least STALL_MIN_MS as it enters the plan summary, startup grace and outages excluded. For diagnostics only. */
     onStallMeasured: ((measuredMs: number) => void) | null = null;
+    /** Called when an active wait crosses `LONG_STALL_MS` or leaves that stalled state. */
+    onStalledChange: ((stalled: boolean) => void) | null = null;
 
     private currentPill: Pill | null = null;
+    private currentStalled = false;
     /**
      * The step-down estimate of the latest Auto lowering, from when its replan is sent until Restore
      * quality, a quality change this controller did not send, or a new attempt.
@@ -286,6 +289,11 @@ export class BufferingQualityController {
 
     get keptEstimateKbps(): number | null {
         return this.kept;
+    }
+
+    /** True once a non-paused network stall reaches `LONG_STALL_MS` outside transport trouble. */
+    get stalled(): boolean {
+        return this.currentStalled;
     }
 
     // Plans
@@ -452,6 +460,7 @@ export class BufferingQualityController {
             state.stall.measuredFrom = null;
             state.stall.timedFrom = null;
             this.cancelStallTimers();
+            this.setStalled(false);
         } else {
             const from = Math.max(now, state.graceEndsAt ?? now);
             state.stall.timedFrom = from;
@@ -880,6 +889,7 @@ export class BufferingQualityController {
             }
         }
         this.cancelStallTimers();
+        this.setStalled(false);
     }
 
     private measureStall(state: PlanState, measuredMs: number): void {
@@ -900,6 +910,7 @@ export class BufferingQualityController {
         }
         this.cancelSuppressionTimer?.();
         this.cancelSuppressionTimer = null;
+        this.setStalled(false);
         this.scheduleLongStallTimer();
     }
 
@@ -926,7 +937,18 @@ export class BufferingQualityController {
             this.scheduleLongStallTimer();
             return;
         }
+        if (!this.isPaused && !this.transportTrouble) {
+            this.setStalled(true);
+        }
         this.evaluate(this.nowMs);
+    }
+
+    private setStalled(next: boolean): void {
+        if (next === this.currentStalled) {
+            return;
+        }
+        this.currentStalled = next;
+        this.onStalledChange?.(next);
     }
 
     private cancelStallTimers(): void {
@@ -978,6 +1000,7 @@ export class BufferingQualityController {
         };
         this.current = null;
         this.cancelStallTimers();
+        this.setStalled(false);
         this.cancelRearmTimer?.();
         this.cancelRearmTimer = null;
         this.withdrawPill();

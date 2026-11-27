@@ -31,6 +31,8 @@ export interface BufferingHost {
     issueReplan(request: ReplanRequest, restore: boolean): boolean;
     /** The pill or notice on screen changed. */
     changed(): void;
+    /** Playback crossed into or out of a long stall (`LONG_STALL_MS`). */
+    stalledChanged?(): void;
 }
 
 /** What the player screen draws for the buffering controller. */
@@ -86,6 +88,7 @@ export class BufferingBridge {
         });
         this.controller.onOutput = (output) => this.handle(output);
         this.controller.onStallMeasured = (ms) => this.evidence.stallMeasured(ms);
+        this.controller.onStalledChange = () => host.stalledChanged?.();
         this.controller.onPillChange = () => {
             this.pillRevision++;
             host.changed();
@@ -108,6 +111,10 @@ export class BufferingBridge {
     get pill(): BufferingPillView | undefined {
         const pill: Pill | null = this.controller.pill;
         return pill === null ? undefined : { kind: pill.kind, remainingMs: pill.remainingMs, totalMs: pill.totalMs, running: pill.deadlineMs !== null, revision: this.pillRevision };
+    }
+
+    get stalled(): boolean {
+        return this.controller.stalled;
     }
 
     get notice(): BufferingNoticeView | undefined {
@@ -235,6 +242,7 @@ export class BufferingBridge {
         this.controller.onOutput = null;
         this.controller.onPillChange = null;
         this.controller.onStallMeasured = null;
+        this.controller.onStalledChange = null;
         this.controller.reset();
     }
 

@@ -61,6 +61,8 @@ export interface AVPlay {
     stop(): void;
     getState(): string;
     getCurrentTime(): number;
+    /** Query AVPlay runtime properties such as `"CURRENT_BANDWIDTH"` (bps string, or `"0"` / `""` when unknown). */
+    getStreamingProperty?(propertyType: string): string;
     /**
      * TEXT and AUDIO rows of the open stream. Valid in PLAYING and PAUSED.
      * READY is documented only for the synchronous `prepare`, which this client does not use.

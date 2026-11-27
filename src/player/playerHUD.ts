@@ -28,7 +28,7 @@ export function aspectLabel(aspect: PlayerAspect): string {
 const STAT_KEYS: Readonly<Record<string, MessageKey>> = {
     Video: "player.hud.video", Audio: "player.hud.audio", Subtitles: "player.hud.subtitles", Playback: "player.hud.playback",
     "Dynamic range": "player.stats.dynamicRange", "Playback rate": "player.stats.playbackRate", "Playback status": "player.stats.playbackStatus",
-    Delivery: "player.stats.delivery", Source: "player.stats.source", Diagnostics: "player.settings.diagnostics",
+    "Network throughput": "player.stats.networkThroughput", Delivery: "player.stats.delivery", Source: "player.stats.source", Diagnostics: "player.settings.diagnostics",
 };
 /** A stats or Info row's label in the shown language where Apple has the same text; the rest keep their English. */
 export function statLabel(label: string): string {
@@ -70,21 +70,35 @@ export interface PlayerHUD {
     readonly message?: string | undefined;
 }
 
-/** What the plan cannot say: the selected tracks, the chosen speed, the playback phase and the media host. */
+export type PlaybackStatus = "Loading" | "Playing" | "Paused" | "Seeking" | "Rebuffering" | "Stalled" | "Reconnecting" | "Ended" | "Error";
+
+/** What the plan cannot say: the selected tracks, the chosen speed, the playback phase, AVPlay's measured throughput and the media host. */
 export interface LiveStats {
     readonly audio: { readonly track: AudioTrackInfo; readonly ordinal: number } | undefined;
     /** Undefined while subtitles are off. `generated` names an AI track by its result. */
     readonly subtitle: { readonly entry: SubtitleTrack; readonly generated: string | undefined } | undefined;
     readonly speed: number | undefined;
-    readonly status: "Playing" | "Paused" | "Rebuffering";
+    readonly status: PlaybackStatus;
     readonly host: string | undefined;
+    /** Positive bits per second from `AVPlay.getStreamingProperty("CURRENT_BANDWIDTH")`; omitted when unavailable or zero. */
+    readonly networkThroughputBps?: number | undefined;
 }
 
 // AetherPlaybackStatsSourceMetadata.playMethodLabel and deliveryLabel.
 const PLAY_METHODS: Readonly<Record<PlaybackPlan["delivery"], MessageKey | undefined>> = { original_http: "player.stats.playMethodDirectPlay", server_remux_progressive: "player.stats.playMethodRemuxed", server_remux_hls: "player.stats.playMethodRemuxed", server_transcode_hls: "player.stats.playMethodTranscoded", unknown: undefined };
 const DELIVERIES: Readonly<Record<PlaybackPlan["delivery"], MessageKey | undefined>> = { original_http: "player.stats.deliveryOriginalHttp", server_remux_progressive: "player.stats.deliveryServerRemux", server_remux_hls: "player.stats.deliveryServerRemuxHls", server_transcode_hls: "player.stats.deliveryServerTranscodeHls", unknown: undefined };
 // AetherPlaybackStatsProjection.phaseLabel: the status stays its English id in the view state and reads the catalog here.
-const PHASES: Readonly<Record<LiveStats["status"], MessageKey>> = { Playing: "player.stats.phasePlaying", Paused: "player.stats.phasePaused", Rebuffering: "player.stats.phaseRebuffering" };
+const PHASES: Readonly<Record<PlaybackStatus, MessageKey>> = {
+    Loading: "common.loading",
+    Playing: "player.stats.phasePlaying",
+    Paused: "player.stats.phasePaused",
+    Seeking: "player.stats.phaseSeeking",
+    Rebuffering: "player.stats.phaseRebuffering",
+    Stalled: "player.stats.phaseStalled",
+    Reconnecting: "player.stats.phaseReconnecting",
+    Ended: "player.stats.phaseEnded",
+    Error: "player.stats.phaseError",
+};
 const RANGES: Readonly<Record<string, string>> = { sdr: "SDR", hdr10: "HDR10", hdr10_plus: "HDR10+", "hdr10+": "HDR10+", hlg: "HLG", dolby_vision: "Dolby Vision" };
 const VIDEO_CODECS: Readonly<Record<string, string>> = { hevc: "HEVC", h265: "HEVC", hvc1: "HEVC", hev1: "HEVC", h264: "H.264", avc: "H.264", avc1: "H.264", avc3: "H.264", av1: "AV1", av01: "AV1", vp9: "VP9", vp09: "VP9", mpeg2video: "MPEG-2", mpeg2: "MPEG-2", mpeg4: "MPEG-4", vc1: "VC-1" };
 const CONTAINERS: Readonly<Record<string, string>> = { matroska: "MKV", mkv: "MKV", mpegts: "MPEG-TS", "mpeg-ts": "MPEG-TS", ts: "MPEG-TS", quicktime: "MOV", mov: "MOV", mp4: "MP4", m4v: "M4V" };
@@ -148,6 +162,9 @@ export function planStats(plan: PlaybackPlan, live: LiveStats): PlaybackStats {
     const reason = plan.decisionReason?.replaceAll("_", " ");
     // The reason and the warnings share one label; only the first row carries it.
     const notes = [reason === undefined ? undefined : reason.charAt(0).toUpperCase() + reason.slice(1), ...plan.warnings.map(warning => warning.message)].filter((note): note is string => note !== undefined && note.trim() !== "");
+    const throughputKbps = live.networkThroughputBps !== undefined && Number.isFinite(live.networkThroughputBps) && live.networkThroughputBps > 0
+        ? live.networkThroughputBps / 1000
+        : undefined;
     const rows = (pairs: readonly (readonly [string, string | undefined])[]): StatsRow[] => pairs.flatMap(([label, value]) => value === undefined ? [] : [{ label, value }]);
     return {
         nowPlaying: rows([["Video", summary], ["Audio", audioInfo], ["Subtitles", subtitleInfo], ["Playback", playMethod]]),
@@ -159,7 +176,7 @@ export function planStats(plan: PlaybackPlan, live: LiveStats): PlaybackStats {
             ]),
             ...notes.map((note, index) => ({ label: index === 0 ? "Diagnostics" : "", value: note })),
         ],
-        stream: rows([["Playback status", translate(PHASES[live.status])]]),
+        stream: rows([["Playback status", translate(PHASES[live.status])], ["Network throughput", throughputKbps === undefined ? undefined : bitrate(throughputKbps)]]),
         engine: rows([["Delivery", deliveryKey === undefined ? undefined : translate(deliveryKey)], ["Source", live.host]]),
     };
 }
