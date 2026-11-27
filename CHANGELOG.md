@@ -6,6 +6,12 @@ All notable changes to this project are documented in this file.
 
 <!-- changelog:releases -->
 
+## [0.16.3] - 2026-11-27
+
+### Performance
+
+- **Nav**: Update top-bar zones in place without rebuilding Home DOM ([#964](https://github.com/Artic0din/Auger-Tizen/pull/964), [`365935ed`](https://github.com/Artic0din/Auger-Tizen/commit/365935ed))
+
 ## [0.16.2] - 2026-11-27
 
 ### Fixes
