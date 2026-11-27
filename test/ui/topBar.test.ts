@@ -236,6 +236,8 @@ test("focused avatar paints Apple's inset white ring above loaded artwork", asyn
     const tv = await openTv(browser, { app: "browse" });
     try {
         await start(tv);
+        await tv.eventually(async () => tv.pendingReplies === 0, "launch reads settled");
+        await afterPaint(tv);
         const avatar = tv.page.locator('[data-focus="profiles"]');
         await avatar.locator('.navigation-avatar').evaluate(node => {
             const image = document.createElement("img");
@@ -428,6 +430,9 @@ test("the For You menu is 460 wide, centred under its tab, with filled icons, sc
     try {
         await tv.page.emulateMedia({ reducedMotion: "reduce" });
         await start(tv);
+        await tv.eventually(async () => tv.pendingReplies === 0, "launch reads delivered");
+        await tv.page.locator('[data-focus="movies"]').waitFor();
+        await afterPaint(tv);
         const tab = tv.page.locator('[data-focus="for_you"]');
         assert.equal(await tab.getAttribute("aria-description"), "Rest to choose Watchlist, Favorites, or Recommendations");
         await tab.focus();
@@ -1135,4 +1140,33 @@ for (const anchor of ["movies", "profiles"]) test(`a ${anchor} menu the dwell op
         await tv.jump(500);
         assert.equal(await tv.page.locator(".skyline-selector:not(.skyline-flyout)").isVisible(), false, "the menu does not reopen");
     } finally { await tv.page.context().close(); }
+});
+
+test("a background top-bar update while content holds focus preserves aria-expanded=\"false\"", async () => {
+    const tv = await openTv(browser, { app: "browse" });
+    const held = tv.fake.hold("/user/libraries", true);
+    try {
+        await start(tv);
+        await tv.eventually(async () => tv.pendingReplies <= tv.fake.heldReplies, "non-held startup replies delivered");
+        await afterPaint(tv);
+        const focusState = await tv.page.locator(".browse > .skyline-content .browse-card").first().evaluateHandle(card => {
+            (card as HTMLElement).focus();
+            const state = { card, focusinCount: 0 };
+            document.addEventListener("focusin", () => { state.focusinCount++; }, true);
+            return state;
+        });
+        assert.equal(await tv.page.locator('[data-focus="profiles"]').getAttribute("aria-expanded"), "false");
+        assert.equal(await tv.page.locator('.skyline-roots [data-focus="movies"]').count(), 0);
+        held.release();
+        await tv.page.locator('.skyline-roots [data-focus="movies"]').waitFor();
+        assert.equal(await tv.page.locator('[data-focus="profiles"]').getAttribute("aria-expanded"), "false");
+        assert.equal(await tv.page.locator('[data-focus="movies"]').getAttribute("aria-expanded"), "false");
+        const { sameCardFocused, focusinCount } = await focusState.evaluate(state => ({
+            sameCardFocused: document.activeElement === state.card,
+            focusinCount: state.focusinCount,
+        }));
+        await focusState.dispose();
+        assert.equal(sameCardFocused, true, "the same card remains focused after the top-bar rebuild");
+        assert.equal(focusinCount, 0, "no focusin event can reset aria-expanded during the rebuild");
+    } finally { held.release(); await tv.page.context().close(); }
 });

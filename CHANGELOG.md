@@ -6,6 +6,29 @@ All notable changes to this project are documented in this file.
 
 <!-- changelog:releases -->
 
+## [0.16.4] - 2026-11-27
+
+### Fixes
+
+- **Nav**: Sync top-bar chrome after SkylineShell.update ([#973](https://github.com/Artic0din/Auger-Tizen/pull/973), [`74968a0d`](https://github.com/Artic0din/Auger-Tizen/commit/74968a0d))
+
+### Tests
+
+- **Interface**: Settle stored connection read before checking connection speed lines ([#971](https://github.com/Artic0din/Auger-Tizen/pull/971), [`e32af020`](https://github.com/Artic0din/Auger-Tizen/commit/e32af020))
+
+## [0.16.3] - 2026-11-27
+
+### Performance
+
+- **Nav**: Update top-bar zones in place without rebuilding Home DOM ([#964](https://github.com/Artic0din/Auger-Tizen/pull/964), [`365935ed`](https://github.com/Artic0din/Auger-Tizen/commit/365935ed))
+
+## [0.16.2] - 2026-11-27
+
+### Fixes
+
+- **Playback**: Deduplicate AVPlay setDisplayRect calls during Up Next ([#966](https://github.com/Artic0din/Auger-Tizen/pull/966), [`701df503`](https://github.com/Artic0din/Auger-Tizen/commit/701df503))
+- **Details**: Retain unchanged sections across episode focus repaints ([#963](https://github.com/Artic0din/Auger-Tizen/pull/963), [`5655f985`](https://github.com/Artic0din/Auger-Tizen/commit/5655f985))
+
 ## [0.16.1] - 2026-11-27
 
 ### Fixes

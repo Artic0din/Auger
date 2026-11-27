@@ -5,7 +5,7 @@ import { FakeCatalog } from "../native/support/fakeCatalog.ts";
 import { FakeSettings } from "../native/support/fakeSettings.ts";
 import { fixture, problem, type Reply } from "../native/support/fakeSilo.ts";
 import { assertDisabledRowsFullBrightness } from "./support/disabledRows.ts";
-import { launchBrowser, openTv, type Tv } from "./support/tv.ts";
+import { afterPaint, launchBrowser, openTv, type Tv } from "./support/tv.ts";
 
 const NOW = "2026-01-02T03:04:05.678Z";
 const MEASURED = {
@@ -40,6 +40,14 @@ async function openSettings(tv: Tv): Promise<void> {
     await tv.page.keyboard.press("Enter");
     await tv.page.getByRole("menuitem", { name: "Settings", exact: true }).click();
     await tv.page.getByRole("switch", { name: "Show Title Art", exact: true }).waitFor();
+}
+
+async function connectionSettled(tv: Tv): Promise<void> {
+    await tv.eventually(
+        async () => tv.fake.requests.some(request => request.path === "/playback/connection") && tv.pendingReplies === 0,
+        "stored connection",
+    );
+    await afterPaint(tv);
 }
 
 function featuresOf(body: Record<string, unknown>): string[] {
@@ -80,7 +88,8 @@ test("Connection speed stays hidden without connection_speed_v1 or buffering_qua
     });
     try {
         await openSettings(tv);
-        await tv.eventually(async () => tv.fake.requests.some(request => request.path === "/playback/capabilities"), "capabilities");
+        await tv.eventually(async () => tv.fake.requests.some(request => request.path === "/playback/capabilities") && tv.pendingReplies === 0, "capabilities");
+        await afterPaint(tv);
         await tv.page.locator('[data-focus="playback"]').click();
         assert.equal(await tv.page.locator('[data-focus="connection-speed"]').count(), 0);
         assert.equal(tv.fake.requests.some(request => request.path === "/playback/connection"), false);
@@ -95,7 +104,7 @@ test("Playback shows the stored speed and tests only from Test speed", async () 
     serveConnection(tv, MEASURED, { status: 429, headers: { "Retry-After": "12" }, body: { title: "wait" } });
     try {
         await openSettings(tv);
-        await tv.eventually(async () => tv.fake.requests.some(request => request.path === "/playback/connection"), "stored connection");
+        await connectionSettled(tv);
         const reads = tv.fake.requests.filter(request => request.path === "/playback/connection").length;
         const requests = tv.fake.requests.length;
         await tv.page.keyboard.press("ArrowDown");
@@ -175,6 +184,7 @@ test("leaving Playback cancels the test without a failure", async () => {
     const hold = tv.fake.hold("/playback/bandwidth-probe");
     try {
         await openSettings(tv);
+        await connectionSettled(tv);
         await tv.page.locator('[data-focus="playback"]').click();
         await tv.page.locator(".settings-connection-line").waitFor();
         await tv.page.locator('[data-focus="connection-speed"]').click();
@@ -202,6 +212,7 @@ test("an unmeasured connection and a playback sample use Apple's lines", async (
     serveConnection(tv, { connection: "remote" });
     try {
         await openSettings(tv);
+        await connectionSettled(tv);
         await tv.page.locator('[data-focus="playback"]').click();
         await tv.page.locator(".settings-connection-line").waitFor();
         assert.equal(await tv.page.locator(".settings-connection-line").textContent(), "Not measured yet");
@@ -212,6 +223,7 @@ test("an unmeasured connection and a playback sample use Apple's lines", async (
     serveConnection(sample.tv, { connection: "remote", playback_sample: { kbps: 51200, measured_at: "2026-01-02T01:04:05.678Z" } });
     try {
         await openSettings(sample.tv);
+        await connectionSettled(sample.tv);
         await sample.tv.page.locator('[data-focus="playback"]').click();
         await sample.tv.page.locator(".settings-connection-line").waitFor();
         assert.equal(await sample.tv.page.locator(".settings-connection-line").textContent(), "Faster than 51 Mbps · seen during playback 2 hours ago");
@@ -221,6 +233,7 @@ test("an unmeasured connection and a playback sample use Apple's lines", async (
     serveConnection(bound.tv, { connection: "remote", probe: { kbps: 115000, lower_bound: true, measured_at: NOW, transport: "wifi" } });
     try {
         await openSettings(bound.tv);
+        await connectionSettled(bound.tv);
         await bound.tv.page.locator('[data-focus="playback"]').click();
         await bound.tv.page.locator(".settings-connection-line").waitFor();
         assert.equal(await bound.tv.page.locator(".settings-connection-line").textContent(), "Faster than 115 Mbps · measured just now on Wi-Fi");
@@ -232,6 +245,7 @@ test("a missed connection read still offers Test speed", async () => {
     serveConnection(tv, "missing");
     try {
         await openSettings(tv);
+        await connectionSettled(tv);
         await tv.page.locator('[data-focus="playback"]').click();
         await tv.page.locator(".settings-connection-line").waitFor();
         assert.equal(await tv.page.locator(".settings-connection-line").textContent(), "Not measured yet");
@@ -246,6 +260,7 @@ test("Test speed while offline fails without a download", async () => {
     serveConnection(tv, MEASURED);
     try {
         await openSettings(tv);
+        await connectionSettled(tv);
         await tv.page.locator('[data-focus="playback"]').click();
         await tv.page.locator(".settings-connection-line").waitFor();
         await tv.page.evaluate(() => {
@@ -417,6 +432,7 @@ test("the learned limit is hidden for Never, for no limit, and without buffering
         assert.ok(deviceId);
         never.settings.device("p-owner", deviceId).set("playback.buffering_quality_mode", "never");
         await openSettings(never.tv);
+        await connectionSettled(never.tv);
         await never.tv.page.locator('[data-focus="playback"]').click();
         await never.tv.page.locator(".settings-connection-line").waitFor();
         assert.equal(await never.tv.page.locator('[data-focus="buffering-mode"] .settings-row-value').textContent(), "Never");
@@ -430,6 +446,7 @@ test("the learned limit is hidden for Never, for no limit, and without buffering
     serveLimit(unadvertised.tv, { without: ["buffering_quality_v1"] });
     try {
         await openSettings(unadvertised.tv);
+        await connectionSettled(unadvertised.tv);
         await unadvertised.tv.page.locator('[data-focus="playback"]').click();
         await unadvertised.tv.page.locator(".settings-connection-line").waitFor();
         assert.equal(await unadvertised.tv.page.locator('[data-focus="learned-limit"]').count(), 0);
@@ -442,7 +459,7 @@ test("the learned limit is hidden for Never, for no limit, and without buffering
         await openSettings(none.tv);
         await none.tv.page.locator('[data-focus="playback"]').click();
         await none.tv.page.locator('[data-focus="buffering-mode"]').waitFor();
-        await none.tv.eventually(async () => none.tv.fake.requests.some(request => request.path === "/playback/connection"), "connection read");
+        await connectionSettled(none.tv);
         assert.equal(await none.tv.page.locator('[data-focus="learned-limit"]').count(), 0);
     } finally { await none.tv.page.context().close(); }
 });
