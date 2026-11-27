@@ -359,6 +359,7 @@ test("For You shares Home shelves and its rows end at their last card", async ()
         assert.equal(await tv.page.locator(".browse > .skyline-marquee .skyline-marquee-art:not(.skyline-outgoing) .skyline-hero-backdrop").count(), 1, "For You uses Home's calibrated artwork and tint owner");
         assert.equal(await tv.page.locator(".browse > .skyline-content .skyline-explore").count(), 0, "RecommendationsView passes no onExploreAll");
         assert.equal(await tv.focused(), "movie:m0001");
+        await homeDetailsRead(tv);
         await noFurtherReads(tv);
         const reads = tv.fake.requests.length;
         await tv.remote(39);
@@ -718,9 +719,9 @@ test("a long authored menu cannot add roots and Search and the avatar remain fix
         assert.equal(await tv.page.locator('.skyline-roots [data-focus^="library:"]').count(), 0);
         // Movies and Series come from the libraries read, which can land after the first draw; four presses reach Calendar only with all five tabs.
         await tv.eventually(async () => await tv.page.locator(".skyline-roots [data-focus]").count() === 5, "the library tabs");
-        await tv.page.locator('[data-focus="home"]').focus();
         await noFurtherReads(tv);
         const reads = tv.fake.requests.length;
+        await tv.page.locator('[data-focus="home"]').focus();
         for (let i = 0; i < 4; i++) await tv.remote(39);
         assert.equal(await tv.focused(), "calendar");
         const geometry = await tv.page.evaluate(() => {
