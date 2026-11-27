@@ -504,6 +504,9 @@ for (const reduced of [false, true]) {
         await tv.page.fill("#browse-search", "Movie 0001"); await tv.remote(IME_DONE);
         await tv.page.locator('[data-focus="person:edge-1"]').waitFor({ state: "attached" });
         await tv.page.locator('.browse-grid .browse-card').waitFor();
+        await tv.page.locator('[data-focus="movie:960"]').waitFor({ state: "attached" });
+        await tv.eventually(async () => tv.pendingReplies === 0, "first search answers settled");
+        await afterPaint(tv);
         await tv.page.locator('[data-focus="person:edge-1"]').focus();
         await press(tv, "ArrowDown"); await tv.jump(250);
         assert.equal(await tv.focused(), "movie:m0001");
@@ -526,6 +529,8 @@ for (const reduced of [false, true]) {
         await answered;
         await tv.page.locator('.browse-grid [data-focus="movie:m0001"]').waitFor({ state: "detached" });
         await tv.page.locator('[data-focus="movie:960"]').waitFor({ state: "attached" });
+        await tv.eventually(async () => tv.pendingReplies === 0, "second search answers settled");
+        await afterPaint(tv);
         await tv.page.locator('[data-focus="person:edge-3"]').focus();
         await press(tv, "ArrowDown"); await tv.jump(250);
         assert.equal(await tv.focused(), "movie:952", "Requests entry follows origin geometry");
