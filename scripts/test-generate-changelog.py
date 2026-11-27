@@ -748,7 +748,7 @@ class CheckPrReleaseNotesTest(unittest.TestCase):
     def test_check_pr_cli_and_workflow_step(self):
         workflow_text = (SCRIPT_DIR.parent / ".github/workflows/ci-scripts.yml").read_text(encoding="utf-8")
         self.assertIn("types: [opened, edited, synchronize, reopened]", workflow_text)
-        self.assertIn("fetch-depth: ${{ github.event_name == 'pull_request' && 0 || 1 }}", workflow_text)
+        self.assertIn("fetch-depth: 0", workflow_text)
         self.assertIn("PR_TITLE: ${{ github.event.pull_request.title }}", workflow_text)
         self.assertIn("PR_BODY: ${{ github.event.pull_request.body }}", workflow_text)
         self.assertIn("PR_BASE_SHA: ${{ github.event.pull_request.base.sha }}", workflow_text)

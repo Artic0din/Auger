@@ -19,7 +19,7 @@ jobs:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           persist-credentials: false
-          fetch-depth: ${{ github.event_name == 'pull_request' && 0 || 1 }}
+          fetch-depth: 0
       - name: Test the /api/v1 path guard
         run: bash scripts/ci/check-no-api-v1.test.sh
       - name: Block /api/v1 paths in the app and tests
