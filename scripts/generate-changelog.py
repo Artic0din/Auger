@@ -14,7 +14,7 @@ Commits are grouped the way scripts/release-version.py bumps versions:
 
     generate-changelog.py release --version X.Y.Z [--date YYYY-MM-DD] [--from TAG] [--to HEAD] [--pr-notes-file PR.json]
     generate-changelog.py update --file CHANGELOG.md --version X.Y.Z [--date ...] [--from TAG] [--to HEAD]
-    generate-changelog.py check-pr --title TITLE --body-file PATH
+    generate-changelog.py check-pr --title TITLE --body-file PATH [--from BASE [--to HEAD]]
 
 `release` prints the user-facing GitHub Release body. For each commit whose
 `(#123)` pull request body is in PR.json, it uses that body's `## Release Notes`
@@ -510,47 +510,94 @@ def parse_release_notes_section(section: Optional[str]) -> Optional[ParsedPrNote
     return None
 
 
-def check_pr_release_notes(title: str, body: str) -> list[str]:
-    """Validate that a user-facing pull request supplies plain-language Release Notes."""
-    cleaned = strip_comments_and_fences(body.replace("\r\n", "\n").replace("\r", "\n"))
-    commit = CommitMessage(title, cleaned)
+def normalize_newlines(text: str) -> str:
+    return text.replace("\r\n", "\n").replace("\r", "\n")
+
+
+def commit_signature(subject: str, body: str = "") -> tuple[release.BumpLevel, str, tuple[Category, ...]]:
+    commit = CommitMessage(subject.strip(), body)
     bump = release.classify_commit(commit)
-    entries = entries_for(commit)
+    header = release.HEADER.fullmatch(commit.subject)
+    kind = header.group("type").lower() if header else ""
+    if bump == release.BumpLevel.MAJOR:
+        release_kind = "breaking"
+    elif bump == release.BumpLevel.MINOR:
+        release_kind = "feat"
+    elif bump == release.BumpLevel.PATCH:
+        release_kind = "perf" if kind == "perf" else "fix"
+    else:
+        release_kind = "none"
+    return (bump, release_kind, tuple(entry.category for entry in entries_for(commit)))
+
+
+def check_pr_release_notes(title: str, body: str, commits: Iterable[CommitMessage] = ()) -> list[str]:
+    """Validate that a user-facing pull request supplies plain-language Release Notes."""
+    cleaned = strip_comments_and_fences(normalize_newlines(body))
+    commit_list = list(commits)
+    errors: list[str] = []
+    normalized_title = title.strip()
+
+    if len(commit_list) == 1:
+        lone = commit_list[0]
+        lone_subject = lone.subject.strip()
+        lone_body = normalize_newlines(lone.body)
+        effective_commit = CommitMessage(lone_subject, lone_body, lone.sha)
+        if commit_signature(normalized_title) != commit_signature(lone_subject) or commit_signature(
+            normalized_title, lone_body
+        ) != commit_signature(lone_subject, lone_body):
+            errors.append(
+                "On a single-commit PR, GitHub sets the squash commit title from the commit headline "
+                f"(`COMMIT_OR_PR_TITLE`). Align the PR title (`{normalized_title}`) and commit headline "
+                f"(`{lone_subject}`) so they imply the same SemVer bump, breaking status, and release-notes category."
+            )
+    else:
+        squash_body = "\n\n".join(normalize_newlines(commit.body) for commit in commit_list if commit.body)
+        effective_commit = CommitMessage(normalized_title, squash_body)
+
+    bump = release.classify_commit(effective_commit)
+    is_breaking = bump == release.BumpLevel.MAJOR
+    if release.BREAKING.search(cleaned) and not is_breaking:
+        errors.append(
+            "GitHub squash merges use commit messages (`COMMIT_MESSAGES`) and discard the PR body, "
+            "so a `BREAKING CHANGE:` footer in the PR body alone will not trigger a breaking release. "
+            "Move the `BREAKING CHANGE:` footer into a branch commit message, or add `!` to the PR title "
+            "(and single-commit headline)."
+        )
+
+    entries = entries_for(effective_commit)
     parsed = parse_release_notes_section(release_notes_section(cleaned))
     if bump == release.BumpLevel.NONE:
         if parsed is not None and not parsed.suppressed:
-            return [
-                "Non-releasing PR titles do not publish a release; use `feat`, `fix`, `perf`, "
+            errors.append(
+                "Non-releasing PRs do not publish a release; use `feat`, `fix`, `perf`, "
                 "`revert`, or `!` when shipping user-facing changes, or set `## Release Notes` to `None`."
-            ]
-        return []
-    if not entries:
-        if parsed is None or parsed.suppressed:
-            return []
+            )
+        return errors
+    if not entries and (parsed is None or parsed.suppressed):
+        return errors
     if parsed is None:
-        return [
+        errors.append(
             "User-facing PRs (feat, fix, perf, revert, or breaking) must include a populated "
             "`## Release Notes` section with explicit category subheadings (`### Breaking Changes`, "
             "`### New`, `### Improved`, `### Security`, or `### Fixed`, plus optional `### Highlights`) "
             "written in plain language for Samsung TV users, or `None` for an internal-only fix."
-        ]
-    is_breaking = bump == release.BumpLevel.MAJOR
-    header = release.HEADER.fullmatch(title.strip())
+        )
+        return errors
+    header = release.HEADER.fullmatch(effective_commit.subject.strip())
     kind = header.group("type").lower() if header else ""
     allows_none = not is_breaking and (not entries or all(entry.category == Category.FIXES for entry in entries))
     if parsed.suppressed:
         if is_breaking:
-            return [
+            errors.append(
                 "Breaking PRs cannot use `None` in `## Release Notes`; explain what breaks "
                 "and what users need to do."
-            ]
-        if not allows_none:
-            return [
+            )
+        elif not allows_none:
+            errors.append(
                 "Only internal-only fixes can use `None` in `## Release Notes`; "
                 "describe the user-facing change in plain language."
-            ]
-        return []
-    errors: list[str] = []
+            )
+        return errors
     sections = {section for section, section_items in parsed.sectioned if section_items}
     if parsed.unsectioned or not sections:
         errors.append(
@@ -565,7 +612,7 @@ def check_pr_release_notes(title: str, body: str) -> list[str]:
     if not is_breaking and UserSection.BREAKING in sections:
         errors.append(
             "Non-breaking PRs cannot include `### Breaking Changes` in `## Release Notes`; "
-            "mark the PR title with `!` or add a `BREAKING CHANGE:` footer so the SemVer bump matches."
+            "mark the PR title with `!` or add a `BREAKING CHANGE:` footer to a branch commit so the SemVer bump matches."
         )
     if sections and not is_breaking:
         if bump == release.BumpLevel.MINOR and not (sections & {UserSection.NEW, UserSection.IMPROVED}):
@@ -608,7 +655,7 @@ def check_pr_release_notes(title: str, body: str) -> list[str]:
 
 def parse_pr_notes(body: str) -> Optional[ParsedPrNotes]:
     """A PR body's user-facing notes, or None when it has none to offer."""
-    body = strip_comments_and_fences(body.replace("\r\n", "\n").replace("\r", "\n"))
+    body = strip_comments_and_fences(normalize_newlines(body))
     parsed = parse_release_notes_section(release_notes_section(body))
     if parsed is not None:
         return parsed
@@ -857,11 +904,20 @@ def main(argv: list[str]) -> int:
     check_parser = commands.add_parser("check-pr")
     check_parser.add_argument("--title", required=True)
     check_parser.add_argument("--body-file", type=Path, required=True)
+    check_parser.add_argument("--from", dest="start", default="")
+    check_parser.add_argument("--to", dest="end", default="")
     args = parser.parse_args(argv)
 
     try:
         if args.command == "check-pr":
-            errors = check_pr_release_notes(args.title, args.body_file.read_text(encoding="utf-8"))
+            if args.end and not args.start:
+                raise release.ReleaseError("--to requires --from for check-pr.")
+            commits = read_commits(args.start, args.end or "HEAD") if args.start else ()
+            errors = check_pr_release_notes(
+                args.title,
+                args.body_file.read_text(encoding="utf-8"),
+                commits=commits,
+            )
             for error in errors:
                 print(f"::error::{error}", file=sys.stderr)
             return 1 if errors else 0

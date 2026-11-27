@@ -49,9 +49,9 @@ This workflow runs on pull requests (`opened`, `edited`, `synchronize`, `reopene
   5. `python3 scripts/test-release-version.py` tests semantic version bump selection from Conventional Commits.
   6. `python3 scripts/test-generate-changelog.py` tests release note generation and `CHANGELOG.md` updates.
   7. `python3 scripts/test-pr-gate.py` tests the local merge gate script (`scripts/pr-gate.py`).
-  8. `scripts/ci/set-wgt-version.sh` verifies stamping a valid three-part version (`1.2.30`) into `app/config.xml` and rejecting an invalid two-part version (`1.2`).
+  8. `scripts/ci/set-wgt-version.sh` verifies stamping valid Tizen three-part versions (`1.2.30` and `255.255.65535`) into `app/config.xml` while leaving `<?xml version="1.0"` intact, and rejecting malformed, leading-zero, and out-of-range versions (`1.2`, `01.2.3`, `1.02.3`, `1.2.03`, `256.0.0`, `1.256.0`, `1.0.65536`).
   9. `bash .github/scripts/discord-release-embed.test.sh` tests the Discord release embed payload builder, including truncation against Discord's 4096/6000 character limits.
-  10. `python3 scripts/generate-changelog.py check-pr` (pull requests only) verifies that `feat`, `fix`, `perf`, `revert`, and breaking pull requests include a populated user-facing `## Release Notes` (or `## Release note`) section without raw `#123` references or Conventional Commit prefixes, allowing `None` only for non-breaking internal fixes.
+  10. `python3 scripts/generate-changelog.py check-pr` (pull requests only, with full PR commit history fetched) inspects the branch commit range (`--from <base> --to <head>`) alongside the PR title and body to match GitHub's squash commit (`COMMIT_OR_PR_TITLE` and `COMMIT_MESSAGES`), checking branch commits for `BREAKING CHANGE:` footers, rejecting PR-body-only `BREAKING CHANGE:` footers and single-commit title/headline mismatches, and verifying that `feat`, `fix`, `perf`, `revert`, and breaking pull requests include a populated user-facing `## Release Notes` (or `## Release note`) section with explicit category subheadings matching the SemVer bump, without raw `#123` references or Conventional Commit prefixes, allowing `None` only for non-breaking internal fixes.
 
 ### Security (`.github/workflows/secrets.yml`)
 

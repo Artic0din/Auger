@@ -59,6 +59,7 @@ Every release is marked Latest, so `https://github.com/Artic0din/Auger-Tizen/rel
 The GitHub Release body is for people who use Auger.
 For each commit, the Release workflow reads the merged pull request named by its `(#123)` suffix and uses that pull request's `## Release Notes` (or `## Release note`) section.
 `CI Scripts and Guards` runs `scripts/generate-changelog.py check-pr` on pull requests so every `feat`, `fix`, `perf`, `revert`, or breaking pull request includes a populated `## Release Notes` section with explicit category subheadings (`### Breaking Changes`, `### New`, `### Improved`, `### Security`, or `### Fixed`, plus optional `### Highlights`) matching its SemVer bump (`### Breaking Changes` on and only on breaking PRs, `### New` or `### Improved` on `feat`, `### Improved` without `### New` on `perf`, `### Fixed` or `### Security` without `### New` on `fix` and `revert`, and `None` only on internal-only fixes or non-releasing PRs) without raw `#123` references or Conventional Commit prefixes.
+`check-pr` mirrors GitHub's squash commit (`COMMIT_OR_PR_TITLE` and `COMMIT_MESSAGES`) by inspecting branch commit messages for `BREAKING CHANGE:` footers, rejecting `BREAKING CHANGE:` footers that appear only in the pull request body, and requiring single-commit pull requests to align their commit headline and pull request title.
 That section can hold `### Highlights`, `### Breaking Changes`, `### New`, `### Improved`, `### Security`, and `### Fixed` subheadings.
 Text outside a subheading goes to the section the commit type implies, or to Improved for an internal commit type.
 `None`, `N/A`, or `No user-visible changes` leaves the pull request out, unless the commit is breaking.
@@ -121,7 +122,7 @@ Public GitHub Releases use the Tizen SDK public distributor certificate so no pe
 To sideload directly onto a Samsung TV in Developer Mode, build and sign locally with your own Samsung certificate profile:
 
 1. Create a Samsung author and distributor certificate profile in Tizen Studio Certificate Manager for your TV's DUID.
-2. Clone the release tag into a temporary directory (`git clone --depth 1 --branch vX.Y.Z https://github.com/Artic0din/Auger-Tizen.git auger-release && cd auger-release`), install dependencies (`npm ci`), and stamp its version into `app/config.xml`: `scripts/ci/set-wgt-version.sh X.Y.Z` (required on `v0.10.0` and earlier; newer tags also stamp `dist/wgt/config.xml` automatically during `npm run build`).
+2. Clone the release tag into a temporary directory (`git clone --depth 1 --branch vX.Y.Z https://github.com/Artic0din/Auger-Tizen.git auger-release && cd auger-release`), install dependencies (`npm ci`), and stamp its version into `app/config.xml`: `scripts/ci/set-wgt-version.sh X.Y.Z` (required on `v0.11.0` and earlier; `v0.12.0` and newer also stamp `dist/wgt/config.xml` automatically during `npm run build`).
 3. Package locally: `export TIZEN_SECURITY_PROFILE="YourProfileName" && ./scripts/build-wgt.sh`.
 4. Install through Tizen Studio Device Manager or run `tizen install -n dist/Auger.wgt -t <device>`, then delete the temporary `auger-release` directory when done.
 

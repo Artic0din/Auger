@@ -139,16 +139,22 @@ class AutoBumpTest(unittest.TestCase):
 
     def test_graduates_prerelease_tags(self):
         self.assertEqual(
-            release.ReleasePlan(True, "0.1.0", "v0.1.0", "v0.1.0-beta.3", "patch"),
+            release.ReleasePlan(True, "0.1.0", "v0.1.0", "v0.1.0-beta.3", "minor"),
             plan(BETAS, "fix: a"),
         )
         self.assertEqual("v0.1.0", plan(BETAS, "feat: a").tag)
         self.assertEqual("v0.1.0", plan(BETAS, "feat!: a").tag)
-        self.assertEqual("v1.0.0", plan(["v1.0.0-rc.1"], "fix: a").tag)
+        self.assertEqual(
+            release.ReleasePlan(True, "1.0.0", "v1.0.0", "v1.0.0-rc.1", "major"),
+            plan(["v1.0.0-rc.1"], "fix: a"),
+        )
         self.assertEqual("v1.0.0", plan(["v1.0.0-rc.1"], "feat!: a").tag)
         self.assertEqual("v2.0.0", plan(["v1.0.0", "v1.1.0-rc.1"], "feat!: a").tag)
         self.assertEqual("v0.2.0", plan(["v0.1.0", "v0.1.1-rc.1"], "feat: a").tag)
-        self.assertEqual("v0.1.1", plan(["v0.1.0", "v0.1.1-rc.1"], "fix: a").tag)
+        self.assertEqual(
+            release.ReleasePlan(True, "0.1.1", "v0.1.1", "v0.1.0", "patch"),
+            plan(["v0.1.0", "v0.1.1-rc.1"], "fix: a"),
+        )
 
     def test_from_a_stable_tag(self):
         tags = ["v0.2.0-beta.1", "v0.2.0", *BETAS]
@@ -161,7 +167,7 @@ class AutoBumpTest(unittest.TestCase):
     def test_from_a_beta_tag_newer_than_an_exact_tag(self):
         tags = ["v0.1.0", "v0.2.0-beta.1", "v0.2.0-beta.2"]
         self.assertEqual(
-            release.ReleasePlan(True, "0.2.0", "v0.2.0", "v0.1.0", "patch"),
+            release.ReleasePlan(True, "0.2.0", "v0.2.0", "v0.1.0", "minor"),
             plan(tags, "fix: a"),
         )
         self.assertEqual(
@@ -182,8 +188,19 @@ class AutoBumpTest(unittest.TestCase):
 
 class ManualBumpTest(unittest.TestCase):
     def test_graduates_prerelease_tags(self):
-        self.assertEqual("v0.1.0", plan(BETAS, mode="patch").tag)
+        self.assertEqual(
+            release.ReleasePlan(True, "0.1.0", "v0.1.0", "v0.1.0-beta.3", "minor"),
+            plan(BETAS, mode="patch"),
+        )
         self.assertEqual("v0.1.0", plan(BETAS, mode="minor").tag)
+        self.assertEqual(
+            release.ReleasePlan(True, "1.0.0", "v1.0.0", "v1.0.0-rc.1", "major"),
+            plan(["v1.0.0-rc.1"], mode="patch"),
+        )
+        self.assertEqual(
+            release.ReleasePlan(True, "0.1.1", "v0.1.1", "v0.1.0", "patch"),
+            plan(["v0.1.0", "v0.1.1-rc.1"], mode="patch"),
+        )
         self.assertEqual(
             release.ReleasePlan(True, "1.0.0", "v1.0.0", "v0.1.0-beta.3", "major"),
             plan(BETAS, "docs: a", mode="major"),
@@ -193,7 +210,7 @@ class ManualBumpTest(unittest.TestCase):
     def test_from_a_beta_tag_newer_than_an_exact_tag(self):
         tags = ["v0.1.0", "v0.2.0-beta.1"]
         self.assertEqual(
-            release.ReleasePlan(True, "0.2.0", "v0.2.0", "v0.1.0", "patch"),
+            release.ReleasePlan(True, "0.2.0", "v0.2.0", "v0.1.0", "minor"),
             plan(tags, mode="patch"),
         )
         self.assertEqual("v0.2.0", plan(tags, mode="minor").tag)
@@ -413,7 +430,37 @@ class GitRepoIntegrationTest(unittest.TestCase):
         )
         self.assertEqual(
             {"should_release": "true", "version": "0.2.0", "tag": "v0.2.0", "previous_tag": "v0.1.0", "bump": "minor"},
+            self.next_published("--target", target, "--bump", "patch"),
+        )
+        self.assertEqual(
+            {"should_release": "true", "version": "0.2.0", "tag": "v0.2.0", "previous_tag": "v0.1.0", "bump": "minor"},
             self.next_published("--target", target, "--bump", "minor"),
+        )
+
+    def test_graduates_prerelease_tags_report_graduated_step(self):
+        self.commit("fix: rc polish", "v1.0.0-rc.1", published=False)
+        # Re-commit past the prerelease tag to graduate v1.0.0-rc.1 -> v1.0.0.
+        major_target = self.commit("fix: final polish")
+        self.assertEqual(
+            {"should_release": "true", "version": "1.0.0", "tag": "v1.0.0", "previous_tag": "v1.0.0-rc.1", "bump": "major"},
+            self.next_published("--target", major_target),
+        )
+        self.assertEqual(
+            {"should_release": "true", "version": "1.0.0", "tag": "v1.0.0", "previous_tag": "v1.0.0-rc.1", "bump": "major"},
+            self.next_published("--target", major_target, "--bump", "patch"),
+        )
+
+    def test_graduates_patch_prerelease_reports_patch_step(self):
+        self.commit("feat: initial", "v0.1.0")
+        self.commit("fix: rc work", "v0.1.1-rc.1", published=False)
+        patch_target = self.commit("fix: rc polish")
+        self.assertEqual(
+            {"should_release": "true", "version": "0.1.1", "tag": "v0.1.1", "previous_tag": "v0.1.0", "bump": "patch"},
+            self.next_published("--target", patch_target),
+        )
+        self.assertEqual(
+            {"should_release": "true", "version": "0.1.1", "tag": "v0.1.1", "previous_tag": "v0.1.0", "bump": "patch"},
+            self.next_published("--target", patch_target, "--bump", "patch"),
         )
 
 

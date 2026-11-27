@@ -214,8 +214,8 @@ def prerelease_step(version: SemVer) -> BumpLevel:
 def next_version(highest: Optional[TagInfo], level: BumpLevel, *, is_auto: bool) -> tuple[SemVer, BumpLevel]:
     base = highest.version if highest else SemVer(0, 0, 0)
     effective = BumpLevel.MINOR if (is_auto and base.major == 0 and level == BumpLevel.MAJOR) else level
-    if highest and highest.is_prerelease and effective <= prerelease_step(base):
-        return base, effective
+    if highest and highest.is_prerelease and effective <= (step := prerelease_step(base)):
+        return base, step
     return base.bump(effective), effective
 
 
@@ -257,8 +257,8 @@ def plan_release(
         target, effective = next_version(highest, level, is_auto=True)
         bump = effective.name.lower()
     else:
-        target, _ = next_version(highest, BumpLevel[mode.upper()], is_auto=False)
-        bump = mode
+        target, effective = next_version(highest, BumpLevel[mode.upper()], is_auto=False)
+        bump = effective.name.lower()
 
     target.check_tizen_limits()
     return ReleasePlan(True, target.text, f"v{target.text}", previous_tag, bump)

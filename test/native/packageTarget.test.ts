@@ -50,11 +50,19 @@ test("build stamps staged config.xml and APP_VERSION from an exact release tag w
         };
         const git = (...args: string[]) => execFileSync("git", args, { cwd: workDir, env: gitEnv, stdio: "ignore" });
         const runBuild = () =>
-            execFileSync(process.execPath, [buildScript], {
+            execFileSync(process.execPath, [buildScript, "--root", workDir], {
                 cwd: workDir,
-                env: { ...cleanEnv, AUGER_BUILD_ROOT: workDir },
+                env: cleanEnv,
                 stdio: "ignore",
             });
+
+        assert.throws(() =>
+            execFileSync(process.execPath, [buildScript, "--root", ""], {
+                cwd: workDir,
+                env: cleanEnv,
+                stdio: "ignore",
+            }),
+        );
 
         git("init", "--quiet", "--initial-branch=main");
         git("commit", "--quiet", "--allow-empty", "-m", "chore: initial");

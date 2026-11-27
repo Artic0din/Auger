@@ -608,32 +608,285 @@ class CheckPrReleaseNotesTest(unittest.TestCase):
             with self.subTest(title=title, section=section[:20]):
                 self.assertTrue(changelog.check_pr_release_notes(title, pr_body(f"## Release Notes\n\n{section}")))
 
+    def test_branch_commit_breaking_footer_drives_breaking_classification(self):
+        for title in ("build(tizen): require Tizen 8", "chore(settings): rename keys", "feat(player): add chapters"):
+            commit_body = "Update runtime.\n\nBREAKING CHANGE: older settings are reset."
+            commits = [Commit(title, commit_body)]
+            with self.subTest(title=title, case="missing_release_notes"):
+                self.assertTrue(changelog.check_pr_release_notes(title, "## Problem\n\nUpdated.\n", commits))
+            with self.subTest(title=title, case="none_rejected"):
+                errors = changelog.check_pr_release_notes(title, pr_body("## Release Notes\n\nNone"), commits)
+                self.assertTrue(errors)
+                self.assertTrue(any("Breaking PRs cannot use `None`" in err for err in errors), errors)
+            with self.subTest(title=title, case="missing_breaking_section"):
+                section = "### New\n\n- Updated." if title.startswith("feat") else "### Improved\n\n- Updated."
+                errors = changelog.check_pr_release_notes(title, pr_body(f"## Release Notes\n\n{section}"), commits)
+                self.assertTrue(any("### Breaking Changes" in err for err in errors), errors)
+            with self.subTest(title=title, case="with_breaking_section_passes"):
+                notes = "## Release Notes\n\n### Breaking Changes\n\n- Sign in again after updating."
+                if title.startswith("feat"):
+                    notes += "\n\n### New\n\n- Added chapters."
+                self.assertEqual([], changelog.check_pr_release_notes(title, pr_body(notes), commits))
+
+        hyphen_footer = [Commit("chore(repo): bump format", "BREAKING-CHANGE: cached artwork clears once.")]
+        self.assertEqual(
+            [],
+            changelog.check_pr_release_notes(
+                "chore(repo): bump format",
+                pr_body("## Release Notes\n\n### Breaking Changes\n\n- Cached artwork reloads once."),
+                hyphen_footer,
+            ),
+        )
+
+    def test_pr_body_only_breaking_footer_is_rejected_and_not_treated_as_breaking(self):
+        for footer in ("BREAKING CHANGE: sign in again.", "BREAKING-CHANGE: sign in again."):
+            with self.subTest(footer=footer, case="non_releasing_with_no_notes"):
+                errors = changelog.check_pr_release_notes(
+                    "refactor(settings): rename storage keys",
+                    f"## Problem\n\nRename keys.\n\n{footer}\n",
+                )
+                self.assertTrue(any("squash" in err.lower() and "pr body" in err.lower() for err in errors), errors)
+            with self.subTest(footer=footer, case="fix_with_none"):
+                errors = changelog.check_pr_release_notes(
+                    "fix(auth): change session format",
+                    pr_body("## Release Notes\n\nNone") + f"\n{footer}\n",
+                )
+                self.assertTrue(any("squash" in err.lower() and "pr body" in err.lower() for err in errors), errors)
+            with self.subTest(footer=footer, case="with_breaking_changes_subheading"):
+                errors = changelog.check_pr_release_notes(
+                    "fix(auth): change session format",
+                    pr_body("## Release Notes\n\n### Breaking Changes\n\n- Sign in again.") + f"\n{footer}\n",
+                )
+                self.assertTrue(any("squash" in err.lower() and "pr body" in err.lower() for err in errors), errors)
+                self.assertTrue(any("Non-breaking PRs cannot include `### Breaking Changes`" in err for err in errors), errors)
+
+        # Fenced examples or comments in the PR body do not count as a breaking footer.
+        fenced = pr_body("## Release Notes\n\n### Fixed\n\n- Fixed login.\n\n```text\nBREAKING CHANGE: example\n```")
+        self.assertEqual([], changelog.check_pr_release_notes("fix(auth): fix login", fenced))
+        # When a branch commit or ! actually makes the PR breaking, mentioning it in the PR body is fine.
+        both = pr_body("## Release Notes\n\n### Breaking Changes\n\n- Sign in again.") + "\nBREAKING CHANGE: sign in again.\n"
+        self.assertEqual(
+            [],
+            changelog.check_pr_release_notes(
+                "fix(auth): change session format",
+                both,
+                [Commit("fix(auth): change session format", "BREAKING CHANGE: sign in again.")],
+            ),
+        )
+
+    def test_single_commit_pr_headline_must_match_pr_title_semantics(self):
+        mismatch_cases = (
+            ("feat(player): add chapters", "fix(player): add chapters", "### New\n\n- Added chapters."),
+            ("docs(releasing): update guide", "fix(player): stop crash", "None"),
+            ("feat!: drop Tizen 7", "feat: drop Tizen 7", "### Breaking Changes\n\n- Upgrade TV."),
+            ("feat: drop Tizen 7", "feat!: drop Tizen 7", "### New\n\n- Requires Tizen 8."),
+            ("fix(player): faster seek", "perf(player): faster seek", "### Fixed\n\n- Faster seek."),
+            ("fix(ci): stop flaky check", "fix(player): stop flaky check", "None"),
+            ("fix(ci): stop flaky check", "perf(ci): stop flaky check", "None"),
+            ("fix(security): redact token", "fix(auth): redact token", "### Security\n\n- Redact tokens."),
+        )
+        for pr_title, commit_subject, notes in mismatch_cases:
+            with self.subTest(pr_title=pr_title, commit_subject=commit_subject):
+                errors = changelog.check_pr_release_notes(
+                    pr_title,
+                    pr_body(f"## Release Notes\n\n{notes}"),
+                    [Commit(commit_subject)],
+                )
+                self.assertTrue(any("COMMIT_OR_PR_TITLE" in err for err in errors), errors)
+
+        # Matching single-commit semantics pass even when descriptions differ slightly.
+        self.assertEqual(
+            [],
+            changelog.check_pr_release_notes(
+                "feat(player): add chapter picker",
+                pr_body("## Release Notes\n\n### New\n\n- Jump to any chapter from the player."),
+                [Commit("feat(player): add chapters")],
+            ),
+        )
+        self.assertEqual(
+            [],
+            changelog.check_pr_release_notes(
+                "build(tizen): require Tizen 8",
+                pr_body("## Release Notes\n\n### Breaking Changes\n\n- Upgrade to Tizen 8 or later."),
+                [Commit("build(tizen): require Tizen 8", "BREAKING CHANGE: requires Tizen 8.")],
+            ),
+        )
+
+    def test_multi_commit_pr_uses_pr_title_and_scans_all_commit_bodies(self):
+        # PR title governs the squash headline even when individual commits use fix/test.
+        self.assertEqual(
+            [],
+            changelog.check_pr_release_notes(
+                "feat(player): add chapters",
+                pr_body("## Release Notes\n\n### New\n\n- Jump to any chapter from the player."),
+                [Commit("fix(player): wip"), Commit("test(player): add chapter test")],
+            ),
+        )
+        # Any branch commit body with BREAKING CHANGE: makes a multi-commit PR breaking.
+        multi_breaking = [Commit("chore: prep migration"), Commit("refactor(settings): move keys", "BREAKING CHANGE: settings reset")]
+        self.assertTrue(
+            changelog.check_pr_release_notes("chore(settings): migrate", pr_body("## Release Notes\n\nNone"), multi_breaking)
+        )
+        self.assertEqual(
+            [],
+            changelog.check_pr_release_notes(
+                "chore(settings): migrate",
+                pr_body("## Release Notes\n\n### Breaking Changes\n\n- Settings reset once."),
+                multi_breaking,
+            ),
+        )
+        # In multi-commit COMMIT_MESSAGES, GitHub prefixes subjects with `* `, so a bare `!` in a branch commit subject does not trigger breaking.
+        self.assertEqual(
+            [],
+            changelog.check_pr_release_notes(
+                "fix(player): stop crash",
+                pr_body("## Release Notes\n\n### Fixed\n\n- Stopped a crash."),
+                [Commit("feat!: intermediate wip"), Commit("fix(player): final fix")],
+            ),
+        )
+
     def test_check_pr_cli_and_workflow_step(self):
         workflow_text = (SCRIPT_DIR.parent / ".github/workflows/ci-scripts.yml").read_text(encoding="utf-8")
         self.assertIn("types: [opened, edited, synchronize, reopened]", workflow_text)
+        self.assertIn("fetch-depth: ${{ github.event_name == 'pull_request' && 0 || 1 }}", workflow_text)
         self.assertIn("PR_TITLE: ${{ github.event.pull_request.title }}", workflow_text)
         self.assertIn("PR_BODY: ${{ github.event.pull_request.body }}", workflow_text)
+        self.assertIn("PR_BASE_SHA: ${{ github.event.pull_request.base.sha }}", workflow_text)
+        self.assertIn("PR_HEAD_SHA: ${{ github.event.pull_request.head.sha }}", workflow_text)
+
+        # CLI rejects --to without --from.
+        with tempfile.TemporaryDirectory() as tmp_name:
+            body_path = Path(tmp_name) / "body.md"
+            body_path.write_text("", encoding="utf-8")
+            err = io.StringIO()
+            with contextlib.redirect_stdout(io.StringIO()), contextlib.redirect_stderr(err):
+                code = changelog.main(["check-pr", "--title", "docs: tidy", "--body-file", str(body_path), "--to", "HEAD"])
+            self.assertEqual(1, code)
+            self.assertIn("--from", err.getvalue())
+
         step_script = extract_step_run(extract_job_block(workflow_text, "test"), "Check user-facing PR release notes")
         with tempfile.TemporaryDirectory() as tmp_name:
-            runner_temp = Path(tmp_name)
-            env = {**os.environ, "RUNNER_TEMP": str(runner_temp)}
-            good = subprocess.run(
-                ["bash", "-euo", "pipefail", "-c", step_script],
-                cwd=SCRIPT_DIR.parent,
-                env={**env, "PR_TITLE": "feat(player): add chapters", "PR_BODY": pr_body("## Release Notes\n\n### New\n\n- Jump to any chapter from the player.")},
-                capture_output=True,
-                text=True,
+            root = Path(tmp_name)
+            repo = root / "repo"
+            runner_temp = root / "runner-temp"
+            repo.mkdir()
+            runner_temp.mkdir()
+            (repo / "scripts").mkdir()
+            shutil.copy2(SCRIPT_DIR / "generate-changelog.py", repo / "scripts/generate-changelog.py")
+            shutil.copy2(SCRIPT_DIR / "release-version.py", repo / "scripts/release-version.py")
+
+            clean_env = {k: v for k, v in os.environ.items() if not k.startswith("GIT_")}
+            git_env = {
+                **clean_env,
+                "GIT_CONFIG_GLOBAL": os.devnull,
+                "GIT_CONFIG_NOSYSTEM": "1",
+                "GIT_AUTHOR_NAME": "Test",
+                "GIT_AUTHOR_EMAIL": "test@example.com",
+                "GIT_COMMITTER_NAME": "Test",
+                "GIT_COMMITTER_EMAIL": "test@example.com",
+            }
+
+            def git(*args: str) -> str:
+                return subprocess.run(
+                    ["git", *args], cwd=repo, env=git_env, check=True, capture_output=True, text=True
+                ).stdout.strip()
+
+            git("init", "--quiet", "--initial-branch=main")
+            git("add", "scripts")
+            git("commit", "--quiet", "-m", "chore: initial")
+            base_sha = git("rev-parse", "HEAD")
+
+            git("checkout", "--quiet", "-b", "pr/single")
+            git("commit", "--quiet", "--allow-empty", "-m", "feat(player): add chapters")
+            single_head = git("rev-parse", "HEAD")
+
+            def run_step(title: str, body: str, base: str, head: str) -> subprocess.CompletedProcess[str]:
+                return subprocess.run(
+                    ["bash", "-euo", "pipefail", "-c", step_script],
+                    cwd=repo,
+                    env={
+                        **clean_env,
+                        "RUNNER_TEMP": str(runner_temp),
+                        "PR_TITLE": title,
+                        "PR_BODY": body,
+                        "PR_BASE_SHA": base,
+                        "PR_HEAD_SHA": head,
+                    },
+                    capture_output=True,
+                    text=True,
+                )
+
+            good = run_step(
+                "feat(player): add chapters",
+                pr_body("## Release Notes\n\n### New\n\n- Jump to any chapter from the player."),
+                base_sha,
+                single_head,
             )
             self.assertEqual(0, good.returncode, good.stderr)
-            missing = subprocess.run(
+
+            missing = run_step("feat(player): add chapters", "## Problem\n\nNo chapters.", base_sha, single_head)
+            self.assertEqual(1, missing.returncode)
+            self.assertIn("## Release Notes", missing.stderr)
+
+            mismatch = run_step(
+                "fix(player): add chapters",
+                pr_body("## Release Notes\n\n### Fixed\n\n- Added chapters."),
+                base_sha,
+                single_head,
+            )
+            self.assertEqual(1, mismatch.returncode)
+            self.assertIn("COMMIT_OR_PR_TITLE", mismatch.stderr)
+
+            git("checkout", "--quiet", "-b", "pr/multi", base_sha)
+            git("commit", "--quiet", "--allow-empty", "-m", "chore: prep settings")
+            git("commit", "--quiet", "--allow-empty", "-m", "refactor: rename keys", "-m", "BREAKING CHANGE: settings reset")
+            multi_head = git("rev-parse", "HEAD")
+
+            multi_missing_breaking = run_step(
+                "chore(settings): rename keys",
+                pr_body("## Release Notes\n\nNone"),
+                base_sha,
+                multi_head,
+            )
+            self.assertEqual(1, multi_missing_breaking.returncode)
+            self.assertIn("Breaking", multi_missing_breaking.stderr)
+
+            multi_ok = run_step(
+                "chore(settings): rename keys",
+                pr_body("## Release Notes\n\n### Breaking Changes\n\n- Settings reset once."),
+                base_sha,
+                multi_head,
+            )
+            self.assertEqual(0, multi_ok.returncode, multi_ok.stderr)
+
+            pr_body_breaking = run_step(
+                "feat(player): add chapters",
+                pr_body("## Release Notes\n\n### New\n\n- Added chapters.") + "\nBREAKING CHANGE: only in PR body.\n",
+                base_sha,
+                single_head,
+            )
+            self.assertEqual(1, pr_body_breaking.returncode)
+            self.assertIn("PR body", pr_body_breaking.stderr)
+
+
+class PackageVersionWorkflowStepTest(unittest.TestCase):
+    def test_package_version_workflow_step_verifies_upper_bound(self):
+        workflow_text = (SCRIPT_DIR.parent / ".github/workflows/ci-scripts.yml").read_text(encoding="utf-8")
+        step_script = extract_step_run(extract_job_block(workflow_text, "test"), "Test setting the package version")
+        self.assertIn("255.255.65535", step_script)
+        with tempfile.TemporaryDirectory() as tmp_name:
+            runner_temp = Path(tmp_name)
+            result = subprocess.run(
                 ["bash", "-euo", "pipefail", "-c", step_script],
                 cwd=SCRIPT_DIR.parent,
-                env={**env, "PR_TITLE": "feat(player): add chapters", "PR_BODY": "## Problem\n\nNo chapters."},
+                env={**os.environ, "RUNNER_TEMP": str(runner_temp)},
                 capture_output=True,
                 text=True,
             )
-            self.assertEqual(1, missing.returncode)
-            self.assertIn("## Release Notes", missing.stderr)
+            self.assertEqual(0, result.returncode, result.stderr)
+            staged = (runner_temp / "config.xml").read_text(encoding="utf-8")
+            self.assertRegex(staged, r'<widget [^>]* version="255\.255\.65535"')
+            self.assertIn('<?xml version="1.0"', staged)
 
 
 HEADER = "# Changelog\n\nIntro.\n\n## [Unreleased]\n\n- Pending.\n\n"

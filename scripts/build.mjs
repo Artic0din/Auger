@@ -1,10 +1,12 @@
 // Stage the Tizen web app in dist/wgt: static files from app/ plus one
 // classic-script bundle of src/main.ts for Tizen 8.0's Chromium 108 engine.
+// Usage: node scripts/build.mjs [--root <dir>]
 import { execFileSync } from "node:child_process";
 import { build } from "esbuild";
 import { cpSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { dirname, join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
+import { parseArgs } from "node:util";
 import { writeCatalogFiles } from "./catalog-files.ts";
 
 const DEFAULT_VERSION = "0.0.1";
@@ -38,8 +40,16 @@ function headReleaseVersion(cwd) {
     }
 }
 
-const root = process.env.AUGER_BUILD_ROOT
-    ? resolve(process.env.AUGER_BUILD_ROOT)
+const { values } = parseArgs({
+    options: {
+        root: { type: "string" },
+    },
+});
+if (values.root !== undefined && !values.root.trim()) {
+    throw new Error("--root requires a directory path");
+}
+const root = values.root
+    ? resolve(values.root)
     : join(dirname(fileURLToPath(import.meta.url)), "..");
 const stageDir = join(root, "dist", "wgt");
 const config = readFileSync(join(root, "app", "config.xml"), "utf8");
