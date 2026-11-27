@@ -235,23 +235,22 @@ def breaking_text(body: str) -> str:
     return " ".join(lines)
 
 
-def entries_for(commit: CommitMessage) -> list[Entry]:
-    subject = commit.subject.strip()
-    header = release.HEADER.fullmatch(subject)
-    footer = breaking_text(commit.body)
-    is_breaking = bool((header and header.group("bang")) or release.BREAKING.search(commit.body))
+def classify_subject(subject: str) -> tuple[str, str, str, bool, Optional[Category]]:
+    normalized = subject.strip()
+    header = release.HEADER.fullmatch(normalized)
+    has_bang = bool(header and header.group("bang"))
 
     if header:
         kind = header.group("type").lower()
         scope = header.group("scope") or ""
         description = clean(header.group("description"))
-    elif subject.startswith('Revert "'):
-        inner = PR_SUFFIX.sub("", subject).removeprefix('Revert "').removesuffix('"')
+    elif normalized.startswith('Revert "'):
+        inner = PR_SUFFIX.sub("", normalized).removeprefix('Revert "').removesuffix('"')
         reverted = release.HEADER.fullmatch(inner)
         kind, scope = "revert", ""
         description = f"Reverted: {clean(reverted.group('description') if reverted else inner)}"
     else:
-        kind, scope, description = "", "", clean(subject)
+        kind, scope, description = "", "", clean(normalized)
 
     scope_parts = [part.strip().lower() for part in scope.split(",") if part.strip()]
     category_name = CATEGORY_BY_TYPE.get(kind)
@@ -263,6 +262,13 @@ def entries_for(commit: CommitMessage) -> list[Entry]:
         category = Category.SECURITY
     elif kind == "fix" and SECURITY_WORDS.search(description):
         category = Category.SECURITY
+    return kind, scope, description, has_bang, category
+
+
+def entries_for(commit: CommitMessage) -> list[Entry]:
+    _, scope, description, has_bang, category = classify_subject(commit.subject)
+    footer = breaking_text(commit.body)
+    is_breaking = bool(has_bang or release.BREAKING.search(commit.body))
     label = scope_label(scope)
     if category == Category.SECURITY and label == "Security":
         label = ""
@@ -514,20 +520,20 @@ def normalize_newlines(text: str) -> str:
     return text.replace("\r\n", "\n").replace("\r", "\n")
 
 
-def commit_signature(subject: str, body: str = "") -> tuple[release.BumpLevel, str, tuple[Category, ...]]:
-    commit = CommitMessage(subject.strip(), body)
-    bump = release.classify_commit(commit)
-    header = release.HEADER.fullmatch(commit.subject)
-    kind = header.group("type").lower() if header else ""
-    if bump == release.BumpLevel.MAJOR:
+def headline_signature(subject: str) -> tuple[release.BumpLevel, str, Optional[Category]]:
+    kind, _, _, has_bang, category = classify_subject(subject)
+    bump = release.classify_commit(CommitMessage(subject.strip(), ""))
+    if has_bang:
         release_kind = "breaking"
-    elif bump == release.BumpLevel.MINOR:
+    elif kind == "feat":
         release_kind = "feat"
+    elif kind == "perf":
+        release_kind = "perf"
     elif bump == release.BumpLevel.PATCH:
-        release_kind = "perf" if kind == "perf" else "fix"
+        release_kind = "fix"
     else:
         release_kind = "none"
-    return (bump, release_kind, tuple(entry.category for entry in entries_for(commit)))
+    return (bump, release_kind, category)
 
 
 def check_pr_release_notes(title: str, body: str, commits: Iterable[CommitMessage] = ()) -> list[str]:
@@ -542,9 +548,7 @@ def check_pr_release_notes(title: str, body: str, commits: Iterable[CommitMessag
         lone_subject = lone.subject.strip()
         lone_body = normalize_newlines(lone.body)
         effective_commit = CommitMessage(lone_subject, lone_body, lone.sha)
-        if commit_signature(normalized_title) != commit_signature(lone_subject) or commit_signature(
-            normalized_title, lone_body
-        ) != commit_signature(lone_subject, lone_body):
+        if headline_signature(normalized_title) != headline_signature(lone_subject):
             errors.append(
                 "On a single-commit PR, GitHub sets the squash commit title from the commit headline "
                 f"(`COMMIT_OR_PR_TITLE`). Align the PR title (`{normalized_title}`) and commit headline "

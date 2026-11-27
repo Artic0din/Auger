@@ -711,6 +711,29 @@ class CheckPrReleaseNotesTest(unittest.TestCase):
                 [Commit("build(tizen): require Tizen 8", "BREAKING CHANGE: requires Tizen 8.")],
             ),
         )
+        # Paraphrased single-commit breaking titles pass even when the footer repeats the commit description.
+        self.assertEqual(
+            [],
+            changelog.check_pr_release_notes(
+                "feat!: raise minimum Tizen version",
+                pr_body("## Release Notes\n\n### Breaking Changes\n\n- Upgrade your TV to Tizen 8 or later."),
+                [Commit("feat!: require Tizen 8", "BREAKING CHANGE: require Tizen 8")],
+            ),
+        )
+        self.assertEqual(
+            [],
+            changelog.check_pr_release_notes(
+                "feat: raise minimum Tizen version",
+                pr_body("## Release Notes\n\n### Breaking Changes\n\n- Upgrade your TV to Tizen 8 or later."),
+                [Commit("feat: require Tizen 8", "BREAKING CHANGE: require Tizen 8")],
+            ),
+        )
+        chore_vs_feat_errors = changelog.check_pr_release_notes(
+            "chore!: require Tizen 8",
+            pr_body("## Release Notes\n\n### Breaking Changes\n\n- Upgrade your TV to Tizen 8 or later."),
+            [Commit("feat!: require Tizen 8", "BREAKING CHANGE: require Tizen 8")],
+        )
+        self.assertTrue(any("COMMIT_OR_PR_TITLE" in err for err in chore_vs_feat_errors), chore_vs_feat_errors)
 
     def test_multi_commit_pr_uses_pr_title_and_scans_all_commit_bodies(self):
         # PR title governs the squash headline even when individual commits use fix/test.
