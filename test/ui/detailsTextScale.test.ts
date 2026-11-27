@@ -3,7 +3,7 @@ import assert from "node:assert/strict";
 import { after, before, test } from "node:test";
 import type { Browser } from "playwright";
 import { FakeDetails } from "../native/support/fakeDetails.ts";
-import { launchBrowser, openTv, type Tv } from "./support/tv.ts";
+import { afterPaint, launchBrowser, openTv, type Tv } from "./support/tv.ts";
 
 const MOVIE = '[data-section="recently_added"] [data-focus="movie:m0001"]';
 const SERIES = '[data-section="recently_added"] [data-focus="series:s1"]';
@@ -149,19 +149,27 @@ detailTest("movie Details text runs within 2% of SF Pro's width at Apple's size"
     await routeMovie(tv, details);
     await tv.page.locator(MOVIE).first().click();
     await tv.page.locator(".box-set-row .browse-card-title").first().waitFor();
+    await tv.page.locator('[data-detail-section="related"] .browse-card').first().waitFor();
     await tv.page.locator(".details-extras .browse-card").first().waitFor();
     await tv.page.locator(".details-facts-table").waitFor();
     await tv.page.locator(".details-editorial .requests-title-secondary").waitFor();
+    await tv.page.locator('[data-focus="watchlist"][aria-pressed]').waitFor();
+    await tv.eventually(async () => tv.pendingReplies === 0, "Details reads settled");
+    await afterPaint(tv);
     await tv.page.evaluate(() => document.fonts.ready);
     // Resume holds focus, settled at its 1.025 focus scale, as it does once the page's opening focus lands.
-    await tv.page.locator('[data-focus="resume"]').evaluate(node => { (node as HTMLElement).focus(); for (const animation of node.getAnimations()) animation.finish(); });
-    // One read: Resume's focus and scale are checked in the same task as the widths, so they describe the measured state.
+    // Focus, finish the focus transition, and read both scale and text widths in one page task so no repaint can intervene.
     const { resume, widths } = await tv.page.evaluate(rows => {
         const scaleOf = (element: Element): number => {
             const css = getComputedStyle(element);
             return new DOMMatrix(css.transform).a * (css.scale === "none" ? 1 : Number.parseFloat(css.scale));
         };
-        const resumeNode = document.querySelector('[data-focus="resume"]');
+        const resumeNode = document.querySelector<HTMLElement>('[data-focus="resume"]');
+        if (resumeNode !== null) {
+            resumeNode.focus();
+            getComputedStyle(resumeNode).transform;
+            for (const animation of resumeNode.getAnimations()) animation.finish();
+        }
         const resumeState = { focused: resumeNode !== null && document.activeElement === resumeNode, scale: resumeNode === null ? 1 : scaleOf(resumeNode) };
         return { resume: resumeState, widths: rows.map(({ selector, text }) => {
             const node = [...document.querySelectorAll(selector)].find(candidate => (candidate.textContent ?? "").trim() === text);
