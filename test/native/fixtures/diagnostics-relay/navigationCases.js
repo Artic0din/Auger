@@ -74,6 +74,7 @@ export const CASES = [
       includes(auto.body.body, "| D-pad input to next frame (estimate) | p95 48 ms, worst 120 ms (12 samples) |", "frame estimate");
       includes(auto.body.body, "| Slowest API operation (to response headers) | home_sections · 900 ms |", "api latency");
       check(auto.body.body.indexOf("### Navigation before the report") < auto.body.body.indexOf("### Device"), "navigation before device");
+      check(!auto.body.body.includes("### ELI5") && !manual.body.body.includes("### ELI5"), "diagnostics issues must not include an ELI5 section");
       equal(JSON.stringify(auto.body.labels), JSON.stringify(["diagnostics", "needs-triage"]), "labels");
 
       const shared = fakeGitHub();
