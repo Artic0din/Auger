@@ -340,9 +340,25 @@ test("transiently failing Details logo retries and renders on the next episode f
             return route.fallback();
         });
         await routeSeries(tv, details);
+        await tv.page.evaluate(() => {
+            const w = window as unknown as { __logoErrors: number };
+            w.__logoErrors = 0;
+            const origCreate = document.createElement.bind(document) as typeof document.createElement;
+            document.createElement = function (tagName: string, options?: ElementCreationOptions): HTMLElement {
+                const node = origCreate(tagName, options);
+                if (tagName.toLowerCase() === "img") {
+                    node.addEventListener("error", () => {
+                        if ((node as HTMLImageElement).src.includes("/art/last-signal-logo.svg")) {
+                            queueMicrotask(() => { w.__logoErrors++; });
+                        }
+                    });
+                }
+                return node;
+            } as typeof document.createElement;
+        });
         await tv.page.locator('[data-section="recently_added"] [data-focus="series:s1"]').first().click();
         await tv.page.locator('[data-focus="episode:ret:4"]').waitFor();
-        await tv.eventually(async () => logoHits >= 1, "initial logo request");
+        await tv.eventually(() => tv.page.evaluate(() => (window as unknown as { __logoErrors: number }).__logoErrors >= 1), "initial logo error settled");
         await afterPaint(tv);
         assert.equal(await tv.page.locator(".details-hero .details-logo").count(), 0);
 
