@@ -19,6 +19,7 @@ jobs:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           persist-credentials: false
+          fetch-depth: 0
       - name: Test the /api/v1 path guard
         run: bash scripts/ci/check-no-api-v1.test.sh
       - name: Block /api/v1 paths in the app and tests
@@ -36,9 +37,11 @@ jobs:
       - name: Test setting the package version
         run: |
           cp app/config.xml "${RUNNER_TEMP}/config.xml"
-          scripts/ci/set-wgt-version.sh 1.2.30 "${RUNNER_TEMP}/config.xml"
-          grep -q '<widget [^>]* version="1.2.30"' "${RUNNER_TEMP}/config.xml"
-          grep -q '<?xml version="1.0"' "${RUNNER_TEMP}/config.xml"
+          for valid in 1.2.30 255.255.65535; do
+            scripts/ci/set-wgt-version.sh "${valid}" "${RUNNER_TEMP}/config.xml"
+            grep -q "<widget [^>]* version=\"${valid}\"" "${RUNNER_TEMP}/config.xml"
+            grep -q '<?xml version="1.0"' "${RUNNER_TEMP}/config.xml"
+          done
           for bad in 1.2 01.2.3 1.02.3 1.2.03 256.0.0 1.256.0 1.0.65536; do
             if scripts/ci/set-wgt-version.sh "${bad}" "${RUNNER_TEMP}/config.xml"; then
               echo "::error::set-wgt-version.sh accepted ${bad}"
@@ -52,6 +55,9 @@ jobs:
         env:
           PR_TITLE: ${{ github.event.pull_request.title }}
           PR_BODY: ${{ github.event.pull_request.body }}
+          BASE_SHA: ${{ github.event.pull_request.base.sha }}
+          HEAD_SHA: ${{ github.event.pull_request.head.sha }}
         run: |
           printf '%s' "${PR_BODY}" > "${RUNNER_TEMP}/pr-body.md"
-          python3 scripts/generate-changelog.py check-pr --title "${PR_TITLE}" --body-file "${RUNNER_TEMP}/pr-body.md"
+          python3 scripts/generate-changelog.py check-pr --title "${PR_TITLE}" --body-file "${RUNNER_TEMP}/pr-body.md" \
+            ${BASE_SHA:+--base-sha "${BASE_SHA}"} ${HEAD_SHA:+--head-sha "${HEAD_SHA}"}

@@ -49,9 +49,9 @@ This workflow runs on pull requests (`opened`, `edited`, `synchronize`, `reopene
   5. `python3 scripts/test-release-version.py` tests semantic version bump selection from Conventional Commits.
   6. `python3 scripts/test-generate-changelog.py` tests release note generation and `CHANGELOG.md` updates.
   7. `python3 scripts/test-pr-gate.py` tests the local merge gate script (`scripts/pr-gate.py`).
-  8. `scripts/ci/set-wgt-version.sh` verifies stamping a valid three-part version (`1.2.30`) into `app/config.xml` and rejecting an invalid two-part version (`1.2`).
+  8. `scripts/ci/set-wgt-version.sh` verifies stamping valid three-part versions (`1.2.30` and the Tizen upper bound `255.255.65535`) into `app/config.xml` and rejecting two-part, leading-zero, and out-of-range Tizen versions.
   9. `bash .github/scripts/discord-release-embed.test.sh` tests the Discord release embed payload builder, including truncation against Discord's 4096/6000 character limits.
-  10. `python3 scripts/generate-changelog.py check-pr` (pull requests only) verifies that `feat`, `fix`, `perf`, `revert`, and breaking pull requests include a populated user-facing `## Release Notes` (or `## Release note`) section without raw `#123` references or Conventional Commit prefixes, allowing `None` only for non-breaking internal fixes.
+  10. `python3 scripts/generate-changelog.py check-pr` (pull requests only) validates the pull request's `## Release Notes` (or `## Release note`) section and category subheadings against the effective squash commit from `--base-sha`..`--head-sha`, rejecting raw `#123` references and Conventional Commit prefixes and allowing `None` only on non-breaking internal fixes or non-releasing PRs.
 
 ### Security (`.github/workflows/secrets.yml`)
 
