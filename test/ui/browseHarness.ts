@@ -5,6 +5,7 @@
 
 import type { ConnectedServer } from "../../src/session/core.ts";
 import { connect } from "../../src/session/core.ts";
+import type { AudiobookPlayRequest } from "../../src/player/audiobookController.ts";
 import { type Browse, mountBrowse, type PlayRequest } from "../../src/ui/browse.ts";
 import { browseCache, clearBrowseCache } from "../../src/session/browseCache.ts";
 import { operations } from "../../src/api/operations.ts";
@@ -19,6 +20,7 @@ import { FakeKeyManager, MemoryPublicStorage } from "../native/support/keyManage
 export interface BrowseHarness {
     loginPhase: string;
     readonly plays: PlayRequest[];
+    readonly audiobookPlays: AudiobookPlayRequest[];
     /** Theme audio as heard, in order: `grant <url>`, `play`, `pause`, `teardown`, and `player` when a video request opens. */
     readonly themeEvents: string[];
     /** Whether browse's container was still in the root when onChooseProfile ran. */
@@ -110,6 +112,7 @@ function recordingTheme(url: string): ThemeAudioOutput {
 const harness: BrowseHarness = {
     loginPhase: "none",
     plays: [],
+    audiobookPlays: [],
     themeEvents,
     chooseProfileCalls: [],
     signOutCalls: 0,
@@ -171,6 +174,10 @@ const harness: BrowseHarness = {
             onPlay: (request) => {
                 themeEvents.push("player");
                 harness.plays.push(request);
+            },
+            onPlayAudiobook: (request) => {
+                themeEvents.push("audiobook-player");
+                harness.audiobookPlays.push(request);
             },
             onChooseProfile: () => {
                 harness.chooseProfileCalls.push(root.querySelector(".browse") !== null);

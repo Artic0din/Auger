@@ -383,6 +383,7 @@ Playback has these differences from browse:
 - In Arabic the player mirrors except the transport, the scrubber and its time row, which pin `dir="ltr"` as Apple's `.mediaLayoutDirection()` does (`TVPlayerControls.swift:325,555,557,575`).
   Those three, a held seek and the skip pill's seek keep the remote's physical Left and Right (`physicalKey`).
   The options panel's tab rail and columns, Up Next's buttons and the buffering card's two buttons read `remoteKey(event, section)`: the scope is the player, because focus can sit in the left-to-right scrubber while the press belongs to the buffering prompt (Apple reads that press through the layout, `PlayerView.swift:869`).
+- The full-screen audiobook player (`src/player/audiobookPlayerScreen.ts`) intercepts window `keydown` and `keyup` in capture phase (`stopImmediatePropagation`), activates controls on fresh Select release, focuses `Cancel` during loading and `Play/Pause` in the LTR transport row while active, pins both the scrubber and transport row LTR with physical Left/Right keys while mirroring options/error actions in RTL, traps Up/Down/Enter/Back inside `SkylineScroll`-managed Chapters, Speed, and Sleep Timer modals, keeps a stopping screen swallowing keys until shutdown finishes, and restores focus to the triggering option button on modal close.
 
 ## Focus rules checklist
 

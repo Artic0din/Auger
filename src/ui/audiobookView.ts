@@ -1,8 +1,8 @@
 // The audiobook detail page, full description screen and chapter picker, after silo-apple TVAudiobookDetailView,
-// TVAudiobookDetailSections, TVAudiobookDescriptionView and TVAudiobookChaptersView (198a3e9). Playback is a later
-// change: Play and Start Over are drawn and focusable but inert (aria-disabled) until the player can open an audiobook.
+// TVAudiobookDetailSections, TVAudiobookDescriptionView and TVAudiobookChaptersView (198a3e9).
 
 import type { Audiobook } from "../contracts/v2/audiobooks.ts";
+import type { AudiobookPlayRequest } from "../player/audiobookController.ts";
 import { audiobookPage, descriptionPassages, formatRuntime, type AudiobookPage, type PickerRow } from "./audiobookDetail.ts";
 import { detailAction } from "./detailsActions.ts";
 import type { DetailsState } from "./detailsState.ts";
@@ -254,6 +254,7 @@ export interface AudiobookHandlers {
     readonly setPicker: (open: boolean) => void;
     readonly descriptionOpen?: boolean | undefined;
     readonly setDescription?: ((open: boolean) => void) | undefined;
+    readonly play?: ((request: AudiobookPlayRequest) => void) | undefined;
     readonly back: () => void;
 }
 
@@ -274,9 +275,19 @@ export function audiobookView(book: Audiobook, given: AudiobookHandlers): View {
 
 function detailView(book: Audiobook, page: AudiobookPage, handlers: AudiobookHandlers): View {
     const { context, details } = handlers;
-    const actions: FocusItem[] = [pill("play", page.primary.label, page.primary.icon, undefined, "primary")];
+    const playRequest = (restart = false): AudiobookPlayRequest => ({
+        contentId: book.id,
+        title: book.title,
+        posterUrl: book.posterUrl,
+        ...(restart ? { restart: true } : {}),
+    });
+    const actions: FocusItem[] = [
+        pill("play", page.primary.label, page.primary.icon, handlers.play === undefined ? undefined : () => handlers.play?.(playRequest(false)), "primary"),
+    ];
     if (page.showsChapters) actions.push(pill("chapters", translate("detail.audiobook.chapters"), "chapters", () => handlers.setPicker(true), "secondary"));
-    if (page.resumeSeconds !== undefined) actions.push(pill("start-over", translate("detail.startOver"), "restart", undefined, "secondary"));
+    if (page.resumeSeconds !== undefined) {
+        actions.push(pill("start-over", translate("detail.startOver"), "restart", handlers.play === undefined ? undefined : () => handlers.play?.(playRequest(true)), "secondary"));
+    }
     if (details?.personalSupported !== false) actions.push(favoriteButton(details));
     actions.push(finishedButton(page, details));
 
@@ -350,8 +361,9 @@ function descriptionView(book: Audiobook, page: AudiobookPage, handlers: Audiobo
     };
 }
 
-function rowNode(row: PickerRow): FocusItem {
-    const item = actionButton(row.id, "", () => undefined);
+function rowNode(row: PickerRow, onSelect?: () => void): FocusItem {
+    const item = actionButton(row.id, "", onSelect ?? (() => undefined));
+    if (onSelect === undefined) item.element.setAttribute("aria-disabled", "true");
     item.element.classList.add("audiobook-row", "audiobook-chapter");
     item.element.dataset.current = String(row.isCurrent);
     item.element.dataset.done = String(row.isDone);
@@ -370,7 +382,10 @@ function rowNode(row: PickerRow): FocusItem {
 }
 
 function pickerView(book: Audiobook, page: AudiobookPage, handlers: AudiobookHandlers): View {
-    const items = page.picker.rows.map(rowNode);
+    const items = page.picker.rows.map(row => rowNode(row, handlers.play === undefined ? undefined : () => {
+        handlers.setPicker(false);
+        handlers.play?.({ contentId: book.id, title: book.title, posterUrl: book.posterUrl, startSeconds: row.startSeconds });
+    }));
     const header = el("header", "audiobook-picker-header");
     const titles = el("div", "audiobook-picker-titles");
     titles.append(el("h1", "audiobook-picker-title", translate("detail.audiobook.chapters")), el("p", "audiobook-picker-subline", page.picker.subline));

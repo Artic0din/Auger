@@ -6,6 +6,7 @@ export const SLEEP_TIMER_MINUTES = [15, 30, 60] as const;
 export interface SleepTimerSnapshot {
     readonly active: boolean;
     readonly remainingSeconds: number;
+    readonly presetMinutes: number | undefined;
 }
 
 /**
@@ -18,6 +19,7 @@ export class AudiobookSleepTimer {
     private readonly onChange: ((snapshot: SleepTimerSnapshot) => void) | undefined;
     private activeState = false;
     private remaining = 0;
+    private preset: number | undefined;
     private deadlineMs: number | undefined;
     private cancelStep: (() => void) | undefined;
     private generation = 0;
@@ -36,13 +38,18 @@ export class AudiobookSleepTimer {
         return this.remaining;
     }
 
+    get presetMinutes(): number | undefined {
+        return this.preset;
+    }
+
     snapshot(): SleepTimerSnapshot {
-        return { active: this.activeState, remainingSeconds: this.remaining };
+        return { active: this.activeState, remainingSeconds: this.remaining, presetMinutes: this.preset };
     }
 
     /** Starts or replaces the countdown; non-positive minutes cancel instead. */
     start(minutes: number): void {
-        const seconds = Number.isFinite(minutes) ? Math.round(minutes) * 60 : 0;
+        const roundedMinutes = Number.isFinite(minutes) ? Math.round(minutes) : 0;
+        const seconds = roundedMinutes * 60;
         if (seconds <= 0) {
             this.cancel();
             return;
@@ -50,6 +57,7 @@ export class AudiobookSleepTimer {
         this.clearTimer();
         this.activeState = true;
         this.remaining = seconds;
+        this.preset = roundedMinutes;
         this.deadlineMs = this.clock.now() + seconds * 1000;
         this.scheduleTick(seconds * 1000);
         this.onChange?.(this.snapshot());
@@ -100,6 +108,7 @@ export class AudiobookSleepTimer {
         this.cancelStep = undefined;
         this.activeState = false;
         this.remaining = 0;
+        this.preset = undefined;
         this.deadlineMs = undefined;
     }
 

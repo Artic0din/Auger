@@ -155,3 +155,43 @@ export function circleFillIcon(): string {
 export function shuffleIcon(): string {
     return svg(`<g fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M16 4h4v4"/><path d="M4 19 20 4"/><path d="M16 20h4v-4"/><path d="M14 14l6 6"/><path d="M4 5l6 6"/></g>`);
 }
+
+/** `backward.end.fill`: previous audiobook chapter button. */
+export function prevChapterIcon(): string {
+    return svg(`<path fill="currentColor" d="M5 5.2a1 1 0 0 1 2 0v13.6a1 1 0 1 1-2 0V5.2zm14.6.9A1 1 0 0 1 21 7v10a1 1 0 0 1-1.5.85l-8.5-5a1 1 0 0 1 0-1.7l8.5-5Z"/>`);
+}
+
+/** `forward.end.fill`: next audiobook chapter button. */
+export function nextChapterIcon(): string {
+    return svg(`<path fill="currentColor" d="M17 5.2a1 1 0 1 1 2 0v13.6a1 1 0 1 1-2 0V5.2zM3.5 6.1A1 1 0 0 1 5 6.1l8.5 5a1 1 0 0 1 0 1.7l-8.5 5A1 1 0 0 1 3.5 17V6.1z"/>`);
+}
+
+/** `gauge.medium`: playback speed option symbol. */
+export function speedIcon(): string {
+    return svg(`<g fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M4.2 16.5a9 9 0 1 1 15.6 0"/><path d="M12 13l4.2-4.2"/><circle cx="12" cy="14" r="1.4" fill="currentColor"/></g>`);
+}
+
+/** `moon`: inactive sleep timer symbol. */
+export function moonIcon(): string {
+    return svg(`<path fill="none" stroke="currentColor" stroke-width="2" stroke-linejoin="round" d="M18.6 14.8A7.5 7.5 0 0 1 9.2 5.4 7.8 7.8 0 1 0 18.6 14.8Z"/>`);
+}
+
+/** `moon.fill`: active sleep timer symbol. */
+export function moonFilledIcon(): string {
+    return svg(`<path fill="currentColor" d="M18.6 14.8A7.5 7.5 0 0 1 9.2 5.4 7.8 7.8 0 1 0 18.6 14.8Z"/>`);
+}
+
+/** `list.bullet`: chapters drawer trigger symbol. */
+export function chaptersListIcon(): string {
+    return svg(`<g fill="none" stroke="currentColor" stroke-width="2.1" stroke-linecap="round"><circle cx="4.5" cy="7" r="1" fill="currentColor" stroke="none"/><circle cx="4.5" cy="12" r="1" fill="currentColor" stroke="none"/><circle cx="4.5" cy="17" r="1" fill="currentColor" stroke="none"/><path d="M8.5 7h11M8.5 12h11M8.5 17h11"/></g>`);
+}
+
+/** `stop.circle`: stop listening symbol. */
+export function stopIcon(): string {
+    return svg(`<g fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="9"/><rect x="8.8" y="8.8" width="6.4" height="6.4" rx="1" fill="currentColor" stroke="none"/></g>`);
+}
+
+/** `checkmark`: selected speed or sleep preset indicator. */
+export function checkmarkIcon(): string {
+    return svg(`<path fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round" d="m5.5 12.5 4.2 4.2 8.8-9.2"/>`);
+}

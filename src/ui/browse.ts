@@ -80,6 +80,7 @@ import { stopFeed, waitForFeedEnd } from "./catalogFeed.ts";
 import { leavePanel } from "./libraryBrowseViews.ts";
 import type { BrowseChange, DiscoveryState } from "./libraryDiscovery.ts";
 import { shufflePick } from "../player/nextShuffle.ts";
+import type { AudiobookPlayRequest } from "../player/audiobookController.ts";
 import { PlayerSettingsFlusher, sessionPlayerSettingsTransport } from "../player/playerSettingsFlusher.ts";
 import { StillWatchingPreference } from "../player/stillWatchingGuard.ts";
 import type { ShuffleCapability } from "../contracts/v2/shuffle.ts";
@@ -97,6 +98,7 @@ export interface BrowseOptions {
     readonly server: ConnectedServer;
     /** Browse hides itself and ignores keys until `resumeAfterPlayback`. */
     readonly onPlay: (request: PlayRequest) => void;
+    readonly onPlayAudiobook?: (request: AudiobookPlayRequest) => void;
     /** The person asked for the profile screens; browse has already removed itself. */
     readonly onChooseProfile: () => void;
     /** Opens profile creation for the open account. */
@@ -2061,6 +2063,23 @@ export function mountBrowse(root: HTMLElement, options: BrowseOptions): Browse {
         options.onPlay(request);
     };
 
+    const handoffAudiobook = (request: AudiobookPlayRequest, focus?: FocusTarget): void => {
+        const current = top();
+        if (current === undefined || torn || playing) {
+            return;
+        }
+        current.focus = focus ?? host.focused();
+        stopDetails();
+        playing = true;
+        syncThemeMusic();
+        cancelCalendarDay();
+        host.holdVisit();
+        shell.hide();
+        host.stop();
+        container.hidden = true;
+        options.onPlayAudiobook?.(request);
+    };
+
     const coverBrowse = (open: (back: () => void) => void, focus?: FocusTarget): void => {
         host.holdVisit();
         shell.hide();
@@ -2399,6 +2418,7 @@ export function mountBrowse(root: HTMLElement, options: BrowseOptions): Browse {
         openCollection,
         pop,
         play,
+        playAudiobook: (request: AudiobookPlayRequest) => { handoffAudiobook(request); },
         chooseProfile,
         retry,
         turn,

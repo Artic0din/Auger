@@ -1892,3 +1892,49 @@ test("suspend() while replacement start awaits previous teardown defers replacem
     assert.equal(playingView(r2).contentId, "audiobook:dune");
     r2.controller.destroy();
 });
+
+test("stop() syncs pending or queued seek targets before AVPlay seek settles", async () => {
+    const r = await setup();
+    void r.controller.start({ contentId: "audiobook:tide" });
+    await settlePlay(r);
+
+    // Case 1: single skip before finishSeek() -> stop() syncs 4112 + 30 = 4142 s.
+    r.controller.skip("forward");
+    assert.equal(playingView(r).bufferedTarget, 4142);
+    await r.controller.stop();
+    assert.equal(r.catalog.progress.get("audiobook:tide"), 4142);
+    assert.equal(stopRequests(r).at(-1)?.body?.position, 4142);
+    r.avplay.finishSeek();
+    await r.h.clock.advance(0);
+
+    // Case 2: rapid double-skip while first seek is pending (queuedSeekTarget set) -> stop() syncs +60 s.
+    void r.controller.start({ contentId: "audiobook:tide" });
+    await settlePlay(r);
+    r.controller.skip("forward");
+    r.controller.skip("forward");
+    assert.equal(playingView(r).bufferedTarget, 4202);
+    await r.controller.stop();
+    assert.equal(r.catalog.progress.get("audiobook:tide"), 4202);
+    assert.equal(stopRequests(r).at(-1)?.body?.position, 4202);
+    r.avplay.finishSeek();
+    await r.h.clock.advance(0);
+    await r.controller.destroy();
+});
+
+test("destroy() defers AVPlay close and reports transportBusy until in-flight seek settles", async () => {
+    const r = await setup();
+    void r.controller.start({ contentId: "audiobook:tide" });
+    await settlePlay(r);
+
+    r.controller.skip("forward");
+    const closesBefore = r.avplay.calls.filter(call => call === "close").length;
+    const destroying = r.controller.destroy();
+    assert.equal(r.controller.transportBusy, true);
+    assert.equal(r.avplay.calls.filter(call => call === "close").length, closesBefore);
+
+    r.avplay.finishSeek();
+    await destroying;
+    assert.equal(r.controller.transportBusy, false);
+    assert.equal(r.avplay.calls.filter(call => call === "close").length, closesBefore + 1);
+    assert.equal(r.avplay.state, "NONE");
+});

@@ -1,0 +1,502 @@
+import assert from "node:assert/strict";
+import { after, before, test } from "node:test";
+import type { Browser } from "playwright";
+import { APP_LANGUAGE_KEY, AUDIOBOOK_SEEK_BACK_KEY, AUDIOBOOK_SEEK_FORWARD_KEY } from "../../src/contracts/v2/settings.ts";
+import { FakeAudiobooks } from "../native/support/fakeAudiobooks.ts";
+import { FakePlayback } from "../native/support/fakePlayback.ts";
+import { FakeSettings } from "../native/support/fakeSettings.ts";
+import { problem } from "../native/support/fakeSilo.ts";
+import { openTv, type Tv } from "./support/tv.ts";
+
+const ENTER = 13;
+const BACK = 10009;
+const LEFT = 37;
+const UP = 38;
+const RIGHT = 39;
+const DOWN = 40;
+const PLAY_PAUSE = 10252;
+const REWIND = 412;
+const FAST_FORWARD = 417;
+
+let browser: Browser;
+before(async () => {
+    const { chromium } = await import("playwright");
+    browser = await chromium.launch();
+});
+after(async () => { await browser.close(); });
+
+interface Rig {
+    readonly tv: Tv;
+    readonly catalog: FakeAudiobooks;
+    readonly playback: FakePlayback;
+    readonly settings: FakeSettings;
+}
+
+async function setupApp(setup?: (rig: Rig) => void): Promise<Rig> {
+    const tv = await openTv(browser, { app: "application" });
+    const catalog = new FakeAudiobooks();
+    tv.fake.catalog = catalog;
+    const settings = new FakeSettings(tv.fake);
+    const playback = new FakePlayback(tv.fake);
+    catalog.registerAudiobookMediaFiles(playback);
+    const rig: Rig = { tv, catalog, playback, settings };
+    setup?.(rig);
+
+    await tv.page.emulateMedia({ reducedMotion: "reduce" });
+    await tv.page.fill("#signin-address", "silo.example.test");
+    await tv.page.getByRole("button", { name: "Connect", exact: true }).click();
+    await tv.page.locator('[data-screen="code"]').waitFor();
+    const code = [...tv.fake.devices.keys()].pop() ?? "";
+    tv.fake.approve(code);
+    await tv.jump(5000);
+    await tv.page.locator('[data-screen="approved"], [data-screen="notice"], [data-screen="profiles"]').first().waitFor();
+    if (await tv.screen() === "approved") await tv.jump(1000);
+    await tv.page.locator('[data-screen="notice"], [data-screen="profiles"]').first().waitFor();
+    if (await tv.screen() === "notice") await tv.page.getByRole("button", { name: "Continue", exact: true }).click();
+    await tv.page.locator('[data-focus="profile:p-owner"]').click();
+    await tv.page.locator('[data-focus="ask-every-launch"]').click();
+    await tv.page.locator('[data-view="home"] [data-section="shelf"] [data-focus="audiobook:tide"]').waitFor();
+    return rig;
+}
+
+async function prepareAudio(tv: Tv, withSetSpeed = true): Promise<void> {
+    await tv.page.evaluate((enableSpeed) => {
+        const avplay = window.appHarness.avplay as unknown as Record<string, unknown>;
+        if (enableSpeed && typeof avplay.setSpeed !== "function") {
+            avplay.setSpeed = (value: number) => {
+                (avplay.calls as string[]).push(`setSpeed ${value}`);
+            };
+        }
+    }, withSetSpeed);
+    await tv.eventually(() => tv.page.evaluate(() => window.appHarness.avplay.pendingPrepares > 0), "AVPlay audiobook prepare");
+    await tv.page.evaluate(() => {
+        const avplay = window.appHarness.avplay;
+        avplay.finishPrepare();
+        if (avplay.calls[avplay.calls.length - 1]?.startsWith("seekTo") === true) {
+            avplay.finishSeek();
+        }
+    });
+    await tv.eventually(() => tv.page.evaluate(() => window.appHarness.avplay.state === "PLAYING"), "audio PLAYING");
+}
+
+function playerTest(name: string, body: (r: Rig) => Promise<void>, setup?: (r: Rig) => void): void {
+    test(name, async () => {
+        const r = await setupApp(setup);
+        try {
+            await body(r);
+            assert.deepEqual(r.tv.console, []);
+        } finally {
+            await r.tv.page.context().close();
+        }
+    });
+}
+
+playerTest("audiobook player renders cover, metadata, scrubber ticks, transport, and refreshes detail on Stop Listening", async ({ tv, catalog }) => {
+    assert.equal(await tv.page.locator('.audio-avplay-surface, object[type="application/avplayer"]').count(), 0);
+    await tv.page.locator('[data-section="shelf"] [data-focus="audiobook:tide"]').click();
+    await tv.page.locator('[data-view="audiobook:audiobook:tide"] [data-focus="play"]').waitFor();
+    await tv.page.keyboard.press("Enter");
+
+    await tv.page.locator('[data-screen="audiobook-player"]').waitFor();
+    await prepareAudio(tv, true);
+    assert.equal(await tv.page.locator('.audio-avplay-surface object[type="application/avplayer"]').count(), 1);
+
+    const screen = tv.page.locator('[data-screen="audiobook-player"]');
+    await screen.locator(".audio-player-scrubber").waitFor();
+    assert.equal(await screen.locator(".audio-player-eyebrow").textContent(), "Audiobook");
+    assert.equal(await screen.locator(".audio-player-title").innerText(), "Stormlight Archive 5 - The Tide Owes (5 of 5)");
+    assert.equal(await screen.locator(".audio-player-author").innerText(), "Brandon Sanderson");
+    assert.equal(await screen.locator(".audio-player-chapter").innerText(), "Chapter 2 of 3 · What the Tide Owes");
+    assert.equal(await screen.locator(".audio-player-scrubber-tick").count(), 2);
+    assert.equal(await screen.locator(".audio-player-elapsed").innerText(), "1:08:32");
+    assert.equal(await screen.locator(".audio-player-remaining").innerText(), "-1:51:28");
+
+    const artBox = await screen.locator(".audio-player-art-frame").boundingBox();
+    assert.ok(artBox !== null && Math.round(artBox.width) === 620 && Math.round(artBox.height) === 620);
+    assert.equal(await screen.locator(".audio-player-art").evaluate(el => getComputedStyle(el).display !== "none"), true);
+    assert.equal(await screen.locator(".audio-player-art-fallback").evaluate(el => getComputedStyle(el).display), "none");
+
+    // Focused control starts on play-pause. Toggle pause -> play via Enter and MediaPlayPause.
+    assert.equal(await screen.locator(":focus").getAttribute("data-key"), "play-pause");
+    await tv.remote(ENTER);
+    await tv.eventually(() => tv.page.evaluate(() => window.appHarness.avplay.state === "PAUSED"), "paused via Enter");
+    await tv.remote(PLAY_PAUSE);
+    await tv.eventually(() => tv.page.evaluate(() => window.appHarness.avplay.state === "PLAYING"), "resumed via MediaPlayPause");
+
+    // Advance playhead slightly then move to Stop Listening in options row ([speed, sleep, chapters, stop]).
+    await tv.page.evaluate(() => window.appHarness.avplay.tick(4500 * 1000));
+    await tv.eventually(async () => await screen.locator(".audio-player-elapsed").innerText() === "1:15:00", "updated elapsed");
+    await tv.remote(DOWN);
+    assert.equal(await screen.locator(":focus").getAttribute("data-key"), "speed");
+    await tv.remote(RIGHT);
+    await tv.remote(RIGHT);
+    await tv.remote(RIGHT);
+    assert.equal(await screen.locator(":focus").getAttribute("data-key"), "stop");
+    await tv.remote(ENTER);
+
+    await tv.page.locator('[data-view="audiobook:audiobook:tide"]').waitFor();
+    assert.equal(await tv.page.locator('[data-screen="audiobook-player"]').count(), 0);
+    assert.equal(await tv.page.locator('.audio-avplay-surface, object[type="application/avplayer"]').count(), 0);
+    assert.equal(catalog.progressWrites.at(-1)?.positionMs, 4_500_000);
+});
+
+playerTest("audiobook skip intervals use profile settings, scrubber skips, Speed menu honors AVPlay limits, and Sleep timer pauses at expiry", async ({ tv, playback }) => {
+    await tv.page.locator('[data-section="shelf"] [data-focus="audiobook:tide"]').click();
+    await tv.page.locator('[data-view="audiobook:audiobook:tide"] [data-focus="play"]').waitFor();
+    await tv.page.keyboard.press("Enter");
+    await prepareAudio(tv, true);
+
+    const screen = tv.page.locator('[data-screen="audiobook-player"]');
+    await screen.locator(".audio-player-scrubber").waitFor();
+
+    // Profile settings configured 15 s back / 45 s forward in setup hook below.
+    assert.equal(await screen.locator('[data-key="skip-back"]').getAttribute("aria-label"), "Back 15 seconds");
+    assert.equal(await screen.locator('[data-key="skip-forward"]').getAttribute("aria-label"), "Forward 45 seconds");
+
+    // Scrubber Left/Right jumps using profile skip intervals.
+    await tv.remote(UP);
+    assert.equal(await screen.locator(":focus").getAttribute("data-key"), "scrubber");
+    await tv.remote(RIGHT);
+    await tv.page.evaluate(() => window.appHarness.avplay.finishSeek());
+    await tv.eventually(async () => await screen.locator(".audio-player-elapsed").innerText() === "1:09:17", "4112 + 45 = 4157");
+    await tv.remote(FAST_FORWARD);
+    await tv.page.evaluate(() => window.appHarness.avplay.finishSeek());
+    await tv.eventually(async () => await screen.locator(".audio-player-elapsed").innerText() === "1:10:02", "+45 = 4202");
+    await tv.remote(REWIND);
+    await tv.page.evaluate(() => window.appHarness.avplay.finishSeek());
+    await tv.eventually(async () => await screen.locator(".audio-player-elapsed").innerText() === "1:09:47", "-15 = 4187");
+
+    // Speed menu offers [1, 2] on http_progressive with setSpeed; picking 2x calls avplay.setSpeed(2).
+    await tv.remote(DOWN);
+    await tv.remote(DOWN);
+    assert.equal(await screen.locator(":focus").getAttribute("data-key"), "speed");
+    await tv.remote(ENTER);
+    await screen.locator('[role="dialog"]').waitFor();
+    assert.deepEqual(await screen.locator('[role="dialog"] [data-rate]').allInnerTexts(), ["1×", "2×"]);
+    assert.equal(await screen.locator(".audio-player-shell").evaluate(el => (el as HTMLElement).inert), true);
+    await tv.page.keyboard.press("Tab");
+    assert.equal(await screen.locator('[role="dialog"] :focus').getAttribute("data-rate"), "2");
+    await tv.page.keyboard.press("Shift+Tab");
+    assert.equal(await screen.locator('[role="dialog"] :focus').getAttribute("data-rate"), "1");
+    await tv.remote(DOWN);
+    await tv.remote(ENTER);
+    assert.equal(await screen.locator(".audio-player-shell").evaluate(el => (el as HTMLElement).inert), false);
+    await tv.eventually(async () => await screen.locator('[data-key="speed"]').innerText() === "2×", "2x badge");
+    assert.equal(await tv.page.evaluate(() => window.appHarness.avplay.calls.includes("setSpeed 2")), true);
+
+    // Sleep timer menu offers Off / 15 / 30 / 60 min, remembers active preset on reopen, ticks down, and pauses playback on expiry.
+    await tv.remote(RIGHT);
+    assert.equal(await screen.locator(":focus").getAttribute("data-key"), "sleep");
+    await tv.remote(ENTER);
+    await screen.locator('[role="dialog"]').waitFor();
+    assert.deepEqual(await screen.locator('[role="dialog"] [data-sleep-minutes]').evaluateAll(els => els.map(e => e.getAttribute("data-sleep-minutes"))), ["0", "15", "30", "60"]);
+    await tv.remote(DOWN);
+    await tv.remote(ENTER);
+    await tv.eventually(async () => await screen.locator('[data-key="sleep"]').innerText() === "15:00", "sleep timer active");
+
+    await tv.jump(60_000);
+    await tv.eventually(async () => await screen.locator('[data-key="sleep"]').innerText() === "14:00", "sleep timer counted down");
+    await tv.remote(ENTER);
+    await screen.locator('[role="dialog"]').waitFor();
+    assert.equal(await screen.locator('[role="dialog"] :focus').getAttribute("data-sleep-minutes"), "15");
+    assert.equal(await screen.locator('[data-sleep-minutes="15"]').getAttribute("aria-checked"), "true");
+    assert.equal(await screen.locator('[data-sleep-minutes="0"]').getAttribute("aria-checked"), "false");
+    assert.equal(await screen.locator('[data-sleep-minutes="15"] .audio-player-modal-row-check svg').count(), 1);
+    await tv.remote(BACK);
+
+    await tv.jump(14 * 60 * 1000);
+    await tv.eventually(() => tv.page.evaluate(() => window.appHarness.avplay.state === "PAUSED"), "sleep timer paused playback");
+    assert.equal(await screen.locator('[data-key="sleep"]').innerText(), "Sleep");
+
+    // Stop cleanly and verify HLS restricts speed options to [1].
+    playback.next.push({ protocol: "hls", delivery: "server_transcode_hls", url: sessionId => `/api/v2/stream/${sessionId}.m3u8?st=signed` });
+    await tv.remote(RIGHT);
+    await tv.remote(RIGHT);
+    assert.equal(await screen.locator(":focus").getAttribute("data-key"), "stop");
+    await tv.remote(ENTER);
+    await tv.page.locator('[data-view="audiobook:audiobook:tide"] [data-focus="play"]').waitFor();
+    await tv.page.keyboard.press("Enter");
+    await prepareAudio(tv, true);
+    await tv.remote(DOWN);
+    assert.equal(await screen.locator(":focus").getAttribute("data-key"), "speed");
+    await tv.remote(ENTER);
+    await screen.locator('[role="dialog"]').waitFor();
+    assert.deepEqual(await screen.locator('[role="dialog"] [data-rate]').allInnerTexts(), ["1×"]);
+    await tv.remote(BACK);
+    assert.equal(await screen.locator('[role="dialog"]').count(), 0);
+    assert.equal(await screen.locator(":focus").getAttribute("data-key"), "speed");
+}, ({ settings }) => {
+    settings.profile().set(AUDIOBOOK_SEEK_BACK_KEY, 15);
+    settings.profile().set(AUDIOBOOK_SEEK_FORWARD_KEY, 45);
+});
+
+playerTest("Chapters sheet focuses active NOW chapter, localizes untitled chapters, and jumps on selection; Next Chapter crosses chapter boundary", async ({ tv }) => {
+    await tv.page.locator('[data-section="shelf"] [data-focus="audiobook:tide"]').click();
+    await tv.page.locator('[data-view="audiobook:audiobook:tide"] [data-focus="play"]').waitFor();
+    await tv.page.keyboard.press("Enter");
+    await prepareAudio(tv, true);
+
+    const screen = tv.page.locator('[data-screen="audiobook-player"]');
+    await screen.locator(".audio-player-scrubber").waitFor();
+
+    // Open Chapters sheet from options row; Chapter 2 should be focused with NOW badge, Chapter 3 localized.
+    await tv.remote(DOWN);
+    await tv.remote(RIGHT);
+    await tv.remote(RIGHT);
+    assert.equal(await screen.locator(":focus").getAttribute("data-key"), "chapters");
+    await tv.remote(ENTER);
+    await screen.locator('[role="dialog"]').waitFor();
+    assert.equal(await screen.locator('[role="dialog"] :focus').getAttribute("data-chapter-index"), "1");
+    assert.equal(await screen.locator('[role="dialog"] .audio-player-now-badge').count(), 1);
+    assert.match(await screen.locator('[data-chapter-index="2"]').innerText(), /Chapter 3/);
+
+    // Select Chapter 1 -> closes sheet, seeks to 0, restores focus to Chapters button.
+    await tv.remote(UP);
+    await tv.remote(ENTER);
+    await tv.page.evaluate(() => window.appHarness.avplay.finishSeek());
+    await tv.eventually(async () => await screen.locator(".audio-player-elapsed").innerText() === "0:00", "jumped to chapter 1");
+    assert.equal(await screen.locator(":focus").getAttribute("data-key"), "chapters");
+
+    // Navigate up to Next Chapter transport button -> jumps to Chapter 2 (1:00:00).
+    await tv.remote(UP);
+    await tv.remote(RIGHT);
+    await tv.remote(RIGHT);
+    assert.equal(await screen.locator(":focus").getAttribute("data-key"), "next-chapter");
+    await tv.remote(ENTER);
+    await tv.page.evaluate(() => window.appHarness.avplay.finishSeek());
+    await tv.eventually(async () => await screen.locator(".audio-player-elapsed").innerText() === "1:00:00", "jumped to chapter 2");
+});
+
+playerTest("chapterless audiobook disables chapter buttons, hides missing cover, and Back exits cleanly from error state with Retry support", async ({ tv, playback }) => {
+    // Failure & Retry on first start
+    playback.next.push({ terminal: "no_route", retryable: true });
+    await tv.page.locator('[data-section="shelf"] [data-focus="audiobook:fresh"]').click();
+    await tv.page.locator('[data-view="audiobook:audiobook:fresh"] [data-focus="play"]').waitFor();
+    await tv.page.keyboard.press("Enter");
+
+    const screen = tv.page.locator('[data-screen="audiobook-player"]');
+    await screen.locator('[data-key="retry"]').waitFor();
+    assert.equal(await screen.locator(":focus").getAttribute("data-key"), "retry");
+    await tv.remote(ENTER);
+    await prepareAudio(tv, false);
+
+    // Retry succeeded without setSpeed -> [1] rate only.
+    await tv.remote(DOWN);
+    assert.equal(await screen.locator(":focus").getAttribute("data-key"), "speed");
+    await tv.remote(ENTER);
+    assert.deepEqual(await screen.locator('[role="dialog"] [data-rate]').allInnerTexts(), ["1×"]);
+    await tv.remote(BACK);
+    await tv.remote(BACK);
+    await tv.page.locator('[data-view="audiobook:audiobook:fresh"] [data-focus="play"]').waitFor();
+
+    // Open chapterless book without poster_url via scripted responses.
+    const plainBookReply = {
+        status: 200,
+        body: {
+            content_id: "audiobook:fresh", type: "audiobook", title: "Short Story", genres: ["Fantasy"],
+            cast: [], crew: [], ratings: [], subtitles: [], keywords: [], status: "matched",
+            user_data: { played: false, position_seconds: 0 },
+            versions: [{ file_id: "af-p1", presentation_kind: "audiobook_part", presentation_part_index: 1, duration: 600, codec_audio: "mp3", container: "mp3", chapters: [] }],
+            audiobook: { authors: [{ name: "Susanna Clarke" }], narrators: [], total_duration_seconds: 600 },
+        },
+    };
+    tv.fake.scripted.set("/catalog/items/audiobook%3Afresh?image_size=large", [plainBookReply, plainBookReply, plainBookReply]);
+    tv.fake.scripted.set("/playback/start", [problem(503, "unavailable", "Busy")]);
+    await tv.page.keyboard.press("Enter");
+    await screen.locator('[data-key="done"]').waitFor();
+    assert.equal(await screen.locator('[data-key="retry"]').getAttribute("data-key"), "retry");
+    tv.fake.scripted.delete("/playback/start");
+    await tv.remote(ENTER);
+    await prepareAudio(tv, false);
+
+    assert.equal(await screen.locator(".audio-player-art").evaluate(el => getComputedStyle(el).display), "none");
+    assert.equal(await screen.locator(".audio-player-art-fallback").evaluate(el => getComputedStyle(el).display), "flex");
+    assert.equal(await screen.locator('[data-key="prev-chapter"]').getAttribute("aria-disabled"), "true");
+    assert.equal(await screen.locator('[data-key="next-chapter"]').getAttribute("aria-disabled"), "true");
+    assert.equal(await screen.locator('[data-key="chapters"]').getAttribute("aria-disabled"), "true");
+    assert.equal(await screen.locator(".audio-player-chapter").count(), 1);
+    assert.equal(await screen.locator(".audio-player-chapter").isHidden(), true);
+
+    // Transport focus skips disabled chapter controls cleanly.
+    await tv.remote(RIGHT);
+    assert.equal(await screen.locator(":focus").getAttribute("data-key"), "skip-forward");
+    await tv.remote(RIGHT);
+    assert.equal(await screen.locator(":focus").getAttribute("data-key"), "skip-forward");
+    await tv.remote(LEFT);
+    assert.equal(await screen.locator(":focus").getAttribute("data-key"), "play-pause");
+    await tv.remote(LEFT);
+    assert.equal(await screen.locator(":focus").getAttribute("data-key"), "skip-back");
+});
+
+playerTest("loading screen focuses Cancel, stopping screen swallows Back during slow shutdown, and AVPlay surface waits for unsettled seek close", async ({ tv }) => {
+    await tv.page.locator('[data-section="shelf"] [data-focus="audiobook:tide"]').click();
+    await tv.page.locator('[data-view="audiobook:audiobook:tide"] [data-focus="play"]').waitFor();
+    await tv.page.keyboard.press("Enter");
+
+    const screen = tv.page.locator('[data-screen="audiobook-player"]');
+    await screen.locator('[data-key="cancel"]').waitFor();
+    assert.equal(await screen.locator(":focus").getAttribute("data-key"), "cancel");
+    assert.equal(await screen.locator('[data-key="cancel"]').innerText(), "Cancel");
+    await tv.remote(ENTER);
+    await tv.page.locator('[data-view="audiobook:audiobook:tide"] [data-focus="play"]').waitFor();
+    assert.equal(await screen.count(), 0);
+
+    // Start again, settle playback, hold /sync/progress and verify visible stopping screen blocks Exit dialog.
+    await tv.page.keyboard.press("Enter");
+    await prepareAudio(tv, true);
+    const heldSync = tv.fake.hold("/sync/progress");
+    await tv.remote(DOWN);
+    await tv.remote(RIGHT);
+    await tv.remote(RIGHT);
+    await tv.remote(RIGHT);
+    assert.equal(await screen.locator(":focus").getAttribute("data-key"), "stop");
+    await tv.remote(ENTER);
+
+    await screen.waitFor();
+    assert.equal(await screen.getAttribute("data-stopping"), "true");
+    await tv.remote(BACK);
+    assert.equal(await tv.page.locator('[role="alertdialog"]').count(), 0);
+    assert.equal(await screen.count(), 1);
+    heldSync.release();
+    await tv.page.locator('[data-view="audiobook:audiobook:tide"] [data-focus="play"]').waitFor();
+    assert.equal(await screen.count(), 0);
+
+    // Start a third time, queue an unsettled seek, stop playback, and verify surface stays until seekTo settles close().
+    await tv.page.keyboard.press("Enter");
+    await prepareAudio(tv, true);
+    const closesBeforeThirdStop = await tv.page.evaluate(() => window.appHarness.avplay.calls.filter(c => c === "close").length);
+    await tv.remote(FAST_FORWARD);
+    await tv.remote(DOWN);
+    await tv.remote(RIGHT);
+    await tv.remote(RIGHT);
+    await tv.remote(RIGHT);
+    await tv.remote(ENTER);
+    await tv.page.locator('[data-view="audiobook:audiobook:tide"] [data-focus="play"]').waitFor();
+    assert.equal(await tv.page.evaluate(() => window.appHarness.avplay.calls.filter(c => c === "close").length), closesBeforeThirdStop);
+    assert.equal(await tv.page.locator('.audio-avplay-surface object[type="application/avplayer"]').count(), 1);
+
+    await tv.page.evaluate(() => window.appHarness.avplay.finishSeek());
+    await tv.eventually(
+        async () => await tv.page.evaluate(() => window.appHarness.avplay.calls.filter(c => c === "close").length) === closesBeforeThirdStop + 1,
+        "deferred close after seek settle",
+    );
+    await tv.eventually(async () => await tv.page.locator('.audio-avplay-surface, object[type="application/avplayer"]').count() === 0, "surface detached after close");
+});
+
+playerTest("held Select activates error, transport, and modal actions once on release", async ({ tv, playback }) => {
+    playback.next.push({ terminal: "no_route", retryable: true });
+    await tv.page.locator('[data-section="shelf"] [data-focus="audiobook:tide"]').click();
+    await tv.page.locator('[data-view="audiobook:audiobook:tide"] [data-focus="play"]').waitFor();
+    await tv.page.keyboard.press("Enter");
+
+    const screen = tv.page.locator('[data-screen="audiobook-player"]');
+    await screen.locator('[data-key="retry"]').waitFor();
+    const startsBeforeRetry = tv.fake.requests.filter(req => req.method === "POST" && req.path === "/playback/start").length;
+    assert.equal(await tv.down(DOWN), true, "Up/Down keys on error screen are prevented");
+    assert.equal(await screen.locator(":focus").getAttribute("data-key"), "retry");
+
+    await tv.down(ENTER, false);
+    await tv.down(ENTER, true);
+    await tv.down(ENTER, true);
+    assert.equal(tv.fake.requests.filter(req => req.method === "POST" && req.path === "/playback/start").length, startsBeforeRetry);
+    await tv.up(ENTER);
+    await prepareAudio(tv, true);
+
+    // Transport play-pause acts only on Enter release, and blur cancels a held press.
+    await tv.down(ENTER, false);
+    await tv.page.evaluate(() => window.dispatchEvent(new Event("blur")));
+    await tv.up(ENTER);
+    assert.equal(await tv.page.evaluate(() => window.appHarness.avplay.state), "PLAYING");
+
+    await tv.down(ENTER, false);
+    await tv.down(ENTER, true);
+    assert.equal(await tv.page.evaluate(() => window.appHarness.avplay.state), "PLAYING");
+    await tv.up(ENTER);
+    await tv.eventually(() => tv.page.evaluate(() => window.appHarness.avplay.state === "PAUSED"), "paused on release");
+
+    // Modal selection acts only on Enter release.
+    await tv.remote(DOWN);
+    assert.equal(await screen.locator(":focus").getAttribute("data-key"), "speed");
+    await tv.remote(ENTER);
+    await screen.locator('[role="dialog"]').waitFor();
+    await tv.remote(DOWN);
+    assert.equal(await screen.locator('[role="dialog"] :focus').getAttribute("data-rate"), "2");
+    await tv.down(ENTER, false);
+    await tv.down(ENTER, true);
+    assert.equal(await screen.locator('[role="dialog"]').count(), 1);
+    assert.equal(await screen.locator('[data-key="speed"]').innerText(), "1×");
+    await tv.up(ENTER);
+    await tv.eventually(async () => await screen.locator('[data-key="speed"]').innerText() === "2×", "speed changed on release");
+    assert.equal(await screen.locator('[role="dialog"]').count(), 0);
+});
+
+playerTest("modal scrolling uses SkylineScroll instead of browser scrollIntoView", async ({ tv }) => {
+    const longChapters = Array.from({ length: 20 }, (_, index) => ({
+        index,
+        title: `Chapter ${index + 1}: Long Journey`,
+        start_seconds: index * 300,
+        end_seconds: (index + 1) * 300,
+        source: "embedded",
+    }));
+    const longBookReply = {
+        status: 200,
+        body: {
+            content_id: "audiobook:fresh", type: "audiobook", title: "Long Chapters Book", genres: ["Fantasy"],
+            poster_url: "/art/audiobook%3Afresh.svg",
+            cast: [], crew: [], ratings: [], subtitles: [], keywords: [], status: "matched",
+            user_data: { played: false, position_seconds: 12 * 300 },
+            versions: [{ file_id: "af-p1", presentation_kind: "audiobook_part", presentation_part_index: 1, duration: 6000, codec_audio: "mp3", container: "mp3", chapters: longChapters }],
+            audiobook: { authors: [{ name: "Susanna Clarke" }], narrators: [], total_duration_seconds: 6000 },
+        },
+    };
+    tv.fake.scripted.set("/catalog/items/audiobook%3Afresh?image_size=large", [longBookReply, longBookReply]);
+    await tv.page.locator('[data-section="shelf"] [data-focus="audiobook:fresh"]').click();
+    await tv.page.locator('[data-view="audiobook:audiobook:fresh"] [data-focus="play"]').waitFor();
+    await tv.page.keyboard.press("Enter");
+    await prepareAudio(tv, false);
+
+    await tv.page.evaluate(() => {
+        const w = window as unknown as { __scrollIntoViewCalls?: number };
+        w.__scrollIntoViewCalls = 0;
+        Element.prototype.scrollIntoView = () => {
+            w.__scrollIntoViewCalls = (w.__scrollIntoViewCalls ?? 0) + 1;
+        };
+    });
+
+    const screen = tv.page.locator('[data-screen="audiobook-player"]');
+    await tv.remote(DOWN);
+    await tv.remote(RIGHT);
+    await tv.remote(RIGHT);
+    assert.equal(await screen.locator(":focus").getAttribute("data-key"), "chapters");
+    await tv.remote(ENTER);
+    await screen.locator('[role="dialog"]').waitFor();
+    assert.equal(await screen.locator('[role="dialog"] :focus').getAttribute("data-chapter-index"), "12");
+    await tv.eventually(async () => (await screen.locator(".audio-player-modal-list").evaluate(el => el.scrollTop)) > 0, "modal scrolled to focused chapter");
+    await tv.remote(UP);
+    await tv.remote(UP);
+    await tv.remote(DOWN);
+    const scrollCalls = await tv.page.evaluate(() => (window as unknown as { __scrollIntoViewCalls?: number }).__scrollIntoViewCalls ?? 0);
+    assert.equal(scrollCalls, 0);
+});
+
+for (const lang of ["de", "ar"] as const) {
+    playerTest(`audiobook player localizes copy (${lang}) and keeps scrubber LTR in RTL`, async ({ tv }) => {
+        await tv.eventually(async () => (await tv.page.evaluate(() => document.documentElement.lang)) === lang, `catalog ${lang} loaded`);
+        await tv.page.locator('[data-section="shelf"] [data-focus="audiobook:tide"]').click();
+        await tv.page.locator('[data-view="audiobook:audiobook:tide"] [data-focus="play"]').waitFor();
+        await tv.page.keyboard.press("Enter");
+        await prepareAudio(tv, true);
+
+        const screen = tv.page.locator('[data-screen="audiobook-player"]');
+        await screen.locator(".audio-player-scrubber").waitFor();
+        assert.equal(await screen.getAttribute("dir"), lang === "ar" ? "rtl" : "ltr");
+        assert.equal(await screen.locator(".audio-player-progress").evaluate(el => getComputedStyle(el).direction), "ltr");
+        assert.equal(await screen.locator(".audio-player-transport").evaluate(el => getComputedStyle(el).direction), "ltr");
+        if (lang === "de") {
+            assert.equal(await screen.locator('[data-key="stop"]').innerText(), "Wiedergabe beenden");
+        }
+    }, ({ settings }) => {
+        settings.revision = 28;
+        settings.profile().set(APP_LANGUAGE_KEY, lang);
+    });
+}

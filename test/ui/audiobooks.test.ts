@@ -118,11 +118,11 @@ audiobookTest("the audiobook detail shows the cover, hero height, action pills, 
     const chapters = tv.page.locator('[data-focus="chapters"]');
     const startOver = tv.page.locator('[data-focus="start-over"]');
     assert.equal(await play.innerText(), "Resume");
-    assert.equal(await play.getAttribute("aria-disabled"), "true");
+    assert.equal(await play.getAttribute("aria-disabled"), null);
     assert.equal(await play.evaluate(n => n.classList.contains("audiobook-pill-primary")), true);
     assert.equal(await chapters.evaluate(n => n.classList.contains("audiobook-pill-secondary")), true);
     assert.equal(await startOver.evaluate(n => n.classList.contains("audiobook-pill-secondary")), true);
-    assert.equal(await readStyle(tv, '[data-focus="play"]', "background-color"), "rgba(255, 255, 255, 0.7)");
+    assert.equal(await readStyle(tv, '[data-focus="play"]', "background-color"), "rgb(255, 255, 255)");
     assert.notEqual(await readStyle(tv, '[data-focus="play"]', "box-shadow"), "none");
     assert.equal(await readStyle(tv, '[data-focus="chapters"]', "background-color"), "rgba(0, 0, 0, 0.52)");
     assert.equal(await readStyle(tv, ".audiobook-actions", "column-gap"), "18px");
@@ -133,13 +133,32 @@ audiobookTest("the audiobook detail shows the cover, hero height, action pills, 
     });
     assert.equal(pillGap, 18, "adjacent action pills are separated by 18 px, not extra margin");
     assert.equal(await tv.focused(), "play", "initial focus is the primary action, as on Apple");
-    const before = tv.fake.requests.length;
-    await tv.remote(ENTER);
-    assert.equal(await view(tv), `audiobook:${TIDE}`, "Play opens nothing until playback lands");
-    assert.equal(tv.fake.requests.slice(before).filter(request => /playback|stream|shuffle/.test(request.path)).length, 0);
+    await tv.page.keyboard.press("Enter");
+    assert.equal((await tv.page.evaluate(() => window.browseHarness.audiobookPlays.length)), 1);
+    assert.deepEqual(await tv.page.evaluate(() => window.browseHarness.audiobookPlays[0]), {
+        contentId: TIDE,
+        title: "Stormlight Archive 5 - The Tide Owes (5 of 5)",
+        posterUrl: "/art/audiobook%3Atide.svg",
+    });
+    await tv.page.evaluate(() => window.browseHarness.resume());
+    await tv.page.locator(`[data-view="audiobook:${TIDE}"]`).waitFor();
     await shoot(tv, "audiobook-detail");
     await tv.remote(39);
     assert.equal(await tv.focused(), "chapters");
+    await tv.remote(39);
+    assert.equal(await tv.focused(), "start-over");
+    await tv.page.keyboard.press("Enter");
+    assert.equal((await tv.page.evaluate(() => window.browseHarness.audiobookPlays[1]?.restart)), true);
+    await tv.page.evaluate(() => window.browseHarness.resume());
+    await tv.page.locator('[data-focus="chapters"]').waitFor();
+    await tv.remote(37);
+    assert.equal(await tv.focused(), "chapters");
+    await tv.page.keyboard.press("Enter");
+    await tv.page.locator(`[data-view="audiobook:${TIDE}:chapters"]`).waitFor();
+    await tv.page.keyboard.press("Enter");
+    assert.equal(await tv.page.evaluate(() => window.browseHarness.audiobookPlays[2]?.startSeconds), 3600);
+    await tv.page.evaluate(() => window.browseHarness.resume());
+    await tv.page.locator('[data-focus="chapters"]').waitFor();
     await tv.remote(39);
     assert.equal(await tv.focused(), "start-over");
     await tv.remote(39);
