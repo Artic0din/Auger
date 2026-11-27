@@ -7,7 +7,7 @@ import type { Browser } from "playwright";
 import { orderSubtitles } from "../../src/player/trackLabels.ts";
 import { FakeDetails } from "../native/support/fakeDetails.ts";
 import { problem } from "../native/support/fakeSilo.ts";
-import { launchBrowser, openTv, readLive, type Tv } from "./support/tv.ts";
+import { afterPaint, launchBrowser, openTv, readLive, type Tv } from "./support/tv.ts";
 import { start } from "./support/watchParty.ts";
 import { assertPressedLook } from "./support/pressed.ts";
 
@@ -473,10 +473,14 @@ test("Watch Party ends More only while the off-by-default switch is on, and open
             await panel.locator('[data-focus="watch-party"]').click();
             await tv.page.locator('.browse[data-view="watchParty:lobby"]').waitFor();
             assert.equal(fake.createdRooms.length, 1, "picks into the current room without creating a second one");
+            await tv.eventually(async () => tv.pendingReplies === 0, "room pick settled");
+            await afterPaint(tv);
 
             // Switch room to vote mode and dismiss back to Details: More now says "Suggest to Party" and adds to the ballot (#783).
             await tv.page.locator('[data-focus="options"]').click();
             await tv.page.locator('[data-focus="mode"]').click();
+            await tv.eventually(async () => (await tv.page.locator('[data-focus="mode"] .watch-party-option-value').textContent()) === "Everyone votes" && tv.pendingReplies === 0, "vote mode settled");
+            await afterPaint(tv);
             await tv.page.locator('[data-focus="close"]').click();
             await tv.page.locator('.browse[data-view="watchParty:lobby"]').waitFor();
             await tv.remote(10009);
