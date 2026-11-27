@@ -2091,11 +2091,23 @@ export function mountBrowse(root: HTMLElement, options: BrowseOptions): Browse {
         try { draw(focus); } finally { renderedInteractions = interactions; }
     };
 
+    const syncOfflineRefresh = (current: Route): void => {
+        cancelOfflineRefresh();
+        if (offlineRefreshRoute !== current) offlineRefreshAt = undefined;
+        offlineRefreshRoute = current;
+        if (routeOffline(current) || deferredDetails.has(current)) {
+            // Optional response repaints must not postpone an already scheduled recovery.
+            offlineRefreshAt ??= clock.now() + 15000;
+            cancelOfflineRefresh = clock.schedule(() => recoverCachedRoute(current), Math.max(0, offlineRefreshAt - clock.now()));
+        } else offlineRefreshAt = undefined;
+    };
+
     const refreshChrome = (focus?: FocusTarget): void => {
         const current = top();
         if (!torn && !playing && settingsScreen === undefined && !foreground.busy() && !cardActions.active && !requestMenu.active
             && current !== undefined && current === lastRoot?.route && host.name === lastRoot.viewName
             && !(current.kind === "library" && current.discovery?.panel !== undefined) && shuffleFailure?.route !== current) {
+            syncOfflineRefresh(current);
             host.updateZones(shell.syncChrome(lastRoot.baseZones), focus);
             return;
         }
@@ -2193,14 +2205,7 @@ export function mountBrowse(root: HTMLElement, options: BrowseOptions): Browse {
             }, options.onSignOut) : routeView(current, handlers);
         // Watch Party is a full-screen page, as on tvOS: Apple pushes it, and its shell draws the bar only while the stack is empty.
         const rootRoute = current.kind === "home" || current.kind === "for_you" || current.kind === "library" || (current.kind === "personal" && current.source !== "history") || current.kind === "calendar" || isHubRoot(current);
-        cancelOfflineRefresh();
-        if (offlineRefreshRoute !== current) offlineRefreshAt = undefined;
-        offlineRefreshRoute = current;
-        if (routeOffline(current) || deferredDetails.has(current)) {
-            // Optional response repaints must not postpone an already scheduled recovery.
-            offlineRefreshAt ??= clock.now() + 15000;
-            cancelOfflineRefresh = clock.schedule(() => recoverCachedRoute(current), Math.max(0, offlineRefreshAt - clock.now()));
-        } else offlineRefreshAt = undefined;
+        syncOfflineRefresh(current);
         if (rootRoute) {
             const selected = tabFocus(current).key;
             // Apple's HomeView with no sections shows only EmptyStateView: no marquee, and no remembered card replayed into it.
