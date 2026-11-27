@@ -2,12 +2,20 @@ import assert from "node:assert/strict";
 import type { Locator } from "playwright";
 import { afterPaint, type Tv } from "./tv.ts";
 
+/** Drains in-flight replies and repaints until no follow-up read started during paint. */
+async function settleBeforePress(tv: Tv): Promise<void> {
+    await tv.eventually(async () => {
+        if (tv.pendingReplies > tv.fake.heldReplies) return false;
+        await afterPaint(tv);
+        return tv.pendingReplies <= tv.fake.heldReplies;
+    }, "pending replies settled before press check");
+}
+
 /** Reads the rendered look and samples real CSS transitions without advancing app timers. */
 export async function assertSelectLook(tv: Tv, key: string, expected: {
     focusScale: number; heldScale: number; opacity: number; focusMs: number; pressMs?: number; face?: string;
 }): Promise<void> {
-    await tv.eventually(async () => tv.pendingReplies <= tv.fake.heldReplies, "pending replies settled before press check");
-    await afterPaint(tv);
+    await settleBeforePress(tv);
     const control = tv.page.locator(`[data-focus="${key}"]`);
     const handle = await control.elementHandle();
     assert.ok(handle !== null);
@@ -87,8 +95,7 @@ export interface PressedExpectation {
  * Layout scale is the transform times the individual `scale` property.
  */
 export async function assertPressedLook(tv: Tv, control: Locator, expected: PressedExpectation, reduced: boolean): Promise<void> {
-    await tv.eventually(async () => tv.pendingReplies <= tv.fake.heldReplies, "pending replies settled before press check");
-    await afterPaint(tv);
+    await settleBeforePress(tv);
     const handle = await control.elementHandle();
     assert.ok(handle !== null);
     const read = (): Promise<{ scale: number; opacity: number; transitions: { property: string; duration: number; easing: string }[] }> =>
