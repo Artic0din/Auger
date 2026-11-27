@@ -1108,3 +1108,70 @@ for (const cardNumber of [4, 10] as const) {
         });
     });
 }
+
+test("reusing a cached Details episode row after a live LTR-to-RTL switch clears stale inline padding and sets RTL inset and scroll", async () => {
+    const tv = await openTv(browser, { app: "browse", locale: "en-AU" });
+    const details = new FakeDetails();
+    tv.fake.catalog = details;
+    const settings = new FakeSettings(tv.fake);
+    settings.revision = 28;
+    settings.profile().set(APP_LANGUAGE_KEY, "ar");
+    try {
+        const listed = details.route("GET", "/catalog/series/series%3As1/seasons", "p-owner")?.body as { items: Record<string, unknown>[] };
+        const first = details.route("GET", "/catalog/series/series%3As1/seasons/1/episodes", "p-owner")?.body as { items: Record<string, unknown>[] };
+        await tv.page.route("**/api/v2/catalog/series/series%3As1/seasons?**", route => route.fulfill({ json: { items: [listed.items[0]], next_cursor: null } }));
+        await tv.page.route("**/api/v2/catalog/series/series%3As1/seasons/1/episodes?**", route => route.fulfill({ json: { items: Array.from({ length: 12 }, (_, index) => ({ ...first.items[0], content_id: `episode:rail:1:${index}`, season_number: 1, episode_number: index + 1 })), next_cursor: null } }));
+        await tv.page.emulateMedia({ reducedMotion: "reduce" });
+        await tv.page.evaluate(() => window.browseHarness.connect());
+        await tv.eventually(async () => tv.fake.devices.size > 0, "device code");
+        tv.fake.approve([...tv.fake.devices.keys()][0] ?? "");
+        await tv.jump(5000);
+        await tv.eventually(() => tv.page.evaluate(() => window.browseHarness.loginPhase === "signed_in"), "login");
+        await tv.page.evaluate(() => window.browseHarness.selectProfile("p-owner"));
+        await tv.page.evaluate(() => window.browseHarness.seedAppLanguage("en"));
+        const held = Array.from({ length: 4 }, () => tv.fake.hold(`/settings/values/effective?keys=${APP_LANGUAGE_KEY}`, true));
+        await tv.page.evaluate(() => window.browseHarness.mount(true));
+        await tv.page.locator('[data-view="home"]').waitFor();
+        assert.equal(await direction(tv), null, "launched left to right from kept English");
+
+        await tv.page.locator('[data-section="recently_added"] [data-focus="series:s1"]').first().click();
+        await tv.page.locator('[data-focus="episode:rail:1:0"]').waitFor();
+        await tv.page.locator('[data-focus="episode:rail:1:0"]').focus();
+        for (let step = 1; step < 12; step++) await tv.remote(RIGHT);
+        assert.equal(await tv.focused(), "episode:rail:1:11");
+        const ltr = await tv.page.locator(".details-episodes").evaluate(node => {
+            (window as unknown as { __cachedEpisodeRow?: Element }).__cachedEpisodeRow = node;
+            const style = getComputedStyle(node);
+            return {
+                dir: style.direction,
+                pl: style.paddingLeft,
+                inlinePr: node.style.paddingRight,
+                sl: node.scrollLeft,
+            };
+        });
+        assert.equal(ltr.dir, "ltr");
+        assert.notEqual(ltr.inlinePr, "", "LTR prepareEpisodeRow set inline paddingRight");
+        assert.ok(ltr.sl > 0, `LTR episode rail scrolled positively (${ltr.sl})`);
+
+        for (const hold of held) hold.release();
+        await waitForDirection(tv, "rtl");
+        await tv.eventually(async () => await tv.focused() === "episode:rail:1:11", "focus stays on episode 12");
+        const rtl = await tv.page.locator(".details-episodes").evaluate(node => {
+            const style = getComputedStyle(node);
+            return {
+                reused: node === (window as unknown as { __cachedEpisodeRow?: Element }).__cachedEpisodeRow,
+                dir: style.direction,
+                pr: style.paddingRight,
+                inlinePr: node.style.paddingRight,
+                sl: node.scrollLeft,
+            };
+        });
+        assert.equal(rtl.reused, true, "reused the cached episode row across direction switch");
+        assert.equal(rtl.dir, "rtl");
+        assert.equal(rtl.inlinePr, "", "stale LTR inline paddingRight cleared");
+        assert.equal(rtl.pr, ltr.pl, `RTL leading paddingRight (${rtl.pr}) matches LTR leading paddingLeft (${ltr.pl})`);
+        assert.ok(rtl.sl < 0, `RTL episode rail scrolled negatively (${rtl.sl})`);
+        const card = await onScreen(tv);
+        assert.ok(card !== undefined && card.left >= 0 && card.right <= 1920, `episode 12 on screen at ${card?.left}..${card?.right}`);
+    } finally { await tv.page.context().close(); }
+});
