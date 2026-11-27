@@ -291,6 +291,7 @@ export class Skyline {
         // Removing the focused tab moves focus to the next control, the first title. Put the same
         // tab back when it is still in the strip, before that move can be recorded as content focus.
         if (focusedKey !== undefined) this.items.find((item) => item.key === focusedKey)?.element.focus({ preventScroll: true });
+        this.updateChrome();
     }
 
     setMenu(menu: PrimaryMenu | null): void { this.menu = menu; this.update(this.libraries); }

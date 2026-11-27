@@ -1136,3 +1136,18 @@ for (const anchor of ["movies", "profiles"]) test(`a ${anchor} menu the dwell op
         assert.equal(await tv.page.locator(".skyline-selector:not(.skyline-flyout)").isVisible(), false, "the menu does not reopen");
     } finally { await tv.page.context().close(); }
 });
+
+test("a background top-bar update while content holds focus preserves aria-expanded=\"false\"", async () => {
+    const tv = await openTv(browser, { app: "browse" });
+    const held = tv.fake.hold("/user/libraries", true);
+    try {
+        await start(tv);
+        await tv.page.locator(".browse > .skyline-content .browse-card").first().focus();
+        assert.equal(await tv.page.locator('[data-focus="profiles"]').getAttribute("aria-expanded"), "false");
+        assert.equal(await tv.page.locator('.skyline-roots [data-focus="movies"]').count(), 0);
+        held.release();
+        await tv.page.locator('.skyline-roots [data-focus="movies"]').waitFor();
+        assert.equal(await tv.page.locator('[data-focus="profiles"]').getAttribute("aria-expanded"), "false");
+        assert.equal(await tv.page.locator('[data-focus="movies"]').getAttribute("aria-expanded"), "false");
+    } finally { held.release(); await tv.page.context().close(); }
+});
