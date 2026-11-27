@@ -364,6 +364,8 @@ interface Attempt {
     prompt: { next: PlayRequest | undefined; deck: readonly PlayRequest[]; fromDeck: boolean; loading?: boolean; failed?: boolean } | undefined;
     /** AVPlay refused the picture rectangle, usually during an outstanding seek. */
     rectPending: boolean;
+    /** Last rectangle handed to AVPlay so periodic prompt ticks only resize on real changes. */
+    appliedRect: readonly [number, number, number, number] | undefined;
     /** Discovery shared by the episodes icon and the pre-end prompt. A seek does not cancel it. */
     offer: {
         started: boolean;
@@ -628,6 +630,7 @@ export class PlaybackController implements PlayerControls {
             promptSeconds: 30, promptSupported: false, promptDismissed: false, promptPending: false, promptLookedUp: false, prompt: undefined,
             offer: { started: false, manual: false, credits: false, creditsCountdown: undefined, creditsDeadline: undefined, cancelCreditsTimer: undefined, episodeLoading: false, deckLoading: false, episodeSettled: false, episodeFailed: false, episode: undefined, deckSettled: false, deckFailed: false, episodeWindowRetried: false, deckWindowRetried: false, deckRetried: false, episodeManualRetried: false, deckManualRetried: false, deck: [], presentationFor: undefined },
             rectPending: false,
+            appliedRect: undefined,
             transportCommandCount: 0,
             autoNext: false, settingsEpoch: 0,
             introMode: "ask", skipCredits: false, skippedMarkers: new Set(), undoSkip: undefined, pendingSkipUndo: undefined,
@@ -1161,6 +1164,7 @@ export class PlaybackController implements PlayerControls {
                 }
                 this.updatePrompt(attempt);
             }
+            this.flushPendingRect(attempt);
             this.finishSkipSeek(attempt, moved);
             this.showPlayback(attempt);
             // A switch that settled while this seek held the controls left its queued subtitle choice for now (#738).
@@ -2333,7 +2337,8 @@ export class PlaybackController implements PlayerControls {
             reachedStage(attempt.trace, "avplay_open");
             enterStage(attempt.trace, "avplay_prepare");
             avplay.setListener(this.listen(attempt, transport));
-            this.setDisplayRect(attempt);
+            attempt.appliedRect = undefined;
+            this.paintRect(attempt);
             this.armStartup(attempt, transport);
             avplay.prepareAsync(
                 () => {
@@ -2389,6 +2394,10 @@ export class PlaybackController implements PlayerControls {
                 attempt.hud.restore(this.deps.avplay, plan);
                 if (attempt.paused) {
                     this.deps.avplay.pause();
+                }
+                if (attempt.rectPending) {
+                    this.setDisplayRect(attempt);
+                    attempt.rectPending = false;
                 }
             } catch (error) {
                 const name = error instanceof Error && error.name ? error.name : "error";
@@ -2721,7 +2730,7 @@ export class PlaybackController implements PlayerControls {
 
     showUpNext(): void {
         const attempt = this.active();
-        if (attempt?.started !== true || attempt.plan === undefined || attempt.hidden || attempt.request.shuffleId !== undefined) return;
+        if (attempt?.started !== true || attempt.plan === undefined || !this.canApplyDisplayRect(attempt) || attempt.request.shuffleId !== undefined) return;
         // A hidden button opens nothing: a film with nothing to offer stays closed.
         if (!this.episodesVisible(attempt)) return;
         this.stillWatching.recordViewerAction();
@@ -3673,6 +3682,9 @@ export class PlaybackController implements PlayerControls {
                 attempt.resuming = false;
                 if (attempt.recovery?.active === true) attempt.recovery.recovered(this.deps.clock.now());
                 if (attempt.plan !== undefined && attempt.subtitles.alignOpenStream(attempt.plan) !== "aligned") return;
+                attempt.appliedRect = undefined;
+                this.updatePrompt(attempt);
+                this.paintRect(attempt);
                 this.showPlayback(attempt);
                 if (attempt.plan !== undefined) attempt.subtitles.consumePreparedChoices(attempt.plan);
             } catch {
@@ -3793,6 +3805,9 @@ export class PlaybackController implements PlayerControls {
                     } catch {
                         // The next key tries again.
                     }
+                    attempt.appliedRect = undefined;
+                    this.updatePrompt(attempt);
+                    this.paintRect(attempt);
                     this.showPlayback(attempt);
                     resolve(true);
                 }, () => resolve(false));
@@ -3973,17 +3988,32 @@ export class PlaybackController implements PlayerControls {
         return Math.max(0, Math.ceil(remaining));
     }
 
+    private flushPendingRect(attempt: Attempt): void {
+        if (attempt.rectPending && !attempt.busy && this.canApplyDisplayRect(attempt)) {
+            this.paintRect(attempt);
+        }
+    }
+
     private updatePrompt(attempt: Attempt): void {
-        if (attempt.request.shuffleId !== undefined) return;
+        if (attempt.request.shuffleId !== undefined) {
+            this.flushPendingRect(attempt);
+            return;
+        }
         if (!this.inPromptWindow(attempt)) {
             attempt.promptDismissed = false;
             if (!attempt.offer.manual && !attempt.offer.credits) this.clearPrompt(attempt);
+            else if (attempt.prompt === undefined) this.publishOffer(attempt);
             else this.paintRect(attempt);
             return;
         }
-        if (attempt.promptDismissed || attempt.hidden || attempt.busy) return;
-        if (!attempt.offer.started) this.beginDiscovery(attempt);
-        else {
+        if (attempt.promptDismissed || attempt.hidden || attempt.busy) {
+            this.flushPendingRect(attempt);
+            return;
+        }
+        if (!attempt.offer.started) {
+            this.flushPendingRect(attempt);
+            this.beginDiscovery(attempt);
+        } else {
             // Discovery starts at the first frame (#698), so a read that failed then is read once more when the window opens.
             // Each read is retried once on its own: one may still be out when the other's retry starts.
             const offer = attempt.offer;
@@ -4102,9 +4132,10 @@ export class PlaybackController implements PlayerControls {
     private publishOffer(attempt: Attempt): void {
         if (this.active() !== attempt) return;
         const offer = attempt.offer;
-        const showManual = offer.manual && !attempt.hidden;
-        const showCredits = offer.credits && !attempt.promptDismissed && !attempt.hidden;
-        const showAuto = !offer.manual && !offer.credits && this.inPromptWindow(attempt) && !attempt.promptDismissed && !attempt.hidden && !attempt.busy;
+        const canShow = this.canApplyDisplayRect(attempt);
+        const showManual = offer.manual && canShow;
+        const showCredits = offer.credits && !attempt.promptDismissed && canShow;
+        const showAuto = !offer.manual && !offer.credits && this.inPromptWindow(attempt) && !attempt.promptDismissed && canShow && !attempt.busy;
         if (!showManual && !showCredits && !showAuto) {
             this.clearPrompt(attempt);
             this.showPlayback(attempt);
@@ -4146,19 +4177,38 @@ export class PlaybackController implements PlayerControls {
         this.paintRect(attempt);
     }
 
+    private canApplyDisplayRect(attempt: Attempt): boolean {
+        return !attempt.hidden && !attempt.restoring && !attempt.suspended && !attempt.suspendedReady && attempt.restoreOpen === undefined;
+    }
+
     private paintRect(attempt: Attempt): void {
+        if (!this.canApplyDisplayRect(attempt)) {
+            attempt.appliedRect = undefined;
+            attempt.rectPending = true;
+            return;
+        }
         try {
             this.setDisplayRect(attempt);
             attempt.rectPending = false;
         } catch {
+            attempt.appliedRect = undefined;
             attempt.rectPending = true;
         }
     }
 
-    private setDisplayRect(attempt: Attempt): void {
+    private displayRect(attempt: Attempt): readonly [number, number, number, number] {
         // tvOS standard-card column: 4 × 360 + 3 × 40; preview spans two cards.
-        if (attempt.prompt !== undefined) this.deps.avplay.setDisplayRect(upNextPreviewLeft(SCREEN.width, textIsRightToLeft()), UP_NEXT_PREVIEW.top, UP_NEXT_PREVIEW.width, UP_NEXT_PREVIEW.height);
-        else this.deps.avplay.setDisplayRect(0, 0, SCREEN.width, SCREEN.height);
+        return attempt.prompt !== undefined
+            ? [upNextPreviewLeft(SCREEN.width, textIsRightToLeft()), UP_NEXT_PREVIEW.top, UP_NEXT_PREVIEW.width, UP_NEXT_PREVIEW.height]
+            : [0, 0, SCREEN.width, SCREEN.height];
+    }
+
+    private setDisplayRect(attempt: Attempt): void {
+        const next = this.displayRect(attempt);
+        const current = attempt.appliedRect;
+        if (current !== undefined && current[0] === next[0] && current[1] === next[1] && current[2] === next[2] && current[3] === next[3]) return;
+        this.deps.avplay.setDisplayRect(next[0], next[1], next[2], next[3]);
+        attempt.appliedRect = next;
     }
 
     private loadPresentation(request: PlayRequest, signal: AbortSignal, accept: (request: PlayRequest) => void): void {

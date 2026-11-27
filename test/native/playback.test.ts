@@ -6760,3 +6760,363 @@ test("an unavailable HDR probe reaches the incident apart from an observed SDR a
         r.controller.destroy();
     }
 });
+
+test("Up Next deduplicates AVPlay setDisplayRect across manual, auto, and credits ticks (#759)", async () => {
+    const r = await autoplayRig(true);
+    r.settings.overrides.delete("playback.auto_play_next");
+    r.settings.profile().set("playback.auto_play_next", true);
+    await playMovie(r, EPISODE);
+    const view = last(r.views);
+    assert.ok(view.phase === "playing");
+
+    // Auto prompt across 10 periodic ticks.
+    const autoBefore = r.avplay.displayRects.length;
+    r.avplay.tick((view.durationSeconds! - 20) * 1000);
+    await r.h.clock.advance(0);
+    assert.ok(last(r.views).phase === "playing");
+    for (let s = 19; s >= 10; s--) {
+        r.avplay.tick((view.durationSeconds! - s) * 1000);
+        await r.h.clock.advance(0);
+    }
+    assert.deepEqual(r.avplay.displayRects.slice(autoBefore), [[180, 112, 760, 428]]);
+    r.controller.cancelAutoplay();
+    assert.deepEqual(r.avplay.displayRects.slice(autoBefore), [[180, 112, 760, 428], [0, 0, 1920, 1080]]);
+    for (let s = 9; s >= 5; s--) {
+        r.avplay.tick((view.durationSeconds! - s) * 1000);
+        await r.h.clock.advance(0);
+    }
+    assert.equal(r.avplay.displayRects.length, autoBefore + 2);
+
+    // Manual showUpNext across 10 periodic ticks before dismiss.
+    const manualBefore = r.avplay.displayRects.length;
+    r.avplay.tick(60_000);
+    r.controller.showUpNext();
+    await r.h.clock.advance(0);
+    for (let tick = 1; tick <= 10; tick++) {
+        r.avplay.tick(60_000 + tick * 1000);
+        await r.h.clock.advance(0);
+    }
+    assert.deepEqual(r.avplay.displayRects.slice(manualBefore), [[180, 112, 760, 428]]);
+    r.controller.cancelAutoplay();
+    assert.deepEqual(r.avplay.displayRects.slice(manualBefore), [[180, 112, 760, 428], [0, 0, 1920, 1080]]);
+
+    // Credits Skip reaching EOF (through outside then inside prompt window) keeps setDisplayRect deduplicated.
+    const creditsBefore = r.avplay.displayRects.length;
+    r.controller.skipCredits(view.durationSeconds!);
+    await r.h.clock.advance(0);
+    const creditsView = last(r.views);
+    assert.ok(creditsView.phase === "playing" && creditsView.upNext !== undefined);
+    for (let tick = 1; tick <= 5; tick++) {
+        r.avplay.tick((view.durationSeconds! - 45 + tick) * 1000);
+        await r.h.clock.advance(0);
+    }
+    for (let tick = 1; tick <= 5; tick++) {
+        r.avplay.tick((view.durationSeconds! - 15 + tick) * 1000);
+        await r.h.clock.advance(0);
+    }
+    assert.deepEqual(r.avplay.displayRects.slice(creditsBefore), [[180, 112, 760, 428]]);
+    r.controller.destroy();
+});
+
+test("setDisplayRect failure leaves rectPending set and retries until succeeded (#759)", async () => {
+    const r = await autoplayRig(true);
+    await playMovie(r, EPISODE);
+    const original = r.avplay.setDisplayRect.bind(r.avplay);
+    let failures = 2;
+    r.avplay.setDisplayRect = (x: number, y: number, w: number, h: number): void => {
+        if (failures > 0) {
+            failures--;
+            throw new Error("seekTo in progress");
+        }
+        original(x, y, w, h);
+    };
+    const before = r.avplay.displayRects.length;
+    r.controller.showUpNext();
+    await r.h.clock.advance(0);
+    assert.equal(r.avplay.displayRects.length, before, "first attempt threw");
+    r.avplay.tick(2000);
+    await r.h.clock.advance(0);
+    assert.equal(r.avplay.displayRects.length, before, "second attempt threw and stayed pending");
+    r.avplay.tick(3000);
+    await r.h.clock.advance(0);
+    assert.deepEqual(r.avplay.displayRects.slice(before), [[180, 112, 760, 428]], "third attempt succeeded");
+    for (let t = 4; t <= 8; t++) {
+        r.avplay.tick(t * 1000);
+        await r.h.clock.advance(0);
+    }
+    assert.equal(r.avplay.displayRects.length, before + 1, "subsequent ticks deduplicated after recovery");
+    r.controller.destroy();
+});
+
+test("Up Next dismissal during an in-window seekTo flushes full-screen rect on both settled(true) and settled(false) (#759)", async () => {
+    const r = await autoplayRig(true);
+    r.settings.overrides.delete("playback.auto_play_next");
+    r.settings.profile().set("playback.auto_play_next", true);
+    await playMovie(r, EPISODE);
+    const view = last(r.views);
+    assert.ok(view.phase === "playing");
+    r.avplay.tick((view.durationSeconds! - 20) * 1000);
+    await r.h.clock.advance(0);
+    assert.deepEqual(r.avplay.displayRects.at(-1), [180, 112, 760, 428]);
+
+    // Dismissing Up Next while seekTo is in flight throws in FakeAVPlay and must retry [0, 0, 1920, 1080] once seekTo settles inside the prompt window.
+    const beforeSuccessSettle = r.avplay.displayRects.length;
+    r.controller.seekToSeconds(view.durationSeconds! - 10);
+    r.controller.cancelAutoplay();
+    assert.equal(r.avplay.displayRects.length, beforeSuccessSettle);
+    r.avplay.finishSeek();
+    await r.h.clock.advance(0);
+    assert.deepEqual(r.avplay.displayRects.slice(beforeSuccessSettle), [[0, 0, 1920, 1080]]);
+
+    // Same retry when paused and seekTo fails -> settled(false).
+    r.controller.showUpNext();
+    await r.h.clock.advance(0);
+    assert.deepEqual(r.avplay.displayRects.at(-1), [180, 112, 760, 428]);
+    r.controller.togglePause();
+    const beforeFailSettle = r.avplay.displayRects.length;
+    r.controller.seekToSeconds(view.durationSeconds! - 5);
+    r.controller.cancelAutoplay();
+    assert.equal(r.avplay.displayRects.length, beforeFailSettle);
+    r.avplay.finishSeek("InvalidStateError");
+    await r.h.clock.advance(0);
+    assert.deepEqual(r.avplay.displayRects.slice(beforeFailSettle), [[0, 0, 1920, 1080]]);
+    r.controller.destroy();
+});
+
+test("setDisplayRect throwing during open() does not fail playback and retries via rectPending (#759)", async () => {
+    const r = await autoplayRig(true);
+    const original = r.avplay.setDisplayRect.bind(r.avplay);
+    let throwInOpen = true;
+    r.avplay.setDisplayRect = (x: number, y: number, w: number, h: number): void => {
+        if (throwInOpen) {
+            throwInOpen = false;
+            throw new Error("transient IDLE refusal");
+        }
+        original(x, y, w, h);
+    };
+    r.controller.play(EPISODE);
+    await r.h.clock.advance(0);
+    assert.equal(r.avplay.displayRects.length, 0);
+    assert.equal(r.avplay.urls.length, 1, "did not abort open() or fall back to recovery");
+    r.avplay.finishPrepare();
+    await r.h.clock.advance(0);
+    while (r.avplay.calls.at(-1)?.startsWith("seekTo")) {
+        r.avplay.finishSeek();
+        await r.h.clock.advance(0);
+    }
+    assert.deepEqual(r.avplay.displayRects, [[0, 0, 1920, 1080]], "rectPending retried cleanly on playback start");
+    r.controller.destroy();
+});
+
+test("suspendedReady resume reapplies displayRect and restoreAsync blocks showUpNext setDisplayRect until finished (#759)", async () => {
+    const r = await autoplayRig(true);
+    r.controller.play(EPISODE);
+    await r.h.clock.advance(0);
+    const beforeOpen = r.avplay.displayRects.length;
+    assert.deepEqual(r.avplay.displayRects.slice(0, beforeOpen), [[0, 0, 1920, 1080]]);
+
+    // Suspend while prepareAsync completes hidden -> suspendedReady branch on restore must re-apply full-screen displayRect.
+    r.controller.suspend();
+    r.avplay.finishPrepare();
+    await r.h.clock.advance(0);
+    while (r.avplay.calls.at(-1)?.startsWith("seekTo")) {
+        r.avplay.finishSeek();
+        await r.h.clock.advance(0);
+    }
+    r.controller.restore();
+    await r.h.clock.advance(0);
+    const afterSuspendedReady = r.avplay.displayRects.slice(beforeOpen);
+    assert.deepEqual(afterSuspendedReady, [[0, 0, 1920, 1080]]);
+
+    // While warm restoreAsync is in flight, showUpNext() is rejected and setDisplayRect is not touched until finishRestore().
+    r.controller.suspend();
+    r.controller.restore();
+    await r.h.clock.advance(0);
+    const beforeRestore = r.avplay.displayRects.length;
+    r.controller.showUpNext();
+    assert.equal(r.avplay.displayRects.length, beforeRestore, "no setDisplayRect while restoreAsync is pending");
+    r.avplay.finishRestore();
+    await r.h.clock.advance(0);
+    assert.deepEqual(r.avplay.displayRects.slice(beforeRestore), [[0, 0, 1920, 1080]]);
+    r.controller.destroy();
+});
+
+test("Up Next LTR/RTL language flip updates setDisplayRect once per direction (#759)", async () => {
+    registerSourceCatalogs();
+    const r = await autoplayRig(true);
+    try {
+        setAppLanguage("en");
+        await playMovie(r, EPISODE);
+        const before = r.avplay.displayRects.length;
+        r.controller.showUpNext();
+        await r.h.clock.advance(0);
+        setAppLanguage("ar");
+        r.controller.refreshView();
+        r.controller.refreshView();
+        r.avplay.tick(2000);
+        setAppLanguage("en");
+        r.controller.refreshView();
+        r.controller.refreshView();
+        assert.deepEqual(r.avplay.displayRects.slice(before), [
+            [180, 112, 760, 428],
+            [980, 112, 760, 428],
+            [180, 112, 760, 428],
+        ]);
+    } finally {
+        setAppLanguage("en");
+        r.controller.destroy();
+    }
+});
+
+test("fresh transport open() and warmRestore() reset setDisplayRect deduplication (#759)", async () => {
+    const r = await autoplayRig(true);
+    await playMovie(r, EPISODE);
+    const beforeOpen = r.avplay.displayRects.length;
+    assert.deepEqual(r.avplay.displayRects.slice(0, beforeOpen), [[0, 0, 1920, 1080]]);
+    // Reconnect reopens AVPlay while still fullscreen -> open() still re-applies the rect.
+    r.avplay.listener?.onerror("PLAYER_ERROR_CONNECTION_FAILED");
+    await r.h.clock.advance(1000);
+    assert.equal(r.avplay.urls.length, 2);
+    assert.deepEqual(r.avplay.displayRects.slice(beforeOpen), [[0, 0, 1920, 1080]]);
+    r.avplay.finishPrepare();
+    await r.h.clock.advance(0);
+    if (r.avplay.calls.at(-1)?.startsWith("seekTo")) {
+        r.avplay.finishSeek();
+        await r.h.clock.advance(0);
+    }
+
+    // suspend() cancels any open prompt, then warmRestore() resets appliedRect and reapplies full-screen before re-opening Up Next.
+    r.controller.showUpNext();
+    await r.h.clock.advance(0);
+    r.controller.suspend();
+    r.controller.restore();
+    await r.h.clock.advance(0);
+    const beforeRestore = r.avplay.displayRects.length;
+    r.avplay.finishRestore();
+    await r.h.clock.advance(0);
+    assert.deepEqual(r.avplay.displayRects.slice(beforeRestore), [[0, 0, 1920, 1080]]);
+    r.controller.showUpNext();
+    await r.h.clock.advance(0);
+    r.avplay.tick(61_000);
+    r.avplay.tick(62_000);
+    assert.deepEqual(r.avplay.displayRects.slice(beforeRestore), [
+        [0, 0, 1920, 1080],
+        [180, 112, 760, 428],
+    ]);
+    r.controller.destroy();
+});
+
+test("persistent setDisplayRect failure in prepared() routes to recovery instead of reporting playing (#759)", async () => {
+    const r = await autoplayRig(true);
+    r.avplay.setDisplayRect = (): void => {
+        throw new Error("InvalidStateError");
+    };
+    r.controller.play(EPISODE);
+    await r.h.clock.advance(0);
+    r.avplay.finishPrepare();
+    await r.h.clock.advance(0);
+    while (r.avplay.calls.at(-1)?.startsWith("seekTo")) {
+        r.avplay.finishSeek();
+        await r.h.clock.advance(0);
+    }
+    const view = last(r.views);
+    assert.notEqual(view.phase, "playing");
+    assert.equal(view.phase, "loading");
+    assert.equal(r.avplay.displayRects.length, 0);
+    const replan = only(bodies(r.h, "/replan"));
+    assert.equal(replan.operation, "failure_recovery");
+    assert.deepEqual(replan.failure, { classification: "avplay_play_failed" });
+    r.controller.destroy();
+});
+
+test("EOF credits skip accepted while restoreAsync is pending publishes Up Next on finishRestore() while paused (#759)", async () => {
+    const r = await creditsAutoplayRig(true, false);
+    await playMovie(r, EPISODE);
+    for (let step = 0; step < 6; step++) await r.h.clock.advance(0);
+    r.controller.setPaused(true);
+    r.controller.suspend();
+    r.controller.restore();
+    await r.h.clock.advance(0);
+    const beforeRestore = r.avplay.displayRects.length;
+    const seeksBefore = r.avplay.calls.filter(call => call.startsWith("seekTo")).length;
+
+    r.controller.skipCredits(7200);
+    assert.equal(r.avplay.calls.filter(call => call.startsWith("seekTo")).length, seeksBefore, "credits skip does not seek to EOF while restoring");
+    assert.equal(r.avplay.displayRects.length, beforeRestore, "no setDisplayRect while restoreAsync is pending");
+    assert.equal(last(r.views).phase, "loading");
+
+    r.avplay.finishRestore();
+    await r.h.clock.advance(0);
+    const restored = last(r.views);
+    assert.equal(restored.phase, "paused");
+    assert.equal(restored.upNext?.countdown, 10);
+    assert.deepEqual(r.avplay.displayRects.slice(beforeRestore), [[180, 112, 760, 428]]);
+    r.controller.destroy();
+});
+
+test("deferred discovery resolving during restoreAsync withholds Up Next and preview rect until finishRestore() (#759)", async () => {
+    const r = await autoplayRig(true);
+    const episodePart = "/catalog/series/series%3As1/seasons?image_size=small";
+    const deckPart = "/home/sections?image_size=small";
+    const held = await playMovieWith(r, EPISODE, () => ({
+        episode: r.h.fake.hold(episodePart),
+        deck: r.h.fake.hold(deckPart),
+    }));
+    r.avplay.tick(7180_000);
+    await r.h.clock.advance(0);
+    r.controller.setPaused(true);
+    r.controller.suspend();
+    r.controller.restore();
+    await r.h.clock.advance(0);
+    const beforeRestore = r.avplay.displayRects.length;
+
+    held.episode.release();
+    held.deck.release();
+    await r.h.clock.advance(0);
+    await r.h.clock.advance(0);
+    assert.equal(last(r.views).phase, "loading");
+    assert.equal(r.avplay.displayRects.length, beforeRestore, "deferred discovery does not call setDisplayRect while restoreAsync is pending");
+
+    r.avplay.finishRestore();
+    await r.h.clock.advance(0);
+    const restored = last(r.views);
+    assert.equal(restored.phase, "paused");
+    assert.equal(restored.upNext?.next?.contentId, "episode:s1e13");
+    assert.deepEqual(r.avplay.displayRects.slice(beforeRestore), [[180, 112, 760, 428]]);
+    r.controller.destroy();
+});
+
+test("transient setDisplayRect refusal during suspendedReady resume keeps playing and retries via rectPending (#759)", async () => {
+    const r = await autoplayRig(true);
+    r.controller.play(EPISODE);
+    await r.h.clock.advance(0);
+    r.controller.suspend();
+    r.avplay.finishPrepare();
+    await r.h.clock.advance(0);
+    while (r.avplay.calls.at(-1)?.startsWith("seekTo")) {
+        r.avplay.finishSeek();
+        await r.h.clock.advance(0);
+    }
+
+    const original = r.avplay.setDisplayRect.bind(r.avplay);
+    let throwOnce = true;
+    r.avplay.setDisplayRect = (x: number, y: number, w: number, h: number): void => {
+        if (throwOnce) {
+            throwOnce = false;
+            throw new Error("transient READY refusal");
+        }
+        original(x, y, w, h);
+    };
+
+    const urlsBefore = r.avplay.urls.length;
+    const rectsBefore = r.avplay.displayRects.length;
+    r.controller.restore();
+    await r.h.clock.advance(0);
+    assert.equal(last(r.views).phase, "playing");
+    assert.equal(r.avplay.urls.length, urlsBefore);
+    assert.equal(r.avplay.displayRects.length, rectsBefore);
+
+    r.avplay.tick(1000);
+    assert.deepEqual(r.avplay.displayRects.slice(rectsBefore), [[0, 0, 1920, 1080]]);
+    r.controller.destroy();
+});
