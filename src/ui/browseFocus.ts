@@ -335,16 +335,21 @@ export class FocusHost {
     }
 
     private applyVisit(visit: VisitSnapshot | undefined): void {
-        this.viewport().scrollTop = visit?.top ?? 0;
+        const viewport = this.viewport();
+        const targetTop = visit?.top ?? 0;
+        if (viewport.scrollTop !== targetTop) viewport.scrollTop = targetTop;
         this.container.querySelectorAll<HTMLElement>(".browse-row").forEach((row, index) => {
             SkylineScroll.prepareEpisodeRow(row);
-            row.scrollLeft = visit?.rows.get(this.rowKey(row, index)) ?? 0;
             const entry = row.dataset.scrollEntry === undefined ? undefined : Array.from(row.children).find((node): node is HTMLElement => node instanceof HTMLElement && node.dataset.focus === row.dataset.scrollEntry);
-            if (entry !== undefined) {
-                row.scrollLeft = row.classList.contains("details-episodes") ? SkylineScroll.episodeOffset(row, entry) : row.classList.contains("details-season-chips") ? SkylineScroll.seasonOffset(row, entry) : entry.offsetLeft - row.offsetLeft - parseFloat(getComputedStyle(row).paddingLeft);
-            }
+            const targetLeft = entry !== undefined
+                ? (row.classList.contains("details-episodes") ? SkylineScroll.episodeOffset(row, entry) : row.classList.contains("details-season-chips") ? SkylineScroll.seasonOffset(row, entry) : entry.offsetLeft - row.offsetLeft - parseFloat(getComputedStyle(row).paddingLeft))
+                : (visit?.rows.get(this.rowKey(row, index)) ?? 0);
+            if (row.scrollLeft !== targetLeft) row.scrollLeft = targetLeft;
         });
-        this.container.querySelectorAll<HTMLElement>(SCROLL_PANELS).forEach(panel => { panel.scrollTop = visit?.panels.get(panel.dataset.scrollKey ?? "") ?? 0; });
+        this.container.querySelectorAll<HTMLElement>(SCROLL_PANELS).forEach(panel => {
+            const panelTop = visit?.panels.get(panel.dataset.scrollKey ?? "") ?? 0;
+            if (panel.scrollTop !== panelTop) panel.scrollTop = panelTop;
+        });
     }
 
     private intersects(element: HTMLElement): boolean {

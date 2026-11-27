@@ -457,7 +457,7 @@ test("answers that land before the next frame redraw opening series Details once
         };
         new MutationObserver(records => {
             for (const record of records) for (const node of record.addedNodes) {
-                if (node instanceof Element && (node.matches(".details-hero") || node.querySelector(".details-hero") !== null)) window.heroDraws++;
+                if (node instanceof Element && (node.matches(".details-editorial") || node.querySelector(".details-editorial") !== null)) window.heroDraws++;
             }
         }).observe(document, { childList: true, subtree: true });
     }); } });
@@ -515,8 +515,8 @@ test("a focused episode's read leaves before the dwell repaints Details", async 
         await tv.eventually(async () => tv.pendingReplies === 0, "the timers' reads answered");
         await tv.remote(39);
         assert.equal(await tv.focused(), "episode:s1e13");
-        // Marks the screen the focus move painted; the dwell's repaint replaces it.
-        await tv.page.evaluate(() => document.querySelector(".details-hero")?.setAttribute("data-before-dwell", ""));
+        // Marks the editorial block the focus move painted; the dwell's repaint replaces it inside the retained hero.
+        await tv.page.evaluate(() => document.querySelector(".details-editorial")?.setAttribute("data-before-dwell", ""));
         await tv.jump(119);
         assert.deepEqual(await tv.page.evaluate(() => window.episodeReadPainted), [], "no read before the dwell");
         await tv.jump(1);
