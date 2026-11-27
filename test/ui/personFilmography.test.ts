@@ -777,6 +777,7 @@ journey("Details Back reads the person again when Back interrupted the initial l
     await tv.page.locator('.details-people [data-focus^="credit:7:"]').first().click();
     await tv.page.locator(".details-person-hero").waitFor();
     await tv.eventually(async () => metadataReads(tv) === 3 && await tv.page.getByText("Loading metadata", { exact: true }).count() === 0, "person read again and hero filled");
+    await tv.eventually(async () => await grid(tv).count() === 60, "filmography loaded after re-entry");
     assert.equal(metadataReads(tv), 3, "exactly one more person read");
     assert.equal(queries(tv).length, count + 1, "re-entering starts its fresh route filmography read");
     assert.equal(await grid(tv).count(), 60);
