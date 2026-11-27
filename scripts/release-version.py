@@ -5,7 +5,7 @@ The next version bumps the latest vX.Y.Z tag by the largest change since it:
 
 - a breaking change (`feat!:`, `fix(ui)!:`, or a `BREAKING CHANGE:` line in the
   body) bumps the major version from 1.0.0 onward, or the minor version in
-  auto mode while major version is 0 (SemVer initial development);
+  auto mode while the major version is 0 (SemVer initial development);
 - `feat` bumps the minor version;
 - `fix`, `perf` and `revert` (or a `Revert "..."` subject) bump the patch;
 - anything else (`docs`, `chore`, `ci`, `test`, `refactor`, `style`, `build`,
@@ -214,8 +214,10 @@ def prerelease_step(version: SemVer) -> BumpLevel:
 def next_version(highest: Optional[TagInfo], level: BumpLevel, *, is_auto: bool) -> tuple[SemVer, BumpLevel]:
     base = highest.version if highest else SemVer(0, 0, 0)
     effective = BumpLevel.MINOR if (is_auto and base.major == 0 and level == BumpLevel.MAJOR) else level
-    if highest and highest.is_prerelease and effective <= prerelease_step(base):
-        return base, effective
+    if highest and highest.is_prerelease:
+        step = prerelease_step(base)
+        if effective <= step:
+            return base, step or effective
     return base.bump(effective), effective
 
 
@@ -257,8 +259,8 @@ def plan_release(
         target, effective = next_version(highest, level, is_auto=True)
         bump = effective.name.lower()
     else:
-        target, _ = next_version(highest, BumpLevel[mode.upper()], is_auto=False)
-        bump = mode
+        target, effective = next_version(highest, BumpLevel[mode.upper()], is_auto=False)
+        bump = effective.name.lower()
 
     target.check_tizen_limits()
     return ReleasePlan(True, target.text, f"v{target.text}", previous_tag, bump)

@@ -1,8 +1,8 @@
 import assert from "node:assert/strict";
 import { execFileSync } from "node:child_process";
-import { cpSync, mkdtempSync, readFileSync, rmSync, symlinkSync, writeFileSync } from "node:fs";
+import { cpSync, mkdirSync, mkdtempSync, readFileSync, rmSync, symlinkSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
-import { join } from "node:path";
+import { dirname, join } from "node:path";
 import { test } from "node:test";
 import { fileURLToPath } from "node:url";
 
@@ -30,12 +30,16 @@ test("the package allows generated artwork and its own player without relaxing s
 
 test("build stamps staged config.xml and APP_VERSION from an exact release tag without dirtying app/config.xml", () => {
     const repoRoot = fileURLToPath(new URL("../..", import.meta.url));
-    const buildScript = join(repoRoot, "scripts", "build.mjs");
+    const nodeModulesDir = dirname(dirname(dirname(fileURLToPath(import.meta.resolve("esbuild")))));
     const workDir = mkdtempSync(join(tmpdir(), "auger-build-version-"));
     try {
         cpSync(join(repoRoot, "app"), join(workDir, "app"), { recursive: true });
+        mkdirSync(join(workDir, "scripts"), { recursive: true });
+        cpSync(join(repoRoot, "scripts", "build.mjs"), join(workDir, "scripts", "build.mjs"));
+        cpSync(join(repoRoot, "scripts", "catalog-files.ts"), join(workDir, "scripts", "catalog-files.ts"));
         symlinkSync(join(repoRoot, "src"), join(workDir, "src"));
-        symlinkSync(join(repoRoot, "node_modules"), join(workDir, "node_modules"));
+        symlinkSync(nodeModulesDir, join(workDir, "node_modules"));
+        const buildScript = join(workDir, "scripts", "build.mjs");
         const cleanEnv = Object.fromEntries(
             Object.entries(process.env).filter(([key]) => !key.startsWith("GIT_")),
         );
@@ -52,8 +56,8 @@ test("build stamps staged config.xml and APP_VERSION from an exact release tag w
         const runBuild = () =>
             execFileSync(process.execPath, [buildScript], {
                 cwd: workDir,
-                env: { ...cleanEnv, AUGER_BUILD_ROOT: workDir },
-                stdio: "ignore",
+                env: cleanEnv,
+                stdio: ["ignore", "ignore", "pipe"],
             });
 
         git("init", "--quiet", "--initial-branch=main");

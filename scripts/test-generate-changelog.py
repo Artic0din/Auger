@@ -608,15 +608,183 @@ class CheckPrReleaseNotesTest(unittest.TestCase):
             with self.subTest(title=title, section=section[:20]):
                 self.assertTrue(changelog.check_pr_release_notes(title, pr_body(f"## Release Notes\n\n{section}")))
 
+    def test_squash_commit_classification_matches_release(self):
+        # Single-commit PR with BREAKING CHANGE: in the commit body (like PR #111), not the PR body.
+        commit = Commit(
+            "build(platform): require Tizen 8.0 or later",
+            "Align bundles with Chromium 108.\n\nBREAKING CHANGE: upgrade your TV to Tizen 8.0 or later.",
+        )
+        self.assertTrue(changelog.check_pr_release_notes("build(platform): require Tizen 8.0 or later", "", commits=[commit]))
+        self.assertEqual(
+            [],
+            changelog.check_pr_release_notes(
+                "build(platform): require Tizen 8.0 or later",
+                pr_body("## Release Notes\n\n### Breaking Changes\n\n- Upgrade your TV to Tizen 8.0 or later."),
+                commits=[commit],
+            ),
+        )
+        # Multi-commit PR where the second commit body carries BREAKING CHANGE:.
+        multi = [Commit("feat(settings): add sync"), Commit("chore(settings): drop v1 keys", "BREAKING CHANGE: sign in again.")]
+        self.assertTrue(
+            changelog.check_pr_release_notes(
+                "feat(settings): add sync",
+                pr_body("## Release Notes\n\n### New\n\n- Sync settings across TVs."),
+                commits=multi,
+            )
+        )
+        self.assertEqual(
+            [],
+            changelog.check_pr_release_notes(
+                "feat(settings): add sync",
+                pr_body("## Release Notes\n\n### Breaking Changes\n\n- Sign in again.\n\n### New\n\n- Sync settings across TVs."),
+                commits=multi,
+            ),
+        )
+        # BREAKING CHANGE: written only in the PR body is discarded by GitHub's COMMIT_MESSAGES squash mode.
+        discarded = changelog.check_pr_release_notes(
+            "feat(settings): add sync",
+            pr_body("## Release Notes\n\n### New\n\n- Sync settings across TVs.") + "\nBREAKING CHANGE: sign in again.\n",
+            commits=[Commit("feat(settings): add sync")],
+        )
+        self.assertEqual(1, len(discarded))
+        self.assertIn("discarded", discarded[0])
+        # Single-commit PR whose PR title and commit headline imply different SemVer bumps or categories.
+        self.assertTrue(
+            changelog.check_pr_release_notes(
+                "feat(player): add chapters",
+                pr_body("## Release Notes\n\n### New\n\n- Jump to chapters."),
+                commits=[Commit("fix(player): add chapters")],
+            )
+        )
+        self.assertTrue(
+            changelog.check_pr_release_notes(
+                "perf(ci): cache bundle check",
+                "",
+                commits=[Commit("fix(ci): cache bundle check")],
+            )
+        )
+        self.assertTrue(
+            changelog.check_pr_release_notes(
+                "chore(repo): tidy",
+                "",
+                commits=[Commit("feat(player): add chapters")],
+            )
+        )
+        # Equivalent non-releasing or patch types with identical release effects remain allowed.
+        self.assertEqual(
+            [],
+            changelog.check_pr_release_notes(
+                "docs: clarify release checks",
+                "",
+                commits=[Commit("chore: clarify release checks")],
+            ),
+        )
+        self.assertEqual(
+            [],
+            changelog.check_pr_release_notes(
+                "fix(player): undo broken chapters",
+                pr_body("## Release Notes\n\n### Fixed\n\n- Restored the previous timeline layout."),
+                commits=[Commit("revert(player): undo broken chapters")],
+            ),
+        )
+        # Wording edits to a 1-commit PR title that preserve commit type, bump, and category remain allowed.
+        self.assertEqual(
+            [],
+            changelog.check_pr_release_notes(
+                "feat(player): jump directly to chapters",
+                pr_body("## Release Notes\n\n### New\n\n- Jump directly to chapters from the player."),
+                commits=[Commit("feat(player): add chapter list")],
+            ),
+        )
+        # GitHub Revert commit retitled to conventional revert(...): passes.
+        self.assertEqual(
+            [],
+            changelog.check_pr_release_notes(
+                "revert(player): undo chapters",
+                pr_body("## Release Notes\n\n### Fixed\n\n- Restored the previous timeline layout."),
+                commits=[Commit('Revert "feat(player): add chapters"')],
+            ),
+        )
+        # Multi-commit PR with ! on a later commit is flagged unless the PR title or a commit footer is breaking.
+        self.assertTrue(
+            changelog.check_pr_release_notes(
+                "feat(settings): add sync",
+                pr_body("## Release Notes\n\n### New\n\n- Sync settings across TVs."),
+                commits=[Commit("feat(settings): add sync"), Commit("fix(settings)!: drop v1 keys")],
+            )
+        )
+        # A branch with a merge commit (total_commits=2) uses the PR title rather than the single non-merge commit.
+        self.assertEqual(
+            [],
+            changelog.check_pr_release_notes(
+                "feat(player): add chapters",
+                pr_body("## Release Notes\n\n### New\n\n- Jump to chapters."),
+                commits=[Commit("fix(player): initial wip")],
+                total_commits=2,
+            ),
+        )
+
     def test_check_pr_cli_and_workflow_step(self):
         workflow_text = (SCRIPT_DIR.parent / ".github/workflows/ci-scripts.yml").read_text(encoding="utf-8")
+        self.assertIn("fetch-depth: 0\n", workflow_text)
         self.assertIn("types: [opened, edited, synchronize, reopened]", workflow_text)
         self.assertIn("PR_TITLE: ${{ github.event.pull_request.title }}", workflow_text)
         self.assertIn("PR_BODY: ${{ github.event.pull_request.body }}", workflow_text)
+        self.assertIn("BASE_SHA: ${{ github.event.pull_request.base.sha }}", workflow_text)
+        self.assertIn("HEAD_SHA: ${{ github.event.pull_request.head.sha }}", workflow_text)
         step_script = extract_step_run(extract_job_block(workflow_text, "test"), "Check user-facing PR release notes")
         with tempfile.TemporaryDirectory() as tmp_name:
             runner_temp = Path(tmp_name)
-            env = {**os.environ, "RUNNER_TEMP": str(runner_temp)}
+            repo = runner_temp / "repo"
+            repo.mkdir()
+            shutil.copytree(SCRIPT_DIR, repo / "scripts")
+            clean_env = {k: v for k, v in os.environ.items() if not k.startswith("GIT_")}
+            git_env = {
+                **clean_env,
+                "GIT_CONFIG_GLOBAL": os.devnull,
+                "GIT_CONFIG_NOSYSTEM": "1",
+                "GIT_AUTHOR_NAME": "Test",
+                "GIT_AUTHOR_EMAIL": "test@example.com",
+                "GIT_COMMITTER_NAME": "Test",
+                "GIT_COMMITTER_EMAIL": "test@example.com",
+            }
+            subprocess.run(["git", "init", "--quiet", "--initial-branch=main"], cwd=repo, env=git_env, check=True)
+            subprocess.run(["git", "commit", "--quiet", "--allow-empty", "-m", "chore: base"], cwd=repo, env=git_env, check=True)
+            base_sha = subprocess.run(["git", "rev-parse", "HEAD"], cwd=repo, env=git_env, check=True, capture_output=True, text=True).stdout.strip()
+            subprocess.run(
+                ["git", "commit", "--quiet", "--allow-empty", "-m", "build(platform): require Tizen 8.0", "-m", "BREAKING CHANGE: upgrade to Tizen 8.0"],
+                cwd=repo,
+                env=git_env,
+                check=True,
+            )
+            head_sha = subprocess.run(["git", "rev-parse", "HEAD"], cwd=repo, env=git_env, check=True, capture_output=True, text=True).stdout.strip()
+
+            env = {**clean_env, "RUNNER_TEMP": str(runner_temp)}
+            missing_breaking = subprocess.run(
+                ["bash", "-euo", "pipefail", "-c", step_script],
+                cwd=repo,
+                env={**env, "PR_TITLE": "build(platform): require Tizen 8.0", "PR_BODY": "", "BASE_SHA": base_sha, "HEAD_SHA": head_sha},
+                capture_output=True,
+                text=True,
+            )
+            self.assertEqual(1, missing_breaking.returncode)
+            self.assertIn("## Release Notes", missing_breaking.stderr)
+
+            good_breaking = subprocess.run(
+                ["bash", "-euo", "pipefail", "-c", step_script],
+                cwd=repo,
+                env={
+                    **env,
+                    "PR_TITLE": "build(platform): require Tizen 8.0",
+                    "PR_BODY": pr_body("## Release Notes\n\n### Breaking Changes\n\n- Upgrade your TV to Tizen 8.0 or later."),
+                    "BASE_SHA": base_sha,
+                    "HEAD_SHA": head_sha,
+                },
+                capture_output=True,
+                text=True,
+            )
+            self.assertEqual(0, good_breaking.returncode, good_breaking.stderr)
+
             good = subprocess.run(
                 ["bash", "-euo", "pipefail", "-c", step_script],
                 cwd=SCRIPT_DIR.parent,
