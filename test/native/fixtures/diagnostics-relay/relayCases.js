@@ -113,6 +113,7 @@ const PLAYBACK_CASES = [
       check(!/HTTP [1-5]\d\d/.test(body), "no HTTP status may be invented");
       check(!/sign-in/i.test(body) && !/sign-in/i.test(issue.body.title), "session_expired must not claim a sign-in failure");
       excludes(body, "Direct play", "stale plan summary must not render when this attempt has no plan");
+      excludes(body, "### ELI5", "diagnostics issues must not include an ELI5 section");
       check(body.indexOf("### Event sequence") < body.indexOf("### Device"), "events and outcomes render before device context");
       equal(JSON.stringify(issue.body.labels), JSON.stringify(["diagnostics", "needs-triage"]), "labels");
     },
