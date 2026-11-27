@@ -42,10 +42,12 @@ test("Home content DOM nodes stay identical across top-bar dropdowns, flyouts, B
         await tv.page.evaluate(() => {
             const w = window as unknown as {
                 __homeContent: Element[];
+                __homeSubtree: Element[];
                 __homeCard: Element | null;
                 __outgoingSeen: number;
             };
             w.__homeContent = Array.from(document.querySelectorAll(".browse > .skyline-content > *"));
+            w.__homeSubtree = Array.from(document.querySelectorAll(".browse > .skyline-content, .browse > .skyline-content *"));
             w.__homeCard = document.querySelector('.browse > .skyline-content [data-section="recently_added"] .browse-card');
             w.__outgoingSeen = 0;
             new MutationObserver((records) => {
@@ -61,20 +63,24 @@ test("Home content DOM nodes stay identical across top-bar dropdowns, flyouts, B
             const state = await tv.page.evaluate(() => {
                 const w = window as unknown as {
                     __homeContent: Element[];
+                    __homeSubtree: Element[];
                     __homeCard: Element | null;
                     __outgoingSeen: number;
                 };
                 const current = Array.from(document.querySelectorAll(".browse > .skyline-content > *"));
+                const subtree = Array.from(document.querySelectorAll(".browse > .skyline-content, .browse > .skyline-content *"));
                 const card = document.querySelector('.browse > .skyline-content [data-section="recently_added"] .browse-card');
                 return {
                     countMatch: current.length === w.__homeContent.length && current.length > 0,
                     sectionsIdentical: current.length === w.__homeContent.length && current.every((el, index) => el === w.__homeContent[index]),
+                    subtreeIdentical: subtree.length === w.__homeSubtree.length && subtree.every((el, index) => el === w.__homeSubtree[index]),
                     cardIdentical: card !== null && card === w.__homeCard,
                     outgoingSeen: w.__outgoingSeen,
                 };
             });
             assert.equal(state.countMatch, true, `${step}: expected Home content sections to remain populated`);
             assert.equal(state.sectionsIdentical, true, `${step}: Home .skyline-content children should be strictly retained`);
+            assert.equal(state.subtreeIdentical, true, `${step}: Home .skyline-content descendants (including card contents) should be strictly retained`);
             assert.equal(state.cardIdentical, true, `${step}: Home card DOM node should stay ===`);
             assert.equal(state.outgoingSeen, 0, `${step}: dropdown navigation should not clone .skyline-route-outgoing`);
         };
@@ -177,6 +183,152 @@ test("Profile dropdown, rebuildProfile(), Sign Out confirmation inert/aria-hidde
         assert.equal(retained, true, "Home content DOM nodes remained identical across profile rebuild and Sign Out cancel");
     } finally {
         heldRequests.release();
+        await tv.page.context().close();
+    }
+});
+
+test("held Select on a Home card survives background /requests/status arrival for both short release and long hold", async () => {
+    const waitCapabilitySettled = async (tv: Tv): Promise<void> => {
+        await tv.eventually(
+            async () => tv.fake.requests.some(request => request.path === "/requests/status") && tv.pendingReplies <= tv.fake.heldReplies,
+            "capability probe answered",
+        );
+        await afterPaint(tv);
+    };
+
+    // Part A: short press release while /requests/status finishes mid-press opens Details.
+    {
+        const tv = await openTv(browser, { app: "browse" });
+        const heldRequests = tv.fake.hold("/requests/status", true);
+        try {
+            await start(tv, new FakeRequests());
+            const card = tv.page.locator('[data-section="recently_added"] [data-focus="movie:m0001"]').first();
+            await card.focus();
+            await tv.page.keyboard.down("Enter");
+            assert.equal(await card.getAttribute("data-pressed"), "");
+            heldRequests.release();
+            await waitCapabilitySettled(tv);
+            await tv.page.keyboard.up("Enter");
+            await tv.page.locator('[data-view="item:movie:m0001"]').waitFor();
+            assert.deepEqual(tv.console, []);
+        } finally {
+            heldRequests.release();
+            await tv.page.context().close();
+        }
+    }
+
+    // Part B: long press held across /requests/status probe arrival still triggers quick-actions menu at 650 ms.
+    {
+        const tv = await openTv(browser, { app: "browse" });
+        const heldRequests = tv.fake.hold("/requests/status", true);
+        try {
+            await start(tv, new FakeRequests());
+            const card = tv.page.locator('[data-section="recently_added"] [data-focus="movie:m0001"]').first();
+            await card.focus();
+            await tv.page.keyboard.down("Enter");
+            assert.equal(await card.getAttribute("data-pressed"), "");
+            heldRequests.release();
+            await waitCapabilitySettled(tv);
+            await tv.jump(700);
+            await tv.page.getByRole("menu").waitFor();
+            await tv.page.keyboard.up("Enter");
+            assert.deepEqual(tv.console, []);
+        } finally {
+            heldRequests.release();
+            await tv.page.context().close();
+        }
+    }
+});
+
+test("held Select on a profile menu row transfers across rebuildProfile() and activates on release", async () => {
+    const tv = await openTv(browser, { app: "browse" });
+    const heldRequests = tv.fake.hold("/requests/status", true);
+    try {
+        await start(tv, new FakeRequests(), true);
+        await tv.page.locator('[data-focus="profiles"]').focus();
+        await tv.remote(40);
+        await tv.remote(40);
+        assert.equal(await tv.focused(), "settings");
+
+        await tv.page.keyboard.down("Enter");
+        assert.equal(await tv.page.locator('.skyline-selector [data-focus="settings"]').getAttribute("data-pressed"), "");
+        heldRequests.release();
+        await tv.page.locator('.skyline-selector[data-menu-kind="profile"] [data-focus="requests"]').waitFor();
+        assert.equal(await tv.focused(), "settings");
+        await tv.page.keyboard.up("Enter");
+        await tv.page.locator(".settings-pane").waitFor();
+        assert.deepEqual(tv.console, []);
+    } finally {
+        heldRequests.release();
+        await tv.page.context().close();
+    }
+});
+
+test("deferred Home libraries arrival while a dropdown is open preserves Home DOM, avatar, and active tab on close", async () => {
+    const tv = await openTv(browser, { app: "browse" });
+    let heldLibraries: ReturnType<typeof tv.fake.hold> | undefined;
+    try {
+        const catalog = new FakeRequests();
+        const owner = catalog.households.get("p-owner");
+        assert.ok(owner);
+        const savedLibraries = owner.libraries.splice(0, owner.libraries.length);
+        tv.fake.catalog = catalog;
+        const settings = new FakeSettings(tv.fake);
+        settings.profile().set(PRIMARY_MENU_KEY, null);
+        settings.profile().set(HIDDEN_KEY, owner.hidden ?? null);
+        await tv.page.evaluate(() => window.browseHarness.connect());
+        await tv.eventually(async () => tv.fake.devices.size > 0, "device code");
+        tv.fake.approve([...tv.fake.devices.keys()][0] ?? "");
+        await tv.jump(5000);
+        await tv.eventually(() => tv.page.evaluate(() => window.browseHarness.loginPhase === "signed_in"), "signed in");
+        await tv.page.evaluate(() => window.browseHarness.selectProfile("p-owner"));
+        heldLibraries = tv.fake.hold("/user/libraries", true);
+        owner.libraries.push(...savedLibraries);
+        await tv.page.evaluate(() => window.browseHarness.mount(false));
+        await tv.page.locator('.browse[data-view="home"] .browse-card').first().waitFor();
+        await homeDetailsRead(tv);
+        await tv.eventually(async () => tv.pendingReplies <= tv.fake.heldReplies, "non-held startup answers settled");
+        await afterPaint(tv);
+        assert.equal(await tv.page.locator('.browse-nav [data-focus="movies"]').count(), 0);
+
+        const initialAvatar = await tv.page.locator(".skyline-profile .navigation-avatar").getAttribute("data-avatar-identity");
+        assert.ok(initialAvatar !== null && initialAvatar !== "");
+
+        await tv.page.locator('[data-focus="for_you"]').focus();
+        await tv.jump(250);
+        await tv.page.locator('.skyline-selector [data-focus="watchlist"]').waitFor();
+        heldLibraries.release();
+        await tv.eventually(async () => tv.pendingReplies <= tv.fake.heldReplies, "libraries delivered while dropdown open");
+        assert.equal(await tv.page.locator('.browse-nav [data-focus="movies"]').count(), 0, "nav rebuild defers until dropdown closes");
+        await tv.page.evaluate(() => {
+            (window as unknown as { __homeSubtree: Element[] }).__homeSubtree = Array.from(
+                document.querySelectorAll(".browse > .skyline-content, .browse > .skyline-content *"),
+            );
+        });
+
+        await tv.remote(10009);
+        await tv.page.locator('.browse-nav [data-focus="movies"]').waitFor();
+        const afterClose = await tv.page.evaluate(() => {
+            const prev = (window as unknown as { __homeSubtree: Element[] }).__homeSubtree;
+            const current = Array.from(document.querySelectorAll(".browse > .skyline-content, .browse > .skyline-content *"));
+            const homeTab = document.querySelector('.browse-nav [data-focus="home"]');
+            const avatar = document.querySelector(".skyline-profile .navigation-avatar") as HTMLElement | null;
+            return {
+                subtreeIdentical: current.length > 0 && current.length === prev.length && current.every((el, i) => el === prev[i]),
+                ariaCurrent: homeTab?.getAttribute("aria-current"),
+                ariaSelected: homeTab?.getAttribute("aria-selected"),
+                avatarIdentity: avatar?.dataset.avatarIdentity ?? null,
+            };
+        });
+        assert.deepEqual(afterClose, {
+            subtreeIdentical: true,
+            ariaCurrent: "page",
+            ariaSelected: "true",
+            avatarIdentity: initialAvatar,
+        });
+        assert.deepEqual(tv.console, []);
+    } finally {
+        heldLibraries?.release();
         await tv.page.context().close();
     }
 });
