@@ -421,9 +421,9 @@ export function mountAudiobookPlayerScreen(container: HTMLElement, deps: Audiobo
         scrubberEl.dataset.zone = "scrubber";
         scrubberEl.dataset.key = "scrubber";
         const fillEl = el("div", "audio-player-scrubber-fill");
-        const pendingEl = el("div", "audio-player-scrubber-pending");
         const ticksHost = el("div", "audio-player-scrubber-ticks");
-        scrubberEl.append(ticksHost, fillEl, pendingEl);
+        const pendingEl = el("div", "audio-player-scrubber-pending");
+        scrubberEl.append(fillEl, ticksHost, pendingEl);
         const times = el("div", "audio-player-times");
         const elapsedEl = el("span", "audio-player-elapsed");
         const remainingEl = el("span", "audio-player-remaining");

@@ -108,6 +108,10 @@ playerTest("audiobook player renders cover, metadata, scrubber ticks, transport,
     assert.equal(await screen.locator(".audio-player-author").innerText(), "Brandon Sanderson");
     assert.equal(await screen.locator(".audio-player-chapter").innerText(), "Chapter 2 of 3 · What the Tide Owes");
     assert.equal(await screen.locator(".audio-player-scrubber-tick").count(), 2);
+    assert.deepEqual(
+        await screen.locator(".audio-player-scrubber").evaluate(el => [...el.children].map(c => c.className)),
+        ["audio-player-scrubber-fill", "audio-player-scrubber-ticks", "audio-player-scrubber-pending"],
+    );
     assert.equal(await screen.locator(".audio-player-elapsed").innerText(), "1:08:32");
     assert.equal(await screen.locator(".audio-player-remaining").innerText(), "-1:51:28");
 
@@ -601,4 +605,34 @@ playerTest("natural completion waits for unsettled seek before firing finished e
 
     await tv.page.evaluate(() => window.appHarness.avplay.finishSeek());
     await tv.eventually(() => tv.page.evaluate(() => window.appHarness.avplay.state === "NONE"), "late seek callback closes orphaned AVPlay");
+});
+
+playerTest("profile selection expiry tears down active audiobook host, screen, and AVPlay transport", async ({ tv }) => {
+    await tv.page.locator('[data-section="shelf"] [data-focus="audiobook:tide"]').click();
+    await tv.page.locator('[data-view="audiobook:audiobook:tide"] [data-focus="play"]').waitFor();
+    await tv.page.keyboard.press("Enter");
+    await prepareAudio(tv, true);
+
+    const screen = tv.page.locator('[data-screen="audiobook-player"]');
+    assert.equal(await screen.count(), 1);
+    assert.equal(await tv.page.locator('.audio-avplay-surface object[type="application/avplayer"]').count(), 1);
+
+    // Simulating TV background -> foreground triggers askEveryLaunch profile expiry in src/app.ts.
+    await tv.page.evaluate(() => {
+        Object.defineProperty(document, "hidden", { configurable: true, value: true });
+        document.dispatchEvent(new Event("visibilitychange"));
+        Object.defineProperty(document, "hidden", { configurable: true, value: false });
+        document.dispatchEvent(new Event("visibilitychange"));
+    });
+
+    await tv.page.locator('[data-screen="profiles"]').waitFor();
+    assert.equal(await screen.count(), 0);
+    assert.equal(await tv.page.locator('.audio-avplay-surface, object[type="application/avplayer"]').count(), 0);
+    assert.equal(await tv.page.evaluate(() => window.appHarness.avplay.state), "NONE");
+    assert.equal(await tv.page.evaluate(() => window.appHarness.avplay.calls.some(call => call.startsWith("restoreAsync"))), false);
+
+    // Selecting the profile again returns cleanly to Home (ask-every-launch was already chosen on first launch).
+    await tv.page.locator('[data-focus="profile:p-owner"]').click();
+    await tv.page.locator('[data-view="home"] [data-section="shelf"] [data-focus="audiobook:tide"]').waitFor();
+    assert.equal(await screen.count(), 0);
 });

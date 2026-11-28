@@ -2065,7 +2065,7 @@ export function mountBrowse(root: HTMLElement, options: BrowseOptions): Browse {
 
     const handoffAudiobook = (request: AudiobookPlayRequest, focus?: FocusTarget): void => {
         const current = top();
-        if (current === undefined || torn || playing) {
+        if (current === undefined || torn || playing || options.onPlayAudiobook === undefined) {
             return;
         }
         current.focus = focus ?? host.focused();
@@ -2077,7 +2077,7 @@ export function mountBrowse(root: HTMLElement, options: BrowseOptions): Browse {
         shell.hide();
         host.stop();
         container.hidden = true;
-        options.onPlayAudiobook?.(request);
+        options.onPlayAudiobook(request);
     };
 
     const coverBrowse = (open: (back: () => void) => void, focus?: FocusTarget): void => {
@@ -2418,7 +2418,7 @@ export function mountBrowse(root: HTMLElement, options: BrowseOptions): Browse {
         openCollection,
         pop,
         play,
-        playAudiobook: (request: AudiobookPlayRequest) => { handoffAudiobook(request); },
+        playAudiobook: options.onPlayAudiobook === undefined ? undefined : (request: AudiobookPlayRequest) => { handoffAudiobook(request); },
         chooseProfile,
         retry,
         turn,

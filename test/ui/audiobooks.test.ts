@@ -592,3 +592,28 @@ audiobookTest("audiobook detail rail cards open no card menu on long-press or ri
     assert.equal(await tv.page.getByRole("menu").count(), 0);
     assert.equal(tv.fake.requests.filter(request => request.path.startsWith(`/catalog/items/${encodeURIComponent(id)}`)).length, readsBefore);
 });
+
+audiobookTest("audiobook playback controls stay disabled and keep Browse visible when onPlayAudiobook is omitted", async tv => {
+    await tv.page.evaluate(() => {
+        window.browseHarness.destroy();
+        window.browseHarness.offerAudiobookPlayback = false;
+        window.browseHarness.mount();
+    });
+    await showing(tv, "home");
+    await tv.page.locator(`[data-section="shelf"] [data-focus="${TIDE}"]`).click();
+    await showing(tv, `audiobook:${TIDE}`);
+
+    assert.equal(await tv.page.locator('[data-focus="play"]').getAttribute("aria-disabled"), "true");
+    assert.equal(await tv.page.locator('[data-focus="start-over"]').getAttribute("aria-disabled"), "true");
+    await tv.page.locator('[data-focus="play"]').focus();
+    await tv.page.keyboard.press("Enter");
+    assert.equal(await tv.page.locator(".browse").isHidden(), false);
+    assert.equal(await tv.page.evaluate(() => window.browseHarness.audiobookPlays.length), 0);
+
+    await tv.page.locator('[data-focus="chapters"]').click();
+    await showing(tv, `audiobook:${TIDE}:chapters`);
+    assert.equal(await tv.page.locator('[role="dialog"] .audiobook-chapter').first().getAttribute("aria-disabled"), "true");
+    await tv.page.keyboard.press("Enter");
+    assert.equal(await tv.page.locator(".browse").isHidden(), false);
+    assert.equal(await tv.page.evaluate(() => window.browseHarness.audiobookPlays.length), 0);
+});

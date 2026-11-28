@@ -30,6 +30,8 @@ export interface BrowseHarness {
     coverBack: (() => void) | undefined;
     /** Offers Switch Server in the profile menu on the next mount. */
     offerSwitchServer: boolean;
+    /** Offers audiobook playback on the next mount (defaults to true). */
+    offerAudiobookPlayback: boolean;
     lastKeyPrevented: boolean | undefined;
     connect(): Promise<void>;
     selectProfile(id: string, pin?: string): Promise<string>;
@@ -118,6 +120,7 @@ const harness: BrowseHarness = {
     signOutCalls: 0,
     coverBack: undefined,
     offerSwitchServer: false,
+    offerAudiobookPlayback: true,
     lastKeyPrevented: undefined,
     async connect() {
         const result = await connect("https://silo.example.test", {
@@ -175,10 +178,12 @@ const harness: BrowseHarness = {
                 themeEvents.push("player");
                 harness.plays.push(request);
             },
-            onPlayAudiobook: (request) => {
-                themeEvents.push("audiobook-player");
-                harness.audiobookPlays.push(request);
-            },
+            ...(harness.offerAudiobookPlayback ? {
+                onPlayAudiobook: (request: AudiobookPlayRequest) => {
+                    themeEvents.push("audiobook-player");
+                    harness.audiobookPlays.push(request);
+                },
+            } : {}),
             onChooseProfile: () => {
                 harness.chooseProfileCalls.push(root.querySelector(".browse") !== null);
             },
