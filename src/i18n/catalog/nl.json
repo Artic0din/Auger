@@ -19,6 +19,8 @@
  "audiobook.chapters.open": "Hoofdstukken",
  "audiobook.error.noPlayableTrack": "Er is geen afspeelbaar audiospoor beschikbaar.",
  "audiobook.error.unavailablePart": "De server heeft een niet-beschikbaar deel van het luisterboek geselecteerd.",
+ "audiobook.miniPlayer.nowPlaying": "Speelt nu: {title}",
+ "audiobook.miniPlayer.openHint": "Opent de volledige speler",
  "audiobook.player.label": "Luisterboek",
  "audiobook.player.playbackPosition": "Afspeelpositie",
  "audiobook.player.starting": "Luisterboek wordt gestart",

@@ -19,6 +19,8 @@
  "audiobook.chapters.open": "Kapitel",
  "audiobook.error.noPlayableTrack": "Keine abspielbare Audiospur verfügbar.",
  "audiobook.error.unavailablePart": "Der Server hat einen nicht verfügbaren Teil des Hörbuchs ausgewählt.",
+ "audiobook.miniPlayer.nowPlaying": "Aktuelle Wiedergabe: {title}",
+ "audiobook.miniPlayer.openHint": "Öffnet den vollständigen Player",
  "audiobook.player.label": "Hörbuch",
  "audiobook.player.playbackPosition": "Wiedergabeposition",
  "audiobook.player.starting": "Hörbuch wird gestartet",

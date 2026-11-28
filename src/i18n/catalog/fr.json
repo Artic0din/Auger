@@ -19,6 +19,8 @@
  "audiobook.chapters.open": "Chapitres",
  "audiobook.error.noPlayableTrack": "Aucune piste audio lisible n’est disponible.",
  "audiobook.error.unavailablePart": "Le serveur a sélectionné une partie du livre audio indisponible.",
+ "audiobook.miniPlayer.nowPlaying": "En cours de lecture : {title}",
+ "audiobook.miniPlayer.openHint": "Ouvre le lecteur complet",
  "audiobook.player.label": "Livre audio",
  "audiobook.player.playbackPosition": "Position de lecture",
  "audiobook.player.starting": "Démarrage du livre audio",

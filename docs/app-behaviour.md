@@ -30,6 +30,7 @@ The TV interface follows the [Skyline design guide](https://github.com/Silo-Serv
 ## Playback and recovery
 
 - Sidecar text subtitles (WebVTT, SRT, and ASS/SSA dialogue text) render in an app overlay; embedded bitmap subtitles are unclaimed. A failed subtitle file shows "Subtitle data couldn't be loaded. Turn subtitles off and on to retry." until the track loads or changes.
+- Audiobook playback continues when minimized with Back, returns through the top-bar Now Playing shortcut or the book's Detail page without creating a second session, suppresses Detail theme music while active, and stops cleanly before video playback opens AVPlay or when profiles switch.
 - The Server burns embedded subtitles into video when Transcode is allowed.
 - Movie and episode Details persist explicit audio and subtitle choices on the Server (`PUT /audio-prefs/{key}`, `PUT /subtitle-prefs/{key}`) and clear them on Auto (`DELETE`); version selection remains visit-only and pins its source through playback ([preplay behavior](features/skyline-browse-shell.md#preplay-audio-subtitles-and-resume)).
 - Resume checks fresh Profile progress for up to 3 s; Play from start sends source position 0.

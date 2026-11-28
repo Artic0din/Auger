@@ -19,6 +19,8 @@
  "audiobook.chapters.open": "Rozdziały",
  "audiobook.error.noPlayableTrack": "Brak ścieżki audio, którą można odtworzyć.",
  "audiobook.error.unavailablePart": "Serwer wybrał niedostępną część audiobooka.",
+ "audiobook.miniPlayer.nowPlaying": "Teraz odtwarzane: {title}",
+ "audiobook.miniPlayer.openHint": "Otwiera pełny odtwarzacz",
  "audiobook.player.label": "Audiobook",
  "audiobook.player.playbackPosition": "Pozycja odtwarzania",
  "audiobook.player.starting": "Uruchamianie audiobooka",

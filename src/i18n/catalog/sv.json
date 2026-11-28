@@ -19,6 +19,8 @@
  "audiobook.chapters.open": "Kapitel",
  "audiobook.error.noPlayableTrack": "Det finns inget ljudspår som kan spelas upp.",
  "audiobook.error.unavailablePart": "Servern valde en del av ljudboken som inte är tillgänglig.",
+ "audiobook.miniPlayer.nowPlaying": "Spelas nu: {title}",
+ "audiobook.miniPlayer.openHint": "Öppnar hela spelaren",
  "audiobook.player.label": "Ljudbok",
  "audiobook.player.playbackPosition": "Uppspelningsposition",
  "audiobook.player.starting": "Startar ljudboken",

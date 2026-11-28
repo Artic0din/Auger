@@ -19,6 +19,8 @@
  "audiobook.chapters.open": "Розділи",
  "audiobook.error.noPlayableTrack": "Немає аудіодоріжки, яку можна відтворити.",
  "audiobook.error.unavailablePart": "Сервер вибрав недоступну частину аудіокниги.",
+ "audiobook.miniPlayer.nowPlaying": "Зараз відтворюється: {title}",
+ "audiobook.miniPlayer.openHint": "Відкриває повний плеєр",
  "audiobook.player.label": "Аудіокнига",
  "audiobook.player.playbackPosition": "Позиція відтворення",
  "audiobook.player.starting": "Запуск аудіокниги",
