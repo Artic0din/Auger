@@ -491,6 +491,8 @@ On the S95C the master is version 3 and clean, and the define is on line 3 of th
 The player shows the playback error page and the console logs the reason.
 A playlist that cannot be read here (refused, no answer, another origin) is no verdict, and AVPlay gets it as before.
 A define only in a rendition playlist would still be missed.
+The client therefore requests no HLS subtitle rendition (`CLIENT_FEATURES`, `src/player/capabilities.ts`), and the server sends HLS text tracks as artifacts.
+On the S95C a master that lists a rendition per text track stopped the page even with a literal video playlist, and one with a single rendition failed to start ([TV results](playback/hls-define-workarounds.md#tv-results-29-nov-2026)).
 
 Audio tracks: `original_http` carries the validated claim `client_selected_audio_track_v1`, as Apple TV 4K's does, so the server keeps a non-default audio track on direct play instead of converting it.
 After `play()`, the controller plays `selected_tracks.audio.index` as that ordinal's AUDIO row of `getTotalTrackInfo` through `setSelectTrack`, which AVPlay allows only in PLAYING, and skips the call when `getCurrentStreamInfo` already shows that row.
