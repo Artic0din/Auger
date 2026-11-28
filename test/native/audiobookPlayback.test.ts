@@ -3,6 +3,7 @@ import { test } from "node:test";
 import { operations } from "../../src/api/operations.ts";
 import { AUDIOBOOK_SEEK_BACK_KEY, AUDIOBOOK_SEEK_FORWARD_KEY } from "../../src/contracts/v2/settings.ts";
 import { AudiobookController, type AudiobookPlaybackView } from "../../src/player/audiobookController.ts";
+import { transportLock } from "../../src/player/avplayTransport.ts";
 import { PlaybackController } from "../../src/player/controller.ts";
 import { AUDIOBOOK_CAPABILITIES, AUDIOBOOK_CLIENT_FEATURES } from "../../src/player/capabilities.ts";
 import { FakeAVPlay } from "./support/fakeAVPlay.ts";
@@ -1666,6 +1667,54 @@ test("delayed native seekTo callback settling after timeout and stop() closes AV
     assert.equal(playingView(r).contentId, "audiobook:tide");
     assert.equal(r.avplay.state, "PLAYING");
     r.controller.destroy();
+
+    // Two-generation isolation: Stream 1's stale seekTo callback must not close Stream 2 even when Stream 2 has a deferred close.
+    const r2 = await setup();
+    void r2.controller.start({ contentId: "audiobook:dune" });
+    await settlePlay(r2);
+
+    let stream1SeekSuccess: (() => void) | undefined;
+    const origSeekTo = r2.avplay.seekTo.bind(r2.avplay);
+    Object.assign(r2.avplay, {
+        seekTo: (_ms: number, success: () => void) => {
+            Object.assign(r2.avplay, { seekTo: origSeekTo });
+            stream1SeekSuccess = success;
+        },
+    });
+    r2.controller.seekTo(120);
+    await r2.h.clock.advance(15_000);
+    await r2.controller.stop();
+
+    void r2.controller.start({ contentId: "audiobook:tide" });
+    await settlePlay(r2);
+    const s2 = [...r2.playback.sessions.keys()][1];
+    assert.ok(s2 !== undefined);
+    r2.controller.suspend();
+    void r2.controller.restore();
+    await r2.h.clock.advance(0);
+    const held2 = r2.h.fake.hold(`/playback/${s2}`);
+    await r2.h.clock.advance(15_000);
+    const origClose2 = r2.avplay.close.bind(r2.avplay);
+    Object.assign(r2.avplay, {
+        close: () => {
+            Object.assign(r2.avplay, { close: origClose2 });
+            throw new Error("gen 2 restore unwinding");
+        },
+    });
+    const stop2 = r2.controller.stop();
+    await r2.h.clock.advance(0);
+    held2.release();
+    await stop2;
+
+    assert.ok(stream1SeekSuccess !== undefined);
+    stream1SeekSuccess();
+    await r2.h.clock.advance(0);
+    assert.equal(r2.avplay.state, "PLAYING", "Stream 1 late seekTo callback must not close Stream 2");
+
+    r2.avplay.finishRestore();
+    await r2.h.clock.advance(0);
+    assert.equal(r2.avplay.state, "NONE", "Stream 2 own callback closes Stream 2");
+    r2.controller.destroy();
 });
 
 test("delayed native restoreAsync closes idle AVPlay when orphaned and never closes a replacement video stream", async () => {
@@ -1733,12 +1782,16 @@ test("delayed native restoreAsync closes idle AVPlay when orphaned and never clo
         device: { model: "QN55Q60AAFXZA", appVersion: "0.1.0" },
         exits: { onBack: () => undefined, onEnd: () => undefined, onError: () => undefined },
     });
+    const lock = transportLock(r2.avplay);
+    const genBeforeVideo = lock.streamGen;
     video.play({ contentId: "movie-1", fileId: "42", title: "Movie", startSeconds: undefined });
     await r2.h.clock.advance(0);
     r2.avplay.finishPrepare();
     await r2.h.clock.advance(0);
     assert.equal(r2.avplay.state, "PLAYING");
+    assert.equal(lock.streamGen, genBeforeVideo + 1, "video avplay.open() must advance shared streamGen");
 
+    lock.deferredCloseGen = lock.streamGen;
     r2.avplay.finishRestore();
     await r2.h.clock.advance(0);
     assert.equal(r2.avplay.state, "PLAYING", "late audiobook restore callback must not close active video stream");
