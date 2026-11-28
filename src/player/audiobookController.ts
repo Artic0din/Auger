@@ -226,6 +226,7 @@ export class AudiobookController {
     private transport = 0;
     private cancelStartup: (() => void) | undefined;
     private activeTeardown: Promise<void> | undefined;
+    private hidden = false;
     private destroyed = false;
 
     constructor(deps: AudiobookPlaybackDeps) {
@@ -470,10 +471,12 @@ export class AudiobookController {
     }
 
     suspend(): void {
+        if (this.destroyed) return;
+        this.hidden = true;
         const attempt = this.attempt;
         if (attempt === undefined || !attempt.live || attempt.hidden) return;
         this.sleepTimer.reconcile();
-        if (!attempt.live || this.attempt !== attempt || attempt.hidden) return;
+        if (!this.hidden || !attempt.live || this.attempt !== attempt || attempt.hidden) return;
         attempt.hidden = true;
         attempt.restoreGen += 1;
         attempt.cancelProgressTimer?.();
@@ -520,6 +523,8 @@ export class AudiobookController {
     }
 
     async restore(): Promise<void> {
+        if (this.destroyed) return;
+        this.hidden = false;
         const attempt = this.attempt;
         if (attempt === undefined || !attempt.live || attempt.restoring || attempt.abort.signal.aborted || attempt.authoritySignal.aborted) return;
         if (!attempt.hidden && !attempt.suspended && !attempt.suspendedReady && !attempt.deferredOpen) return;
@@ -715,7 +720,7 @@ export class AudiobookController {
             syncInFlight: undefined,
             pendingSyncPosition: undefined,
             cancelProgressTimer: undefined,
-            hidden: false,
+            hidden: this.hidden,
             restoring: false,
             deferredOpen: false,
             restoreGen: 0,
@@ -1003,7 +1008,8 @@ export class AudiobookController {
         this.armStartup(attempt, transport, generation);
         try {
             avplay.open(url);
-            this.pending.deferredClose = false;
+            this.pending.streamGen += 1;
+            this.pending.deferredCloseGen = undefined;
             avplay.setListener(this.createListener(attempt, plan, transport));
             avplay.prepareAsync(
                 () => this.onPrepared(attempt, plan, partIndex, transport, generation),
@@ -1394,9 +1400,9 @@ export class AudiobookController {
     private closeAVPlay(): void {
         try {
             this.deps.avplay.close();
-            this.pending.deferredClose = false;
+            this.pending.deferredCloseGen = undefined;
         } catch {
-            this.pending.deferredClose = true;
+            this.pending.deferredCloseGen = this.pending.streamGen;
         }
     }
 
@@ -1408,6 +1414,7 @@ export class AudiobookController {
 
     private runSeek(milliseconds: number, onSuccess: () => void, onError: () => void): void {
         const transport = this.transport;
+        const streamGen = this.pending.streamGen;
         let release: () => void = () => undefined;
         const seek = new Promise<void>(resolve => { release = resolve; });
         this.pending.seek = seek;
@@ -1424,7 +1431,7 @@ export class AudiobookController {
         };
         const onNativeCallback = (cb: () => void): void => {
             if (settled) {
-                if (this.pending.deferredClose && transport !== this.transport) {
+                if (this.pending.deferredCloseGen === streamGen && transport !== this.transport) {
                     this.closeAVPlay();
                 }
                 return;
@@ -1440,6 +1447,7 @@ export class AudiobookController {
     }
 
     private runRestore(restoreFn: NonNullable<AVPlay["restoreAsync"]>, url: string, resumeMs: number, transport: number, attempt: Attempt): Promise<boolean> {
+        const streamGen = this.pending.streamGen;
         let release: () => void = () => undefined;
         const restoreOp = new Promise<void>(resolve => { release = resolve; });
         this.pending.restore = restoreOp;
@@ -1457,7 +1465,7 @@ export class AudiobookController {
             };
             const onNativeCallback = (ok: boolean): void => {
                 if (settled) {
-                    if (this.pending.deferredClose && transport !== this.transport) {
+                    if (this.pending.deferredCloseGen === streamGen && transport !== this.transport) {
                         this.closeAVPlay();
                     }
                     return;

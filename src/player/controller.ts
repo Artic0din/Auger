@@ -2325,7 +2325,8 @@ export class PlaybackController implements PlayerControls {
         try {
             enterStage(attempt.trace, "avplay_open");
             avplay.open(url);
-            this.pending.deferredClose = false;
+            this.pending.streamGen += 1;
+            this.pending.deferredCloseGen = undefined;
             attempt.trace.opened = true;
             reachedStage(attempt.trace, "avplay_open");
             enterStage(attempt.trace, "avplay_prepare");
@@ -2580,7 +2581,7 @@ export class PlaybackController implements PlayerControls {
     private closeAVPlay(): void {
         try {
             this.deps.avplay.close();
-            this.pending.deferredClose = false;
+            this.pending.deferredCloseGen = undefined;
         } catch {
             // The pending seek has settled; a platform failure cannot be repaired here.
         }

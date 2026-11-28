@@ -1653,9 +1653,12 @@ test("delayed native seekTo callback settling after timeout and stop() closes AV
 
     await r.controller.stop();
     assert.equal(r.views.at(-1)?.phase, "idle");
+    assert.equal(r.avplay.state, "PLAYING", "close() rejected while native seek is still pending");
+    const closesBefore = r.avplay.calls.filter(c => c === "close").length;
 
     r.avplay.finishSeek();
     await r.h.clock.advance(0);
+    assert.equal(r.avplay.calls.filter(c => c === "close").length, closesBefore + 1);
     assert.equal(r.avplay.state, "NONE");
 
     void r.controller.start({ contentId: "audiobook:tide" });
@@ -1740,5 +1743,99 @@ test("delayed native restoreAsync closes idle AVPlay when orphaned and never clo
     await r2.h.clock.advance(0);
     assert.equal(r2.avplay.state, "PLAYING", "late audiobook restore callback must not close active video stream");
     video.destroy();
+    r2.controller.destroy();
+
+    // Subcase C: Stream 1's stale callback must never close Stream 2 even when Stream 2 also has a pending deferred close.
+    const r3 = await setup();
+    void r3.controller.start({ contentId: "audiobook:dune" });
+    await settlePlay(r3);
+    const s1Gen = [...r3.playback.sessions.keys()][0];
+    assert.ok(s1Gen !== undefined);
+
+    r3.controller.suspend();
+    void r3.controller.restore();
+    await r3.h.clock.advance(0);
+    const heldGen1 = r3.h.fake.hold(`/playback/${s1Gen}`);
+    await r3.h.clock.advance(15_000);
+    const origClose3 = r3.avplay.close.bind(r3.avplay);
+    Object.assign(r3.avplay, {
+        close: () => {
+            Object.assign(r3.avplay, { close: origClose3 });
+            throw new Error("gen 1 restore unwinding");
+        },
+    });
+    const stopGen1 = r3.controller.stop();
+    await r3.h.clock.advance(0);
+    heldGen1.release();
+    await stopGen1;
+
+    void r3.controller.start({ contentId: "audiobook:tide" });
+    await settlePlay(r3);
+    const s2Gen = [...r3.playback.sessions.keys()][1];
+    assert.ok(s2Gen !== undefined);
+    r3.controller.suspend();
+    void r3.controller.restore();
+    await r3.h.clock.advance(0);
+    const heldGen2 = r3.h.fake.hold(`/playback/${s2Gen}`);
+    await r3.h.clock.advance(15_000);
+    Object.assign(r3.avplay, {
+        close: () => {
+            Object.assign(r3.avplay, { close: origClose3 });
+            throw new Error("gen 2 restore unwinding");
+        },
+    });
+    const stopGen2 = r3.controller.stop();
+    await r3.h.clock.advance(0);
+    heldGen2.release();
+    await stopGen2;
+
+    r3.avplay.finishRestore();
+    await r3.h.clock.advance(0);
+    assert.equal(r3.avplay.state, "PLAYING", "Stream 1 stale callback must not close Stream 2");
+
+    r3.avplay.finishRestore();
+    await r3.h.clock.advance(0);
+    assert.equal(r3.avplay.state, "NONE", "Stream 2 own callback closes Stream 2");
+    r3.controller.destroy();
+});
+
+test("suspend() while replacement start awaits previous teardown defers replacement AVPlay open until restore()", async () => {
+    const r = await setup();
+    void r.controller.start({ contentId: "audiobook:tide" });
+    await settlePlay(r);
+
+    const heldSync = r.h.fake.hold("/sync/progress");
+    await r.h.clock.advance(10_000);
+    void r.controller.start({ contentId: "audiobook:dune" });
+    await r.h.clock.advance(0);
+
+    r.controller.suspend();
+    heldSync.release();
+    await r.h.clock.advance(0);
+    assert.equal(r.avplay.state, "NONE");
+    assert.equal(r.avplay.pendingPrepares, 0);
+
+    await r.controller.restore();
+    await settlePlay(r);
+    assert.equal(r.avplay.state, "PLAYING");
+    assert.equal(playingView(r).contentId, "audiobook:dune");
+    r.controller.destroy();
+
+    // If suspend() then restore() happen while still awaiting prior teardown, replacement starts on teardown release.
+    const r2 = await setup();
+    void r2.controller.start({ contentId: "audiobook:tide" });
+    await settlePlay(r2);
+
+    const heldSync2 = r2.h.fake.hold("/sync/progress");
+    await r2.h.clock.advance(10_000);
+    void r2.controller.start({ contentId: "audiobook:dune" });
+    await r2.h.clock.advance(0);
+
+    r2.controller.suspend();
+    await r2.controller.restore();
+    heldSync2.release();
+    await settlePlay(r2);
+    assert.equal(r2.avplay.state, "PLAYING");
+    assert.equal(playingView(r2).contentId, "audiobook:dune");
     r2.controller.destroy();
 });
