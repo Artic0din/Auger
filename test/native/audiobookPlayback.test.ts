@@ -1300,6 +1300,7 @@ test("sleep timer expiry overrides pending resume queued while paused mid-seek",
     r.controller.setSleepTimer(15);
     await r.h.clock.advance(895 * 1000);
 
+    const playsBefore = r.avplay.calls.filter(c => c === "play").length;
     r.controller.seekTo(120);
     r.controller.play();
     await r.h.clock.advance(5 * 1000);
@@ -1307,9 +1308,28 @@ test("sleep timer expiry overrides pending resume queued while paused mid-seek",
     r.avplay.finishSeek();
     await r.h.clock.advance(0);
 
+    assert.equal(r.avplay.calls.filter(c => c === "play").length, playsBefore);
     assert.equal(r.avplay.state, "PAUSED");
     assert.equal(playingView(r).phase, "paused");
     assert.equal(playingView(r).position, 120);
+    assert.equal(playingView(r).sleepTimer.active, false);
+
+    // If AVPlay reports PLAYING when the seek settles after timer expiry overrode a queued resume, pause it.
+    r.controller.setSleepTimer(15);
+    await r.h.clock.advance(895 * 1000);
+    r.controller.seekTo(240);
+    r.controller.play();
+    await r.h.clock.advance(5 * 1000);
+
+    const pausesBefore = r.avplay.calls.filter(c => c === "pause").length;
+    r.avplay.state = "PLAYING";
+    r.avplay.finishSeek();
+    await r.h.clock.advance(0);
+
+    assert.equal(r.avplay.state, "PAUSED");
+    assert.equal(r.avplay.calls.filter(c => c === "pause").length, pausesBefore + 1);
+    assert.equal(playingView(r).phase, "paused");
+    assert.equal(playingView(r).position, 240);
     assert.equal(playingView(r).sleepTimer.active, false);
     r.controller.destroy();
 });
@@ -1326,6 +1346,12 @@ test("stopping during fallback restore session retirement sends only one DELETE 
     const heldStop = r.h.fake.hold(`/playback/${firstSession}`);
     const restoring = r.controller.restore();
     await r.h.clock.advance(0);
+    assert.equal(
+        stopRequests(r).filter(req => req.path === `/playback/${firstSession}`).length,
+        1,
+        "fallback restore must issue the retirement DELETE before stop()",
+    );
+    assert.equal(r.h.fake.heldReplies, 1, "fallback retirement DELETE reply must be held before stop()");
 
     let stopResolved = false;
     const stopping = r.controller.stop().then(() => { stopResolved = true; });
