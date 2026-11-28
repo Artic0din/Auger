@@ -63,6 +63,8 @@ export function mountAudiobookPlayerScreen(container: HTMLElement, deps: Audiobo
 
     const scroller = new SkylineScroll();
     let lastView: AudiobookPlaybackView = deps.controller.view;
+    let lastBook: { readonly title: string; readonly posterUrl: string | undefined } | undefined =
+        lastView.phase === "idle" ? undefined : { title: lastView.title, posterUrl: lastView.posterUrl };
     let phaseGroup: "none" | "loading" | "active" | "error" | "stopping" = "none";
     let currentMenu: { kind: MenuKind; returnKey: string; list: HTMLElement; buttons: HTMLButtonElement[]; focusedIndex: number } | undefined;
     let currentFocus: FocusTarget = { zone: "transport", key: "play-pause" };
@@ -341,10 +343,10 @@ export function mountAudiobookPlayerScreen(container: HTMLElement, deps: Audiobo
         screen.innerHTML = "";
         const shell = el("div", "audio-player-shell is-centered");
         const frame = el("div", "audio-player-art-frame");
-        const posterUrl = lastView.phase === "idle" ? undefined : lastView.posterUrl;
+        const posterUrl = lastView.phase === "idle" ? lastBook?.posterUrl : lastView.posterUrl;
         mountArtwork(frame, posterUrl);
         const meta = el("div", "audio-player-meta");
-        const title = lastView.phase === "idle" ? "" : lastView.title;
+        const title = lastView.phase === "idle" ? (lastBook?.title ?? "") : lastView.title;
         if (title !== "") meta.appendChild(el("h1", "audio-player-title", title));
         const status = el("div", "audio-player-status");
         const spin = el("span", "player-next-spinner");
@@ -598,6 +600,9 @@ export function mountAudiobookPlayerScreen(container: HTMLElement, deps: Audiobo
     const render = (view: AudiobookPlaybackView): void => {
         if (destroyed || stopping) return;
         lastView = view;
+        if (view.phase !== "idle") {
+            lastBook = { title: view.title, posterUrl: view.posterUrl };
+        }
         if (view.phase === "idle") {
             closeMenu();
             scroller.stop();

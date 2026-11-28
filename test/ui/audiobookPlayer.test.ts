@@ -6,7 +6,7 @@ import { FakeAudiobooks } from "../native/support/fakeAudiobooks.ts";
 import { FakePlayback } from "../native/support/fakePlayback.ts";
 import { FakeSettings } from "../native/support/fakeSettings.ts";
 import { problem } from "../native/support/fakeSilo.ts";
-import { openTv, type Tv } from "./support/tv.ts";
+import { openTv, pauseTvClock, type Tv } from "./support/tv.ts";
 
 const ENTER = 13;
 const BACK = 10009;
@@ -523,3 +523,82 @@ for (const lang of ["de", "ar"] as const) {
         settings.profile().set(APP_LANGUAGE_KEY, lang);
     });
 }
+
+playerTest("natural completion waits for unsettled seek before firing finished exit, and a missing AVPlay seek callback times out to complete exit", async ({ tv, catalog }) => {
+    const detailGets = (): number =>
+        tv.fake.requests.filter(req => req.method === "GET" && req.path.startsWith("/catalog/items/audiobook%3Atide")).length;
+    const stopDeletes = (): number =>
+        tv.fake.requests.filter(req => req.method === "DELETE" && req.path.startsWith("/playback/")).length;
+    const progressSyncs = (): number =>
+        tv.fake.requests.filter(req => req.method === "POST" && req.path === "/sync/progress").length;
+
+    // Part A: Natural completion while a seekTo is unsettled keeps stopping screen up (with title) until finishSeek() settles close & surface detach.
+    await tv.page.locator('[data-section="shelf"] [data-focus="audiobook:tide"]').click();
+    await tv.page.locator('[data-view="audiobook:audiobook:tide"] [data-focus="play"]').waitFor();
+    await tv.page.keyboard.press("Enter");
+    await prepareAudio(tv, true);
+
+    const screen = tv.page.locator('[data-screen="audiobook-player"]');
+    await tv.remote(FAST_FORWARD);
+    const closesBefore = await tv.page.evaluate(() => window.appHarness.avplay.calls.filter(c => c === "close").length);
+    const deletesBefore = stopDeletes();
+    const syncsBefore = progressSyncs();
+    const detailGetsBefore = detailGets();
+
+    await tv.page.evaluate(() => window.appHarness.avplay.listener?.onstreamcompleted());
+    await tv.eventually(
+        async () => stopDeletes() === deletesBefore + 1 && progressSyncs() === syncsBefore + 1 && tv.pendingReplies === 0,
+        "natural completion network requests landed",
+    );
+    await tv.eventually(async () => await screen.getAttribute("data-stopping") === "true", "stopping screen rendered after natural completion");
+    assert.equal(await screen.locator(".audio-player-title").innerText(), "Stormlight Archive 5 - The Tide Owes (5 of 5)");
+    await tv.eventually(
+        async () => await screen.locator(".audio-player-art").evaluate(el => getComputedStyle(el).display !== "none"),
+        "stopping screen artwork visible",
+    );
+    assert.equal(await screen.locator(".audio-player-art-fallback").evaluate(el => getComputedStyle(el).display), "none");
+    assert.equal(await tv.page.locator('[data-view="audiobook:audiobook:tide"]').isHidden(), true);
+    assert.equal(detailGets(), detailGetsBefore, "onFinished exit waits for transport idle before refreshing Browse");
+    assert.equal(await tv.page.evaluate(() => window.appHarness.avplay.calls.filter(c => c === "close").length), closesBefore);
+    assert.equal(await tv.page.locator('.audio-avplay-surface object[type="application/avplayer"]').count(), 1);
+
+    await tv.page.evaluate(() => window.appHarness.avplay.finishSeek());
+    await tv.eventually(
+        async () => await tv.page.evaluate(() => window.appHarness.avplay.calls.filter(c => c === "close").length) === closesBefore + 1,
+        "deferred close after natural completion seek settle",
+    );
+    await tv.eventually(async () => await tv.page.locator('.audio-avplay-surface, object[type="application/avplayer"]').count() === 0, "surface detached after natural completion");
+    await tv.page.locator('[data-view="audiobook:audiobook:tide"] [data-focus="play"]').waitFor();
+    assert.equal(await screen.count(), 0);
+    await tv.eventually(async () => detailGets() === detailGetsBefore + 1 && tv.pendingReplies === 0, "detail refreshed after finished exit");
+    assert.equal(catalog.progress.get("audiobook:tide"), 10800);
+
+    // Part B: A seek whose AVPlay callback never fires times out at STARTUP_TIMEOUT_MS (15 s) so stop completes cleanly, and a late callback finishes deferred close.
+    await tv.page.keyboard.press("Enter");
+    await prepareAudio(tv, true);
+    await pauseTvClock(tv);
+    await tv.remote(FAST_FORWARD);
+    const deletesBefore2 = stopDeletes();
+    const syncsBefore2 = progressSyncs();
+    const detailGetsBefore2 = detailGets();
+
+    await tv.remote(BACK);
+    await tv.eventually(
+        async () => stopDeletes() === deletesBefore2 + 1 && progressSyncs() === syncsBefore2 + 1 && tv.pendingReplies === 0,
+        "timeout stop network requests landed",
+    );
+    await tv.jump(14_999);
+    assert.equal(await screen.getAttribute("data-stopping"), "true");
+    assert.equal(await tv.page.locator('[data-view="audiobook:audiobook:tide"]').isHidden(), true);
+    assert.equal(await tv.page.locator('.audio-avplay-surface object[type="application/avplayer"]').count(), 1);
+    assert.equal(detailGets(), detailGetsBefore2);
+
+    await tv.jump(1);
+    await tv.eventually(async () => await tv.page.locator('.audio-avplay-surface, object[type="application/avplayer"]').count() === 0, "surface detached on seek timeout");
+    await tv.page.locator('[data-view="audiobook:audiobook:tide"] [data-focus="play"]').waitFor();
+    assert.equal(await screen.count(), 0);
+    await tv.eventually(async () => detailGets() === detailGetsBefore2 + 1 && tv.pendingReplies === 0, "detail refreshed after seek timeout exit");
+
+    await tv.page.evaluate(() => window.appHarness.avplay.finishSeek());
+    await tv.eventually(() => tv.page.evaluate(() => window.appHarness.avplay.state === "NONE"), "late seek callback closes orphaned AVPlay");
+});

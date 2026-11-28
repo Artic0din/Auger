@@ -1977,3 +1977,48 @@ test("retry() after playback error during an unsettled seek resumes at the pendi
     assert.equal(playingView(r).position, 4172);
     await r.controller.destroy();
 });
+
+test("stop() bounds missing seekTo callback by STARTUP_TIMEOUT_MS and retires AVPlay on timeout or late callback", async () => {
+    // Case 1: AVPlay refuses close() while seek is still unwinding natively; timeout releases whenTransportIdle() and late callback performs deferred close.
+    const r = await setup();
+    void r.controller.start({ contentId: "audiobook:tide" });
+    await settlePlay(r);
+
+    r.controller.skip("forward");
+    await r.controller.stop();
+    assert.equal(r.controller.transportBusy, true);
+    let idleResolved = false;
+    const idle = r.controller.whenTransportIdle().then(() => { idleResolved = true; });
+
+    await r.h.clock.advance(14_999);
+    assert.equal(idleResolved, false);
+    assert.equal(r.controller.transportBusy, true);
+
+    await r.h.clock.advance(1);
+    await idle;
+    assert.equal(idleResolved, true);
+    assert.equal(r.controller.transportBusy, false);
+    assert.equal(r.avplay.state, "PLAYING");
+
+    r.avplay.finishSeek();
+    await r.h.clock.advance(0);
+    assert.equal(r.avplay.state, "NONE");
+    await r.controller.destroy();
+
+    // Case 2: seekTo callback is dropped natively without blocking close(); timeout immediately closes AVPlay.
+    const r2 = await setup();
+    void r2.controller.start({ contentId: "audiobook:tide" });
+    await settlePlay(r2);
+    Object.assign(r2.avplay, { seekTo: () => undefined });
+    const closesBefore = r2.avplay.calls.filter(c => c === "close").length;
+
+    r2.controller.skip("forward");
+    await r2.controller.stop();
+    assert.equal(r2.controller.transportBusy, true);
+    await r2.h.clock.advance(15_000);
+    await r2.controller.whenTransportIdle();
+    assert.equal(r2.controller.transportBusy, false);
+    assert.equal(r2.avplay.calls.filter(c => c === "close").length, closesBefore + 1);
+    assert.equal(r2.avplay.state, "NONE");
+    await r2.controller.destroy();
+});

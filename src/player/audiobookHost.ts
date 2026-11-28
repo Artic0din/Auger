@@ -119,6 +119,7 @@ export class AudiobookHost {
             return;
         }
         this.screen?.setStopping();
+        // AudiobookController bounds pending seekTo/restoreAsync by STARTUP_TIMEOUT_MS before retiring AVPlay.
         void this.controller.whenTransportIdle().finally(finalize);
     }
 
