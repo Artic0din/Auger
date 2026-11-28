@@ -79,10 +79,15 @@ What this establishes:
 - A long copy remux plays on AVPlay when the plan carries no subtitle rendition.
 - Without the rendition features the server sends an HLS plan's text track as an artifact, and the app's overlay draws it.
   Choosing, changing or turning off a text track on HLS then replans and reopens the stream.
-- One earlier run with a subtitle on ended after about 4 minutes: progress reports stopped and the debug port closed, while the TV still listed the app as running.
-  The next run did not repeat it, and its cause is unknown.
-- Subtitle-rendition playlists were not read in this run.
-  The server builds them itself ([`subtitle_rendition.go:818-820`](https://github.com/Silo-Server/silo-server/blob/0a631fb9cba82de78c6461a6edcc9a2291957354/internal/playback/subtitle_rendition.go#L818-L820)), so they probably carry `#EXT-X-DEFINE` on a long title; that would explain both rendition failures and is unverified.
+- One earlier run with a subtitle on ended after about 4 minutes.
+  The server log shows normal playlist polls and segment reads up to that second, no stop request, and the app cold-starting 20 seconds later with no navigation after it.
+  Whether the app crashed or was closed from the remote is not known, and the next run did not repeat it.
+- The server's request log shows where each rendition failure happens.
+  In the freeze, AVPlay fetched the 79,715-byte master and then requested nothing else, no variant, rendition playlist or segment, until the server expired the session.
+  The hang is in AVPlay's handling of that master.
+- With one rendition, AVPlay fetched the master, the video playlist (11,740 bytes) and the subtitle playlist (11,748 bytes), then video and WebVTT segments for about 2 seconds, every request answered 200.
+  Its requests then stopped and the app ended the session 6 seconds later.
+  That failure is neither a refused request nor `#EXT-X-DEFINE`; AVPlay's own error was not captured.
 
 Samsung's [General Specifications](https://developer.samsung.com/smarttv/develop/specifications/general-specifications.html) HLS tag table lists `#EXT-X-DEFINE` as "Not supported", in the same row group as `#EXT-X-INDEPENDENT-SEGMENTS` and `#EXT-X-START`.
 That is a positive statement, not silence, so AVPlay support should not be expected on newer models either.
