@@ -6,6 +6,12 @@ All notable changes to this project are documented in this file.
 
 <!-- changelog:releases -->
 
+## [0.19.0] - 2026-11-28
+
+### Features
+
+- **Audiobooks**: Keep audio playing after Back with clean handoffs ([#983](https://github.com/Artic0din/Auger-Tizen/pull/983), [`26be2e7b`](https://github.com/Artic0din/Auger-Tizen/commit/26be2e7b))
+
 ## [0.18.0] - 2026-11-28
 
 ### Features
