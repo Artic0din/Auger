@@ -142,13 +142,22 @@ test("stream URL rejects unsafe origins and never appends token to a non-API ori
     assert.equal(r.avplay.urls[0]?.includes("token="), false);
 
     await r.controller.stop();
+    r.playback.next.push({ url: () => "http://untrusted.example/audio/book.mp3" });
+    void r.controller.start({ contentId: "audiobook:dune" });
+    await r.h.clock.advance(0);
+    const unsafeErr = r.views.at(-1);
+    assert.ok(unsafeErr?.phase === "error");
+    assert.equal(unsafeErr.kind, "server");
+    assert.equal(r.avplay.urls.length, 1, "unsafe stream URL must not reach avplay.open");
+    assert.equal(stopRequests(r).length, 2, "allocated session for unsafe stream URL is stopped");
+
     r.playback.next.push({ protocol: "hls", delivery: "server_transcode_hls", url: sessionId => `/api/v2/stream/${sessionId}.m3u8?st=signed` });
     r.h.fake.streamPlaylist = { status: 200, text: "#EXTM3U\n#EXT-X-DEFINE:NAME=\"x\",VALUE=\"y\"\n" };
     void r.controller.start({ contentId: "audiobook:dune" });
     await r.h.clock.advance(0);
     assert.equal(r.views.at(-1)?.phase, "error");
     assert.equal(r.avplay.urls.length, 1, "#EXT-X-DEFINE playlist must not reach avplay.open");
-    assert.equal(stopRequests(r).length, 2, "allocated session for unreadable playlist is stopped");
+    assert.equal(stopRequests(r).length, 3, "allocated session for unreadable playlist is stopped");
     r.controller.destroy();
 });
 
@@ -259,6 +268,7 @@ test("multi-part timeline: intra-part seek, cross-part switch, auto-advance, and
     assert.equal(playingView(r).partIndex, 0);
     r.avplay.listener?.onstreamcompleted();
     await settlePlay(r);
+    assert.equal(stopRequests(r).at(-1)?.body?.position, 1200);
     assert.equal(playingView(r).partIndex, 1);
     assert.equal(startRequests(r).at(-1)?.body?.file_id, "af-m2");
     assert.equal(startRequests(r).at(-1)?.body?.start_position, 0);
@@ -576,6 +586,7 @@ test("failures during part auto-advance, cross-part seek, and standby restore tr
     assert.equal(playingView(r).phase, "playing");
 
     // Token refresh failure during restore() transitions to error instead of leaving an unhandled rejection.
+    delete (r.avplay as { restoreAsync?: unknown }).restoreAsync;
     r.controller.suspend();
     await r.h.clock.advance(3600 * 1000);
     r.h.fake.expireAccessTokens();
@@ -696,4 +707,429 @@ test("voluntary destroy while playing flushes final syncProgress and stops the s
     assert.equal(r.catalog.progressWrites.length, writesBefore + 1);
     assert.equal(r.catalog.progressWrites.at(-1)?.positionMs, 95_000);
     assert.equal(stopRequests(r).length, stopsBefore + 1);
+});
+
+test("profile switch during pending stop or completion sync aborts queued writes and suppresses onFinished", async () => {
+    const r = await setup();
+    void r.controller.start({ contentId: "audiobook:dune" });
+    await settlePlay(r);
+
+    // Delayed stop sync while switching profiles must abort and never write under replacement profile.
+    const heldStopSync = r.h.fake.hold("/sync/progress");
+    const stopping = r.controller.stop();
+    await r.h.clock.advance(0);
+    const kid = (await r.h.core.profiles.list()).find(profile => profile.id === "p-kid");
+    assert.ok(kid !== undefined);
+    r.h.core.profiles.select(kid);
+    heldStopSync.release();
+    await stopping;
+    await r.h.clock.advance(0);
+    assert.equal(r.catalog.progressWrites.filter(w => w.profileId === "p-kid").length, 0);
+
+    // Natural completion with a held periodic sync + queued final write aborts on profile change without firing onFinished.
+    const owner = (await r.h.core.profiles.list()).find(profile => profile.id === "p-owner");
+    assert.ok(owner !== undefined);
+    r.h.core.profiles.select(owner);
+    r.controller.destroy();
+
+    const r2 = await setup();
+    void r2.controller.start({ contentId: "audiobook:dune" });
+    await settlePlay(r2);
+    const heldPeriodic = r2.h.fake.hold("/sync/progress");
+    await r2.h.clock.advance(10_000);
+    r2.avplay.listener?.onstreamcompleted();
+    await r2.h.clock.advance(0);
+    const kid2 = (await r2.h.core.profiles.list()).find(profile => profile.id === "p-kid");
+    assert.ok(kid2 !== undefined);
+    r2.h.core.profiles.select(kid2);
+    heldPeriodic.release();
+    await r2.h.clock.advance(0);
+    assert.equal(r2.views.at(-1)?.phase, "idle");
+    assert.equal(r2.exits.includes("finished"), false);
+    assert.equal(r2.catalog.progressWrites.filter(w => w.profileId === "p-kid").length, 0);
+
+    // Authority switch after failAttempt clears stale error view and prevents retry under replacement profile.
+    r2.playback.next.push({ terminal: "no_route", retryable: true });
+    void r2.controller.start({ contentId: "audiobook:dune" });
+    await r2.h.clock.advance(0);
+    assert.equal(r2.views.at(-1)?.phase, "error");
+    const owner2 = (await r2.h.core.profiles.list()).find(profile => profile.id === "p-owner");
+    assert.ok(owner2 !== undefined);
+    r2.h.core.profiles.select(owner2);
+    assert.equal(r2.views.at(-1)?.phase, "idle");
+    const startsBeforeRetry = startRequests(r2).length;
+    r2.controller.retry();
+    await r2.h.clock.advance(0);
+    assert.equal(startRequests(r2).length, startsBeforeRetry);
+    r2.controller.destroy();
+});
+
+test("natural completion serializes queued sync writes in activeTeardown before a subsequent Start Over", async () => {
+    const r = await setup();
+    void r.controller.start({ contentId: "audiobook:tide" });
+    await settlePlay(r);
+
+    const held = r.h.fake.hold("/sync/progress");
+    await r.h.clock.advance(10_000);
+    r.avplay.listener?.onstreamcompleted();
+    await r.h.clock.advance(0);
+
+    const startsBefore = startRequests(r).length;
+    void r.controller.start({ contentId: "audiobook:tide", restart: true });
+    await r.h.clock.advance(0);
+    assert.equal(startRequests(r).length, startsBefore, "replacement start waits for completion writes");
+
+    held.release();
+    await settlePlay(r);
+    r.controller.pause();
+    await r.h.clock.advance(0);
+
+    assert.equal(r.catalog.progressWrites.at(-1)?.positionMs, 0);
+    assert.equal(r.catalog.progress.get("audiobook:tide"), 0);
+    r.controller.destroy();
+});
+
+test("cross-part seek syncs after prepare finishes, preserves confirmed position on early stop, and saves boundary on Part 2 start failure", async () => {
+    const r = await setup();
+    r.catalog.progress.set("audiobook:multipart", 300);
+    void r.controller.start({ contentId: "audiobook:multipart" });
+    await settlePlay(r);
+
+    // Cross-part seek writes immediately once onPrepared + initial seek complete (no 10s wait).
+    const writesBeforeSeek = r.catalog.progressWrites.length;
+    r.controller.seekTo(1500);
+    await r.h.clock.advance(0);
+    assert.equal(r.avplay.pendingPrepares, 1);
+    assert.equal(r.catalog.progressWrites.length, writesBeforeSeek, "destination not synced before preparation settles");
+    await settlePlay(r);
+    assert.equal(r.catalog.progressWrites.length, writesBeforeSeek + 1);
+    assert.equal(r.catalog.progressWrites.at(-1)?.positionMs, 1_500_000);
+
+    // Stopping while Part 0 replacement is preparing saves last confirmed 400 s instead of unreached 200 s.
+    r.controller.seekTo(400);
+    await settlePlay(r);
+    assert.equal(playingView(r).position, 400);
+    r.controller.seekTo(1500);
+    await r.h.clock.advance(0);
+    assert.equal(r.avplay.pendingPrepares, 1);
+    await r.controller.stop();
+    assert.equal(r.catalog.progressWrites.at(-1)?.positionMs, 400_000);
+
+    // Auto-advance from Part 0 to Part 1 persists 1200 s boundary even if Part 1 /playback/start fails 503.
+    void r.controller.start({ contentId: "audiobook:multipart" });
+    await settlePlay(r);
+    const heldBoundary = r.h.fake.hold("/sync/progress");
+    r.h.fake.scripted.set("/playback/start", [problem(503, "unavailable", "Busy")]);
+    r.avplay.listener?.onstreamcompleted();
+    await r.h.clock.advance(0);
+    assert.equal(r.views.at(-1)?.phase, "error");
+    heldBoundary.release();
+    await r.h.clock.advance(0);
+    assert.equal(r.catalog.progressWrites.at(-1)?.positionMs, 1_200_000);
+
+    r.h.fake.scripted.delete("/playback/start");
+    r.controller.retry();
+    await settlePlay(r);
+    assert.equal(playingView(r).partIndex, 1);
+    assert.equal(playingView(r).position, 1200);
+    r.controller.destroy();
+});
+
+test("rejects a server plan returning a different part's effectiveMediaFileId and stops orphaned session", async () => {
+    const r = await setup();
+    const badDecision = fixture("playback_start_opaque_ids");
+    const plan = badDecision.playback_plan as Record<string, unknown>;
+    badDecision.playback_plan = { ...plan, effective_media_file_id: "af-m2" };
+    r.h.fake.scripted.set("/playback/start", [{ status: 201, body: badDecision }]);
+
+    void r.controller.start({ contentId: "audiobook:multipart" });
+    await r.h.clock.advance(0);
+    const err = r.views.at(-1);
+    assert.ok(err?.phase === "error");
+    assert.equal(err.kind, "unavailable_part");
+    assert.equal(err.retryable, false);
+    assert.equal(r.avplay.urls.length, 0);
+    assert.equal(stopRequests(r).length, 1);
+    r.controller.destroy();
+});
+
+test("same-part seeks outside seekWindow or with can_seek_anywhere=false reopen via server start", async () => {
+    const r = await setup();
+    r.playback.next.push({ timeline: { can_seek_anywhere: false, timeline_offset_seconds: 0 } });
+    void r.controller.start({ contentId: "audiobook:dune" });
+    await settlePlay(r);
+
+    r.controller.seekTo(120);
+    await settlePlay(r);
+    assert.equal(startRequests(r).length, 2);
+    assert.equal(startRequests(r)[1]?.body?.start_position, 120);
+    assert.equal(stopRequests(r).length, 1);
+
+    await r.controller.stop();
+    r.playback.next.push({
+        timeline: {
+            can_seek_anywhere: true,
+            timeline_offset_seconds: 100,
+            seek_window_start_seconds: 100,
+            seek_window_end_seconds: 200,
+            player_start_seconds: 0,
+            source_start_seconds: 100,
+        },
+    });
+    void r.controller.start({ contentId: "audiobook:dune" });
+    await settlePlay(r);
+    const startsBefore = startRequests(r).length;
+    r.controller.seekTo(50);
+    await settlePlay(r);
+    assert.equal(startRequests(r).length, startsBefore + 1, "seek before seekWindow reopens via server");
+    assert.equal(startRequests(r).at(-1)?.body?.start_position, 50);
+    r.controller.destroy();
+});
+
+test("pause requests during part transitions and in-flight seeks apply once settled", async () => {
+    const r = await setup();
+    r.catalog.progress.set("audiobook:multipart", 300);
+    void r.controller.start({ contentId: "audiobook:multipart" });
+    await settlePlay(r);
+
+    // Pause during cross-part transition keeps Part 1 paused on prepare completion.
+    r.controller.seekTo(1500);
+    await r.h.clock.advance(0);
+    assert.equal(r.avplay.pendingPrepares, 1);
+    r.controller.pause();
+    r.avplay.finishPrepare();
+    await r.h.clock.advance(0);
+    r.avplay.finishSeek();
+    await r.h.clock.advance(0);
+    assert.equal(playingView(r).phase, "paused");
+    assert.equal(r.avplay.state, "READY");
+
+    // Resume, then pause while intra-part seekTo is in flight: pause waits until finishSeek.
+    r.controller.play();
+    await r.h.clock.advance(0);
+    assert.equal(r.avplay.state, "PLAYING");
+    r.controller.seekTo(1600);
+    r.controller.pause();
+    assert.equal(r.avplay.state, "PLAYING", "pause must not invoke AVPlay while seekTo is in flight");
+    r.avplay.finishSeek();
+    await r.h.clock.advance(0);
+    assert.equal(r.avplay.state, "PAUSED");
+    assert.equal(playingView(r).phase, "paused");
+    r.controller.destroy();
+});
+
+test("suspend during prepareAsync prevents auto-play and shared transportLock waits for pending restoreAsync", async () => {
+    const r = await setup();
+    void r.controller.start({ contentId: "audiobook:dune" });
+    await r.h.clock.advance(0);
+    assert.equal(r.avplay.pendingPrepares, 1);
+
+    r.controller.suspend();
+    r.avplay.finishPrepare();
+    await r.h.clock.advance(0);
+    assert.equal(r.avplay.state, "NONE", "hidden prepare completion closes transport without playing");
+
+    await r.controller.restore();
+    await settlePlay(r);
+    assert.equal(r.avplay.state, "PLAYING");
+
+    // Start video while audiobook restoreAsync is still pending: video open waits for restoreAsync via shared transportLock.
+    r.controller.suspend();
+    void r.controller.restore();
+    await r.h.clock.advance(0);
+    const urlsBeforeVideo = r.avplay.urls.length;
+    const video = new PlaybackController({
+        session: r.h.core.session,
+        avplay: r.avplay,
+        clock: r.h.clock,
+        randomBytes: bytes => bytes.fill(8),
+        device: { model: "QN55Q60AAFXZA", appVersion: "0.1.0" },
+        exits: { onBack: () => undefined, onEnd: () => undefined, onError: () => undefined },
+    });
+    void r.controller.stop();
+    video.play({ contentId: "movie-1", fileId: "42", title: "Movie", startSeconds: undefined });
+    await r.h.clock.advance(0);
+    assert.equal(r.avplay.urls.length, urlsBeforeVideo, "video avplay.open waits for pending restoreAsync");
+
+    r.avplay.finishRestore();
+    await r.h.clock.advance(0);
+    assert.equal(r.avplay.urls.length, urlsBeforeVideo + 1);
+    video.destroy();
+    r.controller.destroy();
+});
+
+test("concurrent session progress coalesces and standby fallback clears inFlightProgress for reopened session", async () => {
+    const r = await setup();
+    void r.controller.start({ contentId: "audiobook:tide" });
+    await settlePlay(r);
+    const firstSession = [...r.playback.sessions.keys()][0];
+    assert.ok(firstSession !== undefined);
+
+    const heldProgress = r.h.fake.hold(`/playback/${firstSession}/progress`);
+    await r.h.clock.advance(10_000);
+    r.avplay.tick(4150 * 1000);
+    r.controller.pause();
+    heldProgress.release();
+    await r.h.clock.advance(0);
+    assert.equal(progressRequests(r).length, 2, "queued progress snapshot fires right after in-flight progress settles");
+    assert.equal(progressRequests(r)[1]?.body?.is_paused, true);
+
+    // Standby fallback while progress is in flight clears inFlightProgress so reopened session keeps reporting progress.
+    r.controller.play();
+    await r.h.clock.advance(0);
+    const heldFallbackProgress = r.h.fake.hold(`/playback/${firstSession}/progress`);
+    await r.h.clock.advance(10_000);
+    r.controller.suspend();
+    Object.assign(r.avplay, { restoreAsync: undefined });
+    const restoring = r.controller.restore();
+    await r.h.clock.advance(0);
+    heldFallbackProgress.release();
+    await restoring;
+    await settlePlay(r);
+
+    const progressCountAfterReopen = progressRequests(r).length;
+    await r.h.clock.advance(10_000);
+    assert.equal(progressRequests(r).length, progressCountAfterReopen + 1);
+    r.controller.destroy();
+});
+
+test("mid-book failure at position 0 preserves start_position=0 on retry", async () => {
+    const r = await setup();
+    void r.controller.start({ contentId: "audiobook:tide", restart: true });
+    await settlePlay(r);
+    assert.equal(playingView(r).position, 0);
+
+    r.avplay.listener?.onerror("PLAYER_ERROR_CONNECTION_FAILED");
+    await r.h.clock.advance(0);
+    const err = r.views.at(-1);
+    assert.ok(err?.phase === "error" && err.retryable);
+
+    r.controller.retry();
+    await settlePlay(r);
+    assert.equal(startRequests(r).at(-1)?.body?.start_position, 0);
+    assert.equal(playingView(r).position, 0);
+    r.controller.destroy();
+});
+
+test("administrator termination (410 playback_session_ended) retires audiobook cleanly with no replacement", async () => {
+    const r = await setup();
+    void r.controller.start({ contentId: "audiobook:dune" });
+    await settlePlay(r);
+    const sessionId = [...r.playback.sessions.keys()][0];
+    assert.ok(sessionId !== undefined);
+
+    r.playback.endByAdmin(sessionId);
+    await r.h.clock.advance(10_000);
+    assert.equal(r.views.at(-1)?.phase, "idle");
+    assert.deepEqual(r.exits, ["close"]);
+    assert.equal(r.avplay.state, "NONE");
+    assert.equal(r.h.clock.scheduled, 0);
+
+    const reqCount = r.h.fake.requests.length;
+    await r.h.clock.advance(30_000);
+    assert.equal(r.h.fake.requests.length, reqCount);
+    r.controller.destroy();
+});
+
+test("hung prepareAsync and seekTo time out after 15 s and release shared transportLock", async () => {
+    const r = await setup();
+    void r.controller.start({ contentId: "audiobook:dune" });
+    await r.h.clock.advance(0);
+    assert.equal(r.avplay.pendingPrepares, 1);
+
+    await r.h.clock.advance(15_000);
+    const prepErr = r.views.at(-1);
+    assert.ok(prepErr?.phase === "error" && prepErr.retryable);
+    assert.equal(r.avplay.state, "NONE");
+
+    r.controller.retry();
+    await settlePlay(r);
+    const origSeekTo = r.avplay.seekTo.bind(r.avplay);
+    Object.assign(r.avplay, {
+        seekTo: () => {
+            Object.assign(r.avplay, { seekTo: origSeekTo });
+        },
+    });
+    r.controller.seekTo(120);
+    await r.h.clock.advance(15_000);
+    assert.equal(playingView(r).seeking, false);
+
+    await r.controller.stop();
+    void r.controller.start({ contentId: "audiobook:tide" });
+    await settlePlay(r);
+    assert.equal(playingView(r).contentId, "audiobook:tide");
+    r.controller.destroy();
+});
+
+test("hide during restoreAsync or stopServerSession preserves deferred reopen and blocks AVPlay calls while restoring", async () => {
+    const r = await setup();
+    void r.controller.start({ contentId: "audiobook:dune" });
+    await settlePlay(r);
+    const firstSession = [...r.playback.sessions.keys()][0];
+    assert.ok(firstSession !== undefined);
+
+    // Pause and seek while restoreAsync is pending must not touch AVPlay until restore settles.
+    r.controller.suspend();
+    void r.controller.restore();
+    await r.h.clock.advance(0);
+    const callsDuringRestore = r.avplay.calls.length;
+    r.controller.pause();
+    r.controller.seekTo(200);
+    assert.equal(r.avplay.calls.slice(callsDuringRestore).some(c => c.startsWith("pause") || c.startsWith("seekTo")), false);
+    r.avplay.finishRestore();
+    await r.h.clock.advance(0);
+    assert.equal(r.avplay.state, "PAUSED");
+    assert.ok(r.avplay.calls.at(-1)?.startsWith("seekTo 200000"));
+    r.avplay.finishSeek();
+    await r.h.clock.advance(0);
+    assert.equal(playingView(r).phase, "paused");
+    assert.equal(playingView(r).position, 200);
+
+    // Hiding while fallback stopServerSession is in flight retains deferred reopen for the next restore().
+    r.controller.play();
+    await r.h.clock.advance(0);
+    r.controller.suspend();
+    Object.assign(r.avplay, { restoreAsync: undefined });
+    const heldStop = r.h.fake.hold(`/playback/${firstSession}`);
+    const firstRestore = r.controller.restore();
+    await r.h.clock.advance(0);
+    r.controller.suspend();
+    heldStop.release();
+    await firstRestore;
+    await r.h.clock.advance(0);
+
+    const startsBeforeSecondRestore = startRequests(r).length;
+    void r.controller.restore();
+    await settlePlay(r);
+    assert.equal(startRequests(r).length, startsBeforeSecondRestore + 1);
+    assert.equal(r.avplay.state, "PLAYING");
+    r.controller.destroy();
+});
+
+test("same-book Start Over drains in-flight sync and drops queued pre-restart writes, and setPlaybackRate ignores initial load", async () => {
+    const r = await setup();
+    void r.controller.start({ contentId: "audiobook:tide" });
+    await r.h.clock.advance(0);
+    assert.equal(r.avplay.pendingPrepares, 1);
+    r.controller.setPlaybackRate(2);
+    assert.equal(r.views.at(-1)?.phase, "loading", "setPlaybackRate during initial load must not flip view to playing");
+    await settlePlay(r);
+
+    const held = r.h.fake.hold("/sync/progress");
+    await r.h.clock.advance(10_000);
+    r.avplay.tick(4300 * 1000);
+    r.controller.pause();
+
+    const startsBefore = startRequests(r).length;
+    void r.controller.start({ contentId: "audiobook:tide", restart: true });
+    await r.h.clock.advance(0);
+    assert.equal(startRequests(r).length, startsBefore, "Start Over waits for held syncInFlight to drain");
+
+    held.release();
+    await settlePlay(r);
+    r.controller.pause();
+    await r.h.clock.advance(0);
+    assert.equal(r.catalog.progressWrites.some(w => w.positionMs === 4_300_000), false);
+    assert.equal(r.catalog.progress.get("audiobook:tide"), 0);
+    r.controller.destroy();
 });

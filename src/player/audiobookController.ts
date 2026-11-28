@@ -1,7 +1,7 @@
 import { audiobookOperations } from "../api/audiobookOperations.ts";
-import { type Clock, sleep } from "../api/clock.ts";
+import type { Clock } from "../api/clock.ts";
 import { ApiError } from "../api/errors.ts";
-import { abortedError, type RequestSpec } from "../api/http.ts";
+import type { RequestSpec } from "../api/http.ts";
 import { operations } from "../api/operations.ts";
 import { isPermittedUrl } from "../api/serverUrl.ts";
 import {
@@ -21,8 +21,17 @@ import {
 } from "./capabilities.ts";
 
 const PROGRESS_INTERVAL_MS = 10_000;
+const STARTUP_TIMEOUT_MS = 15_000;
 const PREVIOUS_CHAPTER_RESTART_SECONDS = 3;
 const DEFAULT_SEEK_INTERVALS = { backward: 10, forward: 30 } as const;
+
+function seekableAt(plan: PlaybackPlan, seconds: number): boolean {
+    const timeline = plan.timeline;
+    return timeline.canSeekAnywhere &&
+        seconds >= timeline.timelineOffsetSeconds &&
+        (timeline.seekWindowStartSeconds === undefined || seconds >= timeline.seekWindowStartSeconds) &&
+        (timeline.seekWindowEndSeconds === undefined || seconds <= timeline.seekWindowEndSeconds);
+}
 
 export interface AudiobookPlayRequest {
     readonly contentId: string;
@@ -108,10 +117,17 @@ export type AudiobookPlaybackView =
         readonly retryable: boolean;
     };
 
+interface PendingPart {
+    readonly partIndex: number;
+    readonly localSeconds: number;
+    readonly wholeBookSeconds: number;
+}
+
 interface Attempt {
     readonly request: AudiobookPlayRequest;
     readonly profileId: string;
     readonly abort: AbortController;
+    readonly authoritySignal: AbortSignal;
     removeAuthority: () => void;
     live: boolean;
     book: Audiobook | undefined;
@@ -122,9 +138,13 @@ interface Attempt {
     partIndex: number;
     partLocalSeconds: number;
     wholeBookSeconds: number;
+    pendingPart: PendingPart | undefined;
     partStarted: boolean;
     hasPlayed: boolean;
     paused: boolean;
+    pauseAfterSeek: boolean | undefined;
+    pendingTransitionSync: boolean;
+    pendingProgress: boolean;
     buffering: boolean;
     playbackRate: number;
     seekIntervals: { readonly backward: number; readonly forward: number };
@@ -136,6 +156,10 @@ interface Attempt {
     syncInFlight: Promise<void> | undefined;
     pendingSyncPosition: number | undefined;
     cancelProgressTimer: (() => void) | undefined;
+    hidden: boolean;
+    restoring: boolean;
+    deferredOpen: boolean;
+    restoreGen: number;
     suspended: boolean;
     suspendedReady: boolean;
     finalSynced: boolean;
@@ -189,6 +213,7 @@ export class AudiobookController {
     private readonly deps: AudiobookPlaybackDeps;
     private readonly pending: PendingTransport;
     private readonly sleepTimer: AudiobookSleepTimer;
+    private readonly stopAuthority: () => void;
     private readonly listeners: ((view: AudiobookPlaybackView) => void)[] = [];
     private current: AudiobookPlaybackView = { phase: "idle" };
     private attempt: Attempt | undefined;
@@ -196,6 +221,7 @@ export class AudiobookController {
     private retryPositionSeconds: number | undefined;
     private startGen = 0;
     private transport = 0;
+    private cancelStartup: (() => void) | undefined;
     private activeTeardown: Promise<void> | undefined;
     private destroyed = false;
 
@@ -207,9 +233,21 @@ export class AudiobookController {
             () => this.onSleepTimerExpired(),
             () => {
                 const attempt = this.attempt;
-                if (attempt?.live && attempt.partStarted) this.emitPlayback(attempt);
+                if (attempt?.live && attempt.partStarted && !attempt.restoring && this.pending.restore === undefined) {
+                    this.emitPlayback(attempt);
+                }
             },
         );
+        this.stopAuthority = deps.session.onAuthorityChange(() => {
+            this.lastRequest = undefined;
+            this.retryPositionSeconds = undefined;
+            if (this.attempt !== undefined) {
+                this.abortForAuthorityLoss(this.attempt);
+            }
+            if (!this.destroyed && this.current.phase !== "idle") {
+                this.emit({ phase: "idle" });
+            }
+        });
     }
 
     get view(): AudiobookPlaybackView {
@@ -270,50 +308,62 @@ export class AudiobookController {
     }
 
     play(): void {
-        const attempt = this.attempt;
-        if (attempt === undefined || !attempt.live || !attempt.partStarted) return;
-        if (!attempt.paused) return;
-        attempt.paused = false;
-        try {
-            const state = this.deps.avplay.getState();
-            if (state === "READY" || state === "PAUSED") {
-                this.deps.avplay.play();
-                this.applySpeedSafe(attempt);
-            }
-        } catch {
-            this.failAttempt(attempt, "playback_failed", translate("player.error.cantPlayTitle"), true);
-            return;
-        }
-        this.emitPlayback(attempt);
-        this.syncDualSinkNow(attempt);
+        this.setPaused(false);
     }
 
     pause(): void {
-        const attempt = this.attempt;
-        if (attempt === undefined || !attempt.live || !attempt.partStarted) return;
-        if (attempt.paused) return;
-        attempt.paused = true;
-        try {
-            if (this.deps.avplay.getState() === "PLAYING") {
-                this.deps.avplay.pause();
-            }
-        } catch {
-            // AVPlay in READY stays paused until play() is called.
-        }
-        this.emitPlayback(attempt);
-        this.syncDualSinkNow(attempt);
+        this.setPaused(true);
     }
 
     togglePlayPause(): void {
         const attempt = this.attempt;
-        if (attempt === undefined || !attempt.live || !attempt.partStarted) return;
-        if (attempt.paused) this.play();
-        else this.pause();
+        if (attempt === undefined || !attempt.live || (!attempt.partStarted && !attempt.hasPlayed)) return;
+        this.setPaused(!(attempt.pauseAfterSeek ?? attempt.paused));
+    }
+
+    private setPaused(paused: boolean): void {
+        const attempt = this.attempt;
+        if (attempt === undefined || !attempt.live || (!attempt.partStarted && !attempt.hasPlayed)) return;
+        if (!attempt.partStarted || attempt.hidden || attempt.restoring || this.pending.restore !== undefined || attempt.deferredOpen || attempt.suspended || attempt.suspendedReady) {
+            if (attempt.paused === paused) return;
+            attempt.paused = paused;
+            if (attempt.plan !== undefined && attempt.partStarted) this.emitPlayback(attempt);
+            return;
+        }
+        if (this.pending.seek !== undefined) {
+            if ((attempt.pauseAfterSeek ?? attempt.paused) === paused) return;
+            attempt.pauseAfterSeek = paused;
+            this.emitPlayback(attempt);
+            return;
+        }
+        if (attempt.paused === paused) return;
+        if (!this.applyPauseState(attempt, paused)) return;
+        this.emitPlayback(attempt);
+        this.syncDualSinkNow(attempt);
+    }
+
+    private applyPauseState(attempt: Attempt, paused: boolean): boolean {
+        try {
+            const state = this.deps.avplay.getState();
+            if (paused) {
+                if (state === "PLAYING") this.deps.avplay.pause();
+            } else {
+                if (state === "PAUSED" || state === "READY") this.deps.avplay.play();
+                this.applySpeedSafe(attempt);
+            }
+            attempt.paused = paused;
+            return true;
+        } catch {
+            if (!paused) {
+                this.failAttempt(attempt, "playback_failed", translate("player.error.cantPlayTitle"), true);
+            }
+            return false;
+        }
     }
 
     seekTo(wholeBookSeconds: number): void {
         const attempt = this.attempt;
-        if (attempt === undefined || !attempt.live || attempt.book === undefined || !attempt.partStarted) return;
+        if (attempt === undefined || !attempt.live || attempt.book === undefined || (!attempt.partStarted && !attempt.hasPlayed)) return;
         const clamped = relativeSeekTarget(0, wholeBookSeconds, attempt.book.duration);
         attempt.pendingSeekTarget = clamped;
         attempt.seekSequence += 1;
@@ -322,7 +372,7 @@ export class AudiobookController {
 
     skipBy(deltaSeconds: number): void {
         const attempt = this.attempt;
-        if (attempt === undefined || !attempt.live || attempt.book === undefined || !attempt.partStarted) return;
+        if (attempt === undefined || !attempt.live || attempt.book === undefined || (!attempt.partStarted && !attempt.hasPlayed)) return;
         const base = attempt.pendingSeekTarget ?? attempt.wholeBookSeconds;
         const target = relativeSeekTarget(base, deltaSeconds, attempt.book.duration);
         attempt.pendingSeekTarget = target;
@@ -339,7 +389,7 @@ export class AudiobookController {
 
     previousChapter(): void {
         const attempt = this.attempt;
-        if (attempt === undefined || !attempt.live || attempt.book === undefined || !attempt.partStarted) return;
+        if (attempt === undefined || !attempt.live || attempt.book === undefined || (!attempt.partStarted && !attempt.hasPlayed)) return;
         const chapters = attempt.book.chapters;
         if (chapters.length === 0) return;
         const position = attempt.pendingSeekTarget ?? attempt.wholeBookSeconds;
@@ -355,7 +405,7 @@ export class AudiobookController {
 
     nextChapter(): void {
         const attempt = this.attempt;
-        if (attempt === undefined || !attempt.live || attempt.book === undefined || !attempt.partStarted) return;
+        if (attempt === undefined || !attempt.live || attempt.book === undefined || (!attempt.partStarted && !attempt.hasPlayed)) return;
         const chapters = attempt.book.chapters;
         if (chapters.length === 0) return;
         const position = attempt.pendingSeekTarget ?? attempt.wholeBookSeconds;
@@ -367,18 +417,18 @@ export class AudiobookController {
 
     selectChapter(index: number): void {
         const attempt = this.attempt;
-        if (attempt === undefined || !attempt.live || attempt.book === undefined || !attempt.partStarted) return;
+        if (attempt === undefined || !attempt.live || attempt.book === undefined || (!attempt.partStarted && !attempt.hasPlayed)) return;
         const chapter = attempt.book.chapters[index];
         if (chapter !== undefined) this.seekTo(chapter.start);
     }
 
     setPlaybackRate(rate: number): void {
         const attempt = this.attempt;
-        if (attempt === undefined || !attempt.live || attempt.plan === undefined) return;
+        if (attempt === undefined || !attempt.live || attempt.plan === undefined || (!attempt.partStarted && !attempt.hasPlayed)) return;
         const allowed = audiobookAvailableRates(this.deps.avplay.setSpeed !== undefined, attempt.plan.streamProtocol);
         if (!allowed.includes(rate)) return;
         attempt.playbackRate = rate;
-        if (attempt.partStarted && !attempt.paused) {
+        if (attempt.partStarted && !attempt.paused && this.pending.seek === undefined && this.pending.restore === undefined && !attempt.hidden && !attempt.restoring) {
             this.applySpeedSafe(attempt);
         }
         this.emitPlayback(attempt);
@@ -386,7 +436,7 @@ export class AudiobookController {
 
     setSleepTimer(minutes: number): void {
         const attempt = this.attempt;
-        if (attempt === undefined || !attempt.live || !attempt.partStarted) return;
+        if (attempt === undefined || !attempt.live || (!attempt.partStarted && !attempt.hasPlayed)) return;
         this.sleepTimer.start(minutes);
     }
 
@@ -402,15 +452,45 @@ export class AudiobookController {
 
     suspend(): void {
         const attempt = this.attempt;
-        if (attempt === undefined || !attempt.live || attempt.suspended) return;
+        if (attempt === undefined || !attempt.live || attempt.hidden) return;
+        attempt.hidden = true;
+        attempt.restoreGen += 1;
         attempt.cancelProgressTimer?.();
         attempt.cancelProgressTimer = undefined;
+        this.cancelStartupTimer();
+        if (attempt.restoring || this.pending.restore !== undefined) {
+            attempt.restoring = false;
+            attempt.suspended = false;
+            attempt.suspendedReady = false;
+            attempt.deferredOpen = true;
+            this.closeTransport();
+            return;
+        }
+        const seek = this.pending.seek;
+        if (seek !== undefined) {
+            const transport = this.transport;
+            void seek.then(() => {
+                if (this.attempt === attempt && attempt.live && attempt.hidden && transport === this.transport && !attempt.suspended && !attempt.suspendedReady && !attempt.deferredOpen) {
+                    this.suspendTransport(attempt);
+                }
+            });
+            return;
+        }
+        this.suspendTransport(attempt);
+    }
+
+    private suspendTransport(attempt: Attempt): void {
         try {
             const state = this.deps.avplay.getState();
             if (state === "PLAYING" || state === "PAUSED" || state === "READY") {
-                this.deps.avplay.suspend?.();
-                attempt.suspended = state === "PLAYING" || state === "PAUSED";
-                attempt.suspendedReady = state === "READY";
+                if (this.deps.avplay.suspend !== undefined) {
+                    this.deps.avplay.suspend();
+                    attempt.suspended = state === "PLAYING" || state === "PAUSED";
+                    attempt.suspendedReady = state === "READY";
+                } else {
+                    attempt.deferredOpen = true;
+                    this.closeTransport();
+                }
             }
         } catch {
             attempt.suspended = false;
@@ -420,64 +500,86 @@ export class AudiobookController {
 
     async restore(): Promise<void> {
         const attempt = this.attempt;
-        if (attempt === undefined || !attempt.live || attempt.abort.signal.aborted) return;
-        if (!attempt.suspended && !attempt.suspendedReady) return;
+        if (attempt === undefined || !attempt.live || attempt.restoring || attempt.abort.signal.aborted || attempt.authoritySignal.aborted) return;
+        if (!attempt.hidden && !attempt.suspended && !attempt.suspendedReady && !attempt.deferredOpen) return;
         const generation = this.startGen;
+        const restoreGen = ++attempt.restoreGen;
+        const wasSuspended = attempt.suspended;
         const wasSuspendedReady = attempt.suspendedReady;
+        const wasDeferred = attempt.deferredOpen;
+        attempt.hidden = false;
         attempt.suspended = false;
         attempt.suspendedReady = false;
-        const plan = attempt.plan;
-        if (plan === undefined) return;
-        try {
-            const url = await this.resolveStreamUrl(attempt, plan);
-            if (!attempt.live || this.attempt !== attempt || attempt.abort.signal.aborted || generation !== this.startGen) return;
-            if (url === undefined) {
-                this.failAttempt(attempt, "server", translate("player.error.cantPlayTitle"), true);
-                return;
+        attempt.deferredOpen = false;
+        if (!wasSuspended && !wasSuspendedReady && !wasDeferred) {
+            if (attempt.partStarted) {
+                this.scheduleProgress(attempt);
+                if (attempt.queuedSeekTarget !== undefined && this.pending.seek === undefined && this.pending.restore === undefined) {
+                    const queued = attempt.queuedSeekTarget;
+                    attempt.queuedSeekTarget = undefined;
+                    this.dispatchSeek(attempt, queued, attempt.seekSequence);
+                }
+            } else if (attempt.plan !== undefined && this.pending.seek === undefined && this.pending.restore === undefined && this.deps.avplay.getState() === "IDLE") {
+                this.armStartup(attempt, this.transport, generation);
             }
+            return;
+        }
+        const plan = attempt.plan;
+        const partIndex = attempt.pendingPart?.partIndex ?? attempt.partIndex;
+        const localSeconds = attempt.pendingPart?.localSeconds ?? attempt.partLocalSeconds;
+        if (plan === undefined) return;
+        attempt.restoring = true;
+        try {
+            const restoreFn = this.deps.avplay.restoreAsync;
+            if (wasSuspended && !wasSuspendedReady && !wasDeferred && restoreFn !== undefined) {
+                const url = await this.resolveStreamUrl(attempt, plan);
+                if (!attempt.live || this.attempt !== attempt || attempt.abort.signal.aborted || attempt.authoritySignal.aborted || generation !== this.startGen || attempt.restoreGen !== restoreGen || attempt.hidden) return;
+                if (url === undefined) {
+                    this.failAttempt(attempt, "server", translate("player.error.cantPlayTitle"), true);
+                    return;
+                }
 
-            const resumeMs = Math.max(0, Math.round((attempt.partLocalSeconds - plan.timeline.timelineOffsetSeconds) * 1000));
-            const restore = this.deps.avplay.restoreAsync;
-            if (!wasSuspendedReady && restore !== undefined) {
-                const transport = this.transport;
-                const restored = await new Promise<boolean>((resolve) => {
-                    try {
-                        restore.call(this.deps.avplay, url, resumeMs, false, () => resolve(transport === this.transport && attempt.live), () => resolve(false));
-                    } catch {
-                        resolve(false);
-                    }
-                });
-                if (!attempt.live || this.attempt !== attempt || attempt.abort.signal.aborted || generation !== this.startGen) return;
+                const resumeMs = Math.max(0, Math.round((localSeconds - plan.timeline.timelineOffsetSeconds) * 1000));
+                const restored = await this.runRestore(restoreFn, url, resumeMs, this.transport, attempt);
+                if (!attempt.live || this.attempt !== attempt || attempt.abort.signal.aborted || attempt.authoritySignal.aborted || generation !== this.startGen || attempt.restoreGen !== restoreGen || attempt.hidden) return;
                 if (restored) {
-                    try {
-                        if (attempt.paused) {
-                            if (this.deps.avplay.getState() === "PLAYING") this.deps.avplay.pause();
-                        } else {
-                            const state = this.deps.avplay.getState();
-                            if (state === "PAUSED" || state === "READY") this.deps.avplay.play();
-                            this.applySpeedSafe(attempt);
+                    if (!this.applyPauseState(attempt, attempt.paused)) return;
+                    if (attempt.restoreGen === restoreGen) attempt.restoring = false;
+                    if (attempt.partStarted) {
+                        this.emitPlayback(attempt);
+                        this.scheduleProgress(attempt);
+                        if (attempt.queuedSeekTarget !== undefined) {
+                            const queued = attempt.queuedSeekTarget;
+                            attempt.queuedSeekTarget = undefined;
+                            this.dispatchSeek(attempt, queued, attempt.seekSequence);
                         }
-                    } catch {
-                        this.failAttempt(attempt, "playback_failed", translate("player.error.cantPlayTitle"), true);
-                        return;
                     }
-                    this.emitPlayback(attempt);
-                    this.scheduleProgress(attempt);
                     return;
                 }
             }
-            // Fallback: retire the prior server session and reopen with a fresh playback attempt ID.
+            // Fallback: retire the prior server session and reopen with a fresh attempt ID.
             const oldSessionId = attempt.sessionId;
             const installationId = attempt.installationId;
-            attempt.sessionId = undefined;
             if (oldSessionId !== undefined && installationId !== undefined) {
-                await this.stopServerSession(attempt, oldSessionId, installationId, attempt.partLocalSeconds, attempt.paused);
-                if (!attempt.live || this.attempt !== attempt || attempt.abort.signal.aborted || generation !== this.startGen) return;
+                try {
+                    await this.stopServerSession(attempt, oldSessionId, installationId, localSeconds, attempt.paused);
+                } finally {
+                    if (attempt.sessionId === oldSessionId) attempt.sessionId = undefined;
+                }
+                if (!attempt.live || this.attempt !== attempt || attempt.abort.signal.aborted || attempt.authoritySignal.aborted || generation !== this.startGen || attempt.restoreGen !== restoreGen || attempt.hidden) return;
             }
+            attempt.sessionId = undefined;
+            attempt.pendingProgress = false;
             attempt.attemptId = this.newId();
-            await this.openPart(attempt, attempt.partIndex, attempt.partLocalSeconds, generation);
+            if (attempt.restoreGen === restoreGen) attempt.restoring = false;
+            await this.openPart(attempt, partIndex, localSeconds, generation);
         } catch (error) {
-            this.failFromError(attempt, generation, error);
+            if (attempt.restoreGen === restoreGen) {
+                attempt.restoring = false;
+                this.failFromError(attempt, generation, error);
+            }
+        } finally {
+            if (attempt.restoreGen === restoreGen) attempt.restoring = false;
         }
     }
 
@@ -485,7 +587,7 @@ export class AudiobookController {
         if (this.destroyed || this.lastRequest === undefined) return;
         const savedPos = this.retryPositionSeconds;
         this.retryPositionSeconds = undefined;
-        const req: AudiobookPlayRequest = savedPos !== undefined && savedPos > 0
+        const req: AudiobookPlayRequest = savedPos !== undefined
             ? { ...this.lastRequest, startSeconds: savedPos, restart: false }
             : this.lastRequest;
         void this.start(req);
@@ -507,8 +609,11 @@ export class AudiobookController {
         if (this.destroyed) return;
         this.destroyed = true;
         this.startGen++;
+        this.lastRequest = undefined;
         this.retryPositionSeconds = undefined;
+        this.cancelStartupTimer();
         void this.teardownActive(true, true);
+        this.stopAuthority();
         this.sleepTimer.cancel();
         this.current = { phase: "idle" };
         this.listeners.length = 0;
@@ -524,10 +629,12 @@ export class AudiobookController {
 
     private createAttempt(request: AudiobookPlayRequest, profileId: string): Attempt {
         const abort = new AbortController();
+        const authoritySignal = this.deps.session.authoritySignal;
         const attempt: Attempt = {
             request,
             profileId,
             abort,
+            authoritySignal,
             removeAuthority: () => undefined,
             live: true,
             book: undefined,
@@ -538,9 +645,13 @@ export class AudiobookController {
             partIndex: 0,
             partLocalSeconds: 0,
             wholeBookSeconds: request.startSeconds ?? 0,
+            pendingPart: undefined,
             partStarted: false,
             hasPlayed: false,
             paused: false,
+            pauseAfterSeek: undefined,
+            pendingTransitionSync: false,
+            pendingProgress: false,
             buffering: false,
             playbackRate: 1,
             seekIntervals: DEFAULT_SEEK_INTERVALS,
@@ -552,27 +663,36 @@ export class AudiobookController {
             syncInFlight: undefined,
             pendingSyncPosition: undefined,
             cancelProgressTimer: undefined,
+            hidden: false,
+            restoring: false,
+            deferredOpen: false,
+            restoreGen: 0,
             suspended: false,
             suspendedReady: false,
             finalSynced: false,
         };
         const onAuthorityLost = (): void => { this.abortForAuthorityLoss(attempt); };
-        this.deps.session.authoritySignal.addEventListener("abort", onAuthorityLost, { once: true });
-        attempt.removeAuthority = () => this.deps.session.authoritySignal.removeEventListener("abort", onAuthorityLost);
+        authoritySignal.addEventListener("abort", onAuthorityLost, { once: true });
+        attempt.removeAuthority = () => authoritySignal.removeEventListener("abort", onAuthorityLost);
         return attempt;
     }
 
     private abortForAuthorityLoss(attempt: Attempt): void {
-        if (!attempt.live) return;
+        const wasLive = attempt.live;
         attempt.live = false;
         attempt.finalSynced = true;
-        this.retryPositionSeconds = undefined;
+        attempt.pendingSyncPosition = undefined;
+        attempt.pendingProgress = false;
+        attempt.pauseAfterSeek = undefined;
         attempt.cancelProgressTimer?.();
         attempt.cancelProgressTimer = undefined;
         attempt.abort.abort();
         attempt.removeAuthority();
-        this.sleepTimer.cancel();
-        this.closeTransport();
+        if (wasLive || this.attempt === attempt) {
+            this.retryPositionSeconds = undefined;
+            this.sleepTimer.cancel();
+            this.closeTransport();
+        }
         if (this.attempt === attempt) {
             this.attempt = undefined;
             if (!this.destroyed) this.emit({ phase: "idle" });
@@ -610,15 +730,18 @@ export class AudiobookController {
         const installationId = attempt.installationId;
         const book = attempt.book;
         const finalWholeSeconds = attempt.wholeBookSeconds;
-        const finalLocalSeconds = attempt.partLocalSeconds;
-        const wasPaused = attempt.paused;
-        const authorityOk = !attempt.abort.signal.aborted && !this.deps.session.authoritySignal.aborted;
+        const finalLocalSeconds = attempt.pendingPart?.localSeconds ?? attempt.partLocalSeconds;
+        const wasPaused = attempt.pauseAfterSeek ?? attempt.paused;
+        const authorityOk = !attempt.abort.signal.aborted && !attempt.authoritySignal.aborted;
         const canSyncBook = sendBookSync && attempt.hasPlayed && book !== undefined && !attempt.finalSynced && authorityOk;
         const canStopSession = stopSession && sessionId !== undefined && installationId !== undefined && authorityOk;
         if (canSyncBook) attempt.finalSynced = true;
+        else attempt.pendingSyncPosition = undefined;
+        attempt.pendingProgress = false;
+        const pendingSync = attempt.syncInFlight;
         this.closeTransport();
 
-        if (!canSyncBook && !canStopSession) {
+        if (!canSyncBook && !canStopSession && pendingSync === undefined) {
             attempt.abort.abort();
             attempt.removeAuthority();
             return;
@@ -626,6 +749,8 @@ export class AudiobookController {
         const tasks: Promise<void>[] = [];
         if (canSyncBook && book !== undefined) {
             tasks.push(this.queueBookSync(attempt, finalWholeSeconds));
+        } else if (pendingSync !== undefined) {
+            tasks.push(pendingSync);
         }
         if (canStopSession && sessionId !== undefined && installationId !== undefined) {
             tasks.push(this.stopServerSession(attempt, sessionId, installationId, finalLocalSeconds, wasPaused));
@@ -716,10 +841,9 @@ export class AudiobookController {
             return;
         }
         attempt.partStarted = false;
-        attempt.partIndex = partIndex;
-        attempt.partLocalSeconds = localSeconds;
-        attempt.wholeBookSeconds = part.offset + localSeconds;
+        attempt.pendingPart = { partIndex, localSeconds, wholeBookSeconds: part.offset + localSeconds };
         attempt.sequence = 0;
+        attempt.pendingProgress = false;
 
         try {
             const spec = operations.startPlayback({
@@ -747,13 +871,11 @@ export class AudiobookController {
                 this.failAttempt(attempt, "unavailable_part", translate("audiobook.error.unavailablePart"), true);
                 return;
             }
-            const matchedIndex = book.parts.findIndex(candidate => candidate.fileId === decision.plan.effectiveMediaFileId);
-            if (matchedIndex === -1) {
-                void this.stopOrphanedSession(decision.sessionId, installationId, attempt.sequence, localSeconds, attempt.paused);
+            if (decision.plan.effectiveMediaFileId !== part.fileId) {
+                void this.stopOrphanedSession(decision.sessionId, installationId, attempt.sequence, localSeconds, attempt.paused, attempt.authoritySignal);
                 this.failAttempt(attempt, "unavailable_part", translate("audiobook.error.unavailablePart"), false);
                 return;
             }
-            attempt.partIndex = matchedIndex;
             attempt.sessionId = decision.sessionId;
             attempt.plan = decision.plan;
 
@@ -770,7 +892,7 @@ export class AudiobookController {
                 return;
             }
             if (!attempt.live || generation !== this.startGen) return;
-            await this.openAVPlay(attempt, decision.plan, url, generation);
+            await this.openAVPlay(attempt, decision.plan, partIndex, url, generation);
         } catch (error) {
             this.failFromError(attempt, generation, error);
         }
@@ -803,58 +925,104 @@ export class AudiobookController {
         }
     }
 
-    private async openAVPlay(attempt: Attempt, plan: PlaybackPlan, url: string, generation: number): Promise<void> {
+    private async openAVPlay(attempt: Attempt, plan: PlaybackPlan, partIndex: number, url: string, generation: number): Promise<void> {
+        if (attempt.hidden) {
+            attempt.deferredOpen = true;
+            return;
+        }
         this.closeTransport();
         const transport = this.transport;
         await this.waitTransport();
         if (transport !== this.transport || !attempt.live || generation !== this.startGen) return;
+        if (attempt.hidden) {
+            attempt.deferredOpen = true;
+            return;
+        }
 
         const avplay = this.deps.avplay;
+        this.armStartup(attempt, transport, generation);
         try {
             avplay.open(url);
             avplay.setListener(this.createListener(attempt, plan, transport));
             avplay.prepareAsync(
-                () => this.onPrepared(attempt, plan, transport, generation),
+                () => this.onPrepared(attempt, plan, partIndex, transport, generation),
                 () => {
+                    this.cancelStartupTimer();
                     if (transport === this.transport && attempt.live && generation === this.startGen) {
                         this.failAttempt(attempt, "playback_failed", translate("player.error.cantPlayTitle"), true);
                     }
                 },
             );
         } catch {
+            this.cancelStartupTimer();
             this.failAttempt(attempt, "playback_failed", translate("player.error.cantPlayTitle"), true);
         }
     }
 
-    private onPrepared(attempt: Attempt, plan: PlaybackPlan, transport: number, generation: number): void {
+    private armStartup(attempt: Attempt, transport: number, generation: number): void {
+        this.cancelStartupTimer();
+        this.cancelStartup = this.deps.clock.schedule(() => {
+            this.cancelStartup = undefined;
+            if (transport === this.transport && attempt.live && !attempt.partStarted && !attempt.hidden && generation === this.startGen) {
+                this.failAttempt(attempt, "playback_failed", translate("player.error.cantPlayTitle"), true);
+            }
+        }, STARTUP_TIMEOUT_MS);
+    }
+
+    private cancelStartupTimer(): void {
+        this.cancelStartup?.();
+        this.cancelStartup = undefined;
+    }
+
+    private onPrepared(attempt: Attempt, plan: PlaybackPlan, partIndex: number, transport: number, generation: number): void {
         if (transport !== this.transport || !attempt.live || generation !== this.startGen) return;
+        if (attempt.hidden) {
+            this.cancelStartupTimer();
+            attempt.deferredOpen = true;
+            this.closeTransport();
+            return;
+        }
         const finishStart = (): void => {
             if (transport !== this.transport || !attempt.live || generation !== this.startGen) return;
-            try {
-                if (!attempt.paused) {
-                    this.deps.avplay.play();
-                    this.applySpeedSafe(attempt);
-                }
-            } catch {
-                this.failAttempt(attempt, "playback_failed", translate("player.error.cantPlayTitle"), true);
+            this.cancelStartupTimer();
+            if (attempt.hidden) {
+                attempt.deferredOpen = true;
+                this.closeTransport();
                 return;
             }
+            const paused = attempt.pauseAfterSeek ?? attempt.paused;
+            attempt.pauseAfterSeek = undefined;
+            attempt.paused = paused;
+            if (!paused && !this.applyPauseState(attempt, false)) return;
             const book = attempt.book;
-            const part = book?.parts[attempt.partIndex];
+            const part = book?.parts[partIndex];
+            attempt.partIndex = partIndex;
+            attempt.partLocalSeconds = Math.max(0, plan.timeline.timelineOffsetSeconds + plan.timeline.playerStartSeconds);
             if (part !== undefined) {
-                attempt.partLocalSeconds = Math.max(0, plan.timeline.timelineOffsetSeconds + plan.timeline.playerStartSeconds);
                 attempt.wholeBookSeconds = part.offset + attempt.partLocalSeconds;
+            } else if (attempt.pendingPart !== undefined) {
+                attempt.wholeBookSeconds = attempt.pendingPart.wholeBookSeconds;
             }
+            attempt.pendingPart = undefined;
             attempt.partStarted = true;
             attempt.hasPlayed = true;
             attempt.buffering = false;
+            if (attempt.queuedSeekTarget === undefined) {
+                attempt.pendingSeekTarget = undefined;
+            }
             this.scheduleProgress(attempt);
             this.emitPlayback(attempt);
-            if (attempt.paused) this.syncDualSinkNow(attempt);
-            if (attempt.queuedSeekTarget !== undefined) {
-                const queued = attempt.queuedSeekTarget;
+            const queued = attempt.queuedSeekTarget;
+            if (queued !== undefined) {
                 attempt.queuedSeekTarget = undefined;
+                if (attempt.paused) this.syncDualSinkNow(attempt);
                 this.dispatchSeek(attempt, queued, attempt.seekSequence);
+                return;
+            }
+            const shouldSync = attempt.pendingTransitionSync || attempt.paused;
+            attempt.pendingTransitionSync = false;
+            if (shouldSync) {
+                this.syncDualSinkNow(attempt);
             }
         };
 
@@ -864,6 +1032,7 @@ export class AudiobookController {
             return;
         }
         this.runSeek(startMs, finishStart, () => {
+            this.cancelStartupTimer();
             if (transport === this.transport && attempt.live && generation === this.startGen) {
                 this.failAttempt(attempt, "playback_failed", translate("player.error.cantPlayTitle"), true);
             }
@@ -911,55 +1080,78 @@ export class AudiobookController {
 
     private dispatchSeek(attempt: Attempt, targetWholeSeconds: number, seq: number): void {
         if (attempt.book === undefined) return;
-        if (this.pending.seek !== undefined || !attempt.partStarted) {
+        if (
+            this.pending.seek !== undefined
+            || this.pending.restore !== undefined
+            || !attempt.partStarted
+            || attempt.hidden
+            || attempt.restoring
+            || attempt.deferredOpen
+            || attempt.suspended
+            || attempt.suspendedReady
+        ) {
             attempt.queuedSeekTarget = targetWholeSeconds;
             this.emitPlayback(attempt);
             return;
         }
         const dest = bookPosition(attempt.book, targetWholeSeconds);
         const plan = attempt.plan;
-        const samePart = dest.partIndex === attempt.partIndex && plan !== undefined
-            && (plan.timeline.canSeekAnywhere || dest.localSeconds >= plan.timeline.timelineOffsetSeconds);
+        const samePart = dest.partIndex === attempt.partIndex && plan !== undefined && seekableAt(plan, dest.localSeconds);
         if (samePart && plan !== undefined) {
             const streamMs = Math.max(0, Math.round((dest.localSeconds - plan.timeline.timelineOffsetSeconds) * 1000));
             const transport = this.transport;
             this.emitPlayback(attempt);
-            this.runSeek(
-                streamMs,
-                () => {
-                    if (transport !== this.transport || !attempt.live) return;
-                    if (attempt.queuedSeekTarget !== undefined && attempt.seekSequence !== seq) {
-                        const queued = attempt.queuedSeekTarget;
-                        attempt.queuedSeekTarget = undefined;
-                        this.dispatchSeek(attempt, queued, attempt.seekSequence);
-                        return;
+            const settled = (moved: boolean): void => {
+                if (transport !== this.transport || !attempt.live) {
+                    attempt.pauseAfterSeek = undefined;
+                    return;
+                }
+                if (attempt.queuedSeekTarget !== undefined && (!moved || attempt.seekSequence !== seq)) {
+                    const queued = attempt.queuedSeekTarget;
+                    attempt.queuedSeekTarget = undefined;
+                    if (moved) {
+                        attempt.partLocalSeconds = dest.localSeconds;
+                        attempt.wholeBookSeconds = dest.part.offset + dest.localSeconds;
                     }
+                    this.dispatchSeek(attempt, queued, attempt.seekSequence);
+                    return;
+                }
+                const pauseAfterSeek = attempt.pauseAfterSeek;
+                attempt.pauseAfterSeek = undefined;
+                let pauseChanged = false;
+                if (pauseAfterSeek !== undefined && pauseAfterSeek !== attempt.paused) {
+                    if (attempt.hidden || attempt.restoring || this.pending.restore !== undefined || attempt.suspended || attempt.suspendedReady || attempt.deferredOpen) {
+                        attempt.paused = pauseAfterSeek;
+                        pauseChanged = true;
+                    } else {
+                        pauseChanged = this.applyPauseState(attempt, pauseAfterSeek);
+                        if (!attempt.live) return;
+                    }
+                }
+                if (moved) {
                     attempt.partLocalSeconds = dest.localSeconds;
                     attempt.wholeBookSeconds = dest.part.offset + dest.localSeconds;
                     if (attempt.seekSequence === seq) attempt.pendingSeekTarget = undefined;
-                    this.emitPlayback(attempt);
-                    this.syncDualSinkNow(attempt);
-                },
-                () => {
-                    if (transport !== this.transport || !attempt.live) return;
-                    if (attempt.queuedSeekTarget !== undefined) {
-                        const queued = attempt.queuedSeekTarget;
-                        attempt.queuedSeekTarget = undefined;
-                        this.dispatchSeek(attempt, queued, attempt.seekSequence);
-                        return;
-                    }
+                } else {
                     attempt.pendingSeekTarget = undefined;
-                    this.emitPlayback(attempt);
-                },
-            );
+                }
+                const hadTransitionSync = attempt.pendingTransitionSync;
+                attempt.pendingTransitionSync = false;
+                this.emitPlayback(attempt);
+                if (moved || pauseChanged || hadTransitionSync) {
+                    this.syncDualSinkNow(attempt);
+                }
+            };
+            this.runSeek(streamMs, () => settled(true), () => settled(false));
             return;
         }
         attempt.queuedSeekTarget = undefined;
-        attempt.pendingSeekTarget = undefined;
-        void this.switchPart(attempt, dest.partIndex, dest.localSeconds, seq);
+        attempt.pendingSeekTarget = targetWholeSeconds;
+        this.emitPlayback(attempt);
+        void this.switchPart(attempt, dest.partIndex, dest.localSeconds, attempt.partLocalSeconds);
     }
 
-    private async switchPart(attempt: Attempt, partIndex: number, localSeconds: number, seq: number): Promise<void> {
+    private async switchPart(attempt: Attempt, partIndex: number, localSeconds: number, stopLocalSeconds: number): Promise<void> {
         const book = attempt.book;
         const oldSessionId = attempt.sessionId;
         const installationId = attempt.installationId;
@@ -972,15 +1164,14 @@ export class AudiobookController {
         this.closeTransport();
         try {
             if (oldSessionId !== undefined) {
-                await this.stopServerSession(attempt, oldSessionId, installationId, attempt.partLocalSeconds, attempt.paused);
+                await this.stopServerSession(attempt, oldSessionId, installationId, stopLocalSeconds, attempt.paused);
                 if (!attempt.live || this.attempt !== attempt || generation !== this.startGen) return;
             }
             attempt.sessionId = undefined;
+            attempt.pendingProgress = false;
+            attempt.pendingTransitionSync = true;
             attempt.attemptId = this.newId();
             await this.openPart(attempt, partIndex, localSeconds, generation);
-            if (attempt.live && this.attempt === attempt && attempt.partStarted && attempt.seekSequence === seq) {
-                this.syncDualSinkNow(attempt);
-            }
         } catch (error) {
             this.failFromError(attempt, generation, error);
         }
@@ -992,42 +1183,58 @@ export class AudiobookController {
         const nextPartIndex = attempt.partIndex + 1;
         if (nextPartIndex < book.parts.length) {
             attempt.paused = false;
+            attempt.pauseAfterSeek = undefined;
             const nextPart = book.parts[nextPartIndex];
             if (nextPart === undefined) return;
+            const completedPart = book.parts[attempt.partIndex];
+            const completedLocal = completedPart !== undefined && completedPart.duration > 0 ? completedPart.duration : attempt.partLocalSeconds;
+            attempt.partIndex = nextPartIndex;
+            attempt.partLocalSeconds = 0;
             attempt.wholeBookSeconds = nextPart.offset;
             attempt.pendingSeekTarget = undefined;
             attempt.queuedSeekTarget = undefined;
-            await this.switchPart(attempt, nextPartIndex, 0, ++attempt.seekSequence);
-            if (attempt.live && this.attempt === attempt && attempt.partStarted) {
-                void this.queueBookSync(attempt, attempt.wholeBookSeconds);
-            }
+            void this.queueBookSync(attempt, nextPart.offset);
+            await this.switchPart(attempt, nextPartIndex, 0, completedLocal);
             return;
         }
 
-        // Final part ended naturally: persist finished whole-book position and stop session.
+        // Final part ended naturally: persist finished position and stop session inside activeTeardown.
         const generation = this.startGen;
+        const prior = this.activeTeardown;
         this.retryPositionSeconds = undefined;
         attempt.live = false;
         attempt.finalSynced = true;
+        attempt.pendingProgress = false;
+        attempt.pauseAfterSeek = undefined;
         attempt.cancelProgressTimer?.();
         attempt.cancelProgressTimer = undefined;
         this.sleepTimer.cancel();
-        this.attempt = undefined;
+        if (this.attempt === attempt) this.attempt = undefined;
         const finishedPosition = book.duration > 0 ? book.duration : attempt.wholeBookSeconds;
         const currentPart = book.parts[attempt.partIndex];
         const finalLocal = currentPart !== undefined && currentPart.duration > 0 ? currentPart.duration : attempt.partLocalSeconds;
         this.closeTransport();
 
-        if (!attempt.abort.signal.aborted && !this.deps.session.authoritySignal.aborted) {
-            const tasks: Promise<void>[] = [this.queueBookSync(attempt, finishedPosition)];
-            if (attempt.sessionId !== undefined && attempt.installationId !== undefined) {
-                tasks.push(this.stopServerSession(attempt, attempt.sessionId, attempt.installationId, finalLocal, false));
+        let work!: Promise<void>;
+        work = (async (): Promise<void> => {
+            if (prior !== undefined) await prior;
+            if (!attempt.abort.signal.aborted && !attempt.authoritySignal.aborted) {
+                const tasks: Promise<void>[] = [this.queueBookSync(attempt, finishedPosition)];
+                if (attempt.sessionId !== undefined && attempt.installationId !== undefined) {
+                    tasks.push(this.stopServerSession(attempt, attempt.sessionId, attempt.installationId, finalLocal, false));
+                }
+                await Promise.all(tasks);
             }
-            await Promise.all(tasks);
+            attempt.abort.abort();
+            attempt.removeAuthority();
+        })();
+        this.activeTeardown = work;
+        try {
+            await work;
+        } finally {
+            if (this.activeTeardown === work) this.activeTeardown = undefined;
         }
-        attempt.abort.abort();
-        attempt.removeAuthority();
-        if (!this.destroyed && generation === this.startGen) {
+        if (!this.destroyed && generation === this.startGen && !attempt.authoritySignal.aborted) {
             this.emit({ phase: "idle" });
             this.deps.exits?.onFinished?.();
         }
@@ -1037,8 +1244,12 @@ export class AudiobookController {
         const attempt = this.attempt;
         if (attempt === undefined || !attempt.live) return;
         if (!attempt.paused) {
-            attempt.paused = true;
-            if (attempt.partStarted) {
+            if (!attempt.partStarted || attempt.hidden || attempt.restoring || this.pending.restore !== undefined || attempt.deferredOpen || attempt.suspended || attempt.suspendedReady) {
+                attempt.paused = true;
+            } else if (this.pending.seek !== undefined) {
+                attempt.pauseAfterSeek = true;
+            } else {
+                attempt.paused = true;
                 try {
                     if (this.deps.avplay.getState() === "PLAYING") this.deps.avplay.pause();
                 } catch {
@@ -1047,7 +1258,7 @@ export class AudiobookController {
                 this.syncDualSinkNow(attempt);
             }
         }
-        if (attempt.partStarted) {
+        if (attempt.partStarted && !attempt.restoring && this.pending.restore === undefined) {
             this.emitPlayback(attempt);
         }
     }
@@ -1069,10 +1280,16 @@ export class AudiobookController {
     }
 
     private closeTransport(): void {
+        const current = this.attempt;
+        if (current?.pauseAfterSeek !== undefined) {
+            current.paused = current.pauseAfterSeek;
+            current.pauseAfterSeek = undefined;
+        }
         this.transport++;
-        const seek = this.pending.seek;
-        if (seek !== undefined) {
-            const closing = seek.then(() => this.closeAVPlay());
+        this.cancelStartupTimer();
+        const pending = [this.pending.seek, this.pending.restore].filter((op): op is Promise<void> => op !== undefined);
+        if (pending.length > 0) {
+            const closing = Promise.all(pending).then(() => this.closeAVPlay());
             this.pending.closing = closing;
             void closing.then(() => {
                 if (this.pending.closing === closing) this.pending.closing = undefined;
@@ -1091,8 +1308,8 @@ export class AudiobookController {
     }
 
     private async waitTransport(): Promise<void> {
-        while (this.pending.closing !== undefined || this.pending.seek !== undefined) {
-            await (this.pending.closing ?? this.pending.seek);
+        while (this.pending.closing !== undefined || this.pending.seek !== undefined || this.pending.restore !== undefined) {
+            await (this.pending.closing ?? this.pending.seek ?? this.pending.restore);
         }
     }
 
@@ -1100,11 +1317,18 @@ export class AudiobookController {
         let release: () => void = () => undefined;
         const seek = new Promise<void>(resolve => { release = resolve; });
         this.pending.seek = seek;
+        let settled = false;
+        let cancelTimeout: (() => void) | undefined;
         const settle = (cb: () => void): void => {
+            if (settled) return;
+            settled = true;
+            cancelTimeout?.();
+            cancelTimeout = undefined;
             if (this.pending.seek === seek) this.pending.seek = undefined;
             release();
             cb();
         };
+        cancelTimeout = this.deps.clock.schedule(() => settle(onError), STARTUP_TIMEOUT_MS);
         try {
             this.deps.avplay.seekTo(milliseconds, () => settle(onSuccess), () => settle(onError));
         } catch {
@@ -1112,18 +1336,50 @@ export class AudiobookController {
         }
     }
 
+    private runRestore(restoreFn: NonNullable<AVPlay["restoreAsync"]>, url: string, resumeMs: number, transport: number, attempt: Attempt): Promise<boolean> {
+        let release: () => void = () => undefined;
+        const restoreOp = new Promise<void>(resolve => { release = resolve; });
+        this.pending.restore = restoreOp;
+        return new Promise<boolean>((resolve) => {
+            let settled = false;
+            let cancelTimeout: (() => void) | undefined;
+            const finish = (ok: boolean): void => {
+                if (settled) return;
+                settled = true;
+                cancelTimeout?.();
+                cancelTimeout = undefined;
+                if (this.pending.restore === restoreOp) this.pending.restore = undefined;
+                release();
+                resolve(ok);
+            };
+            cancelTimeout = this.deps.clock.schedule(() => finish(false), STARTUP_TIMEOUT_MS);
+            try {
+                restoreFn.call(
+                    this.deps.avplay,
+                    url,
+                    resumeMs,
+                    false,
+                    () => finish(transport === this.transport && attempt.live && !attempt.hidden),
+                    () => finish(false),
+                );
+            } catch {
+                finish(false);
+            }
+        });
+    }
+
     private scheduleProgress(attempt: Attempt): void {
         attempt.cancelProgressTimer?.();
         attempt.cancelProgressTimer = this.deps.clock.schedule(() => {
             attempt.cancelProgressTimer = undefined;
-            if (!attempt.live || !attempt.partStarted || attempt.suspended) return;
+            if (!attempt.live || !attempt.partStarted || attempt.hidden || attempt.restoring || this.pending.restore !== undefined || attempt.suspended || attempt.suspendedReady || attempt.deferredOpen) return;
             this.syncDualSinkNow(attempt);
             this.scheduleProgress(attempt);
         }, PROGRESS_INTERVAL_MS);
     }
 
     private syncDualSinkNow(attempt: Attempt): void {
-        if (!attempt.live || attempt.book === undefined || attempt.abort.signal.aborted || this.deps.session.authoritySignal.aborted) {
+        if (!attempt.live || attempt.book === undefined || attempt.abort.signal.aborted || attempt.authoritySignal.aborted) {
             return;
         }
         this.sendSessionProgress(attempt);
@@ -1133,22 +1389,85 @@ export class AudiobookController {
     private sendSessionProgress(attempt: Attempt): void {
         const sessionId = attempt.sessionId;
         const installationId = attempt.installationId;
-        if (sessionId === undefined || installationId === undefined || attempt.inFlightProgress !== undefined) return;
+        if (sessionId === undefined || installationId === undefined || !attempt.live || attempt.abort.signal.aborted || attempt.authoritySignal.aborted) {
+            return;
+        }
+        if (attempt.inFlightProgress !== undefined) {
+            attempt.pendingProgress = true;
+            return;
+        }
+        attempt.pendingProgress = false;
         const spec = operations.updatePlaybackProgress(sessionId, {
             installation_id: installationId,
             sequence: ++attempt.sequence,
             position: attempt.partLocalSeconds,
             is_paused: attempt.paused,
         });
-        attempt.inFlightProgress = this.deps.session.call({ ...spec, profileScoped: true, signal: attempt.abort.signal }).then(
-            () => { if (attempt.sessionId === sessionId) attempt.inFlightProgress = undefined; },
-            () => { if (attempt.sessionId === sessionId) attempt.inFlightProgress = undefined; },
+        let req!: Promise<void>;
+        req = this.deps.session.call({ ...spec, profileScoped: true, signal: attempt.abort.signal }).then(
+            () => {
+                if (attempt.inFlightProgress === req) attempt.inFlightProgress = undefined;
+                if (attempt.pendingProgress && attempt.live && this.attempt === attempt && attempt.sessionId === sessionId && !attempt.abort.signal.aborted && !attempt.authoritySignal.aborted) {
+                    attempt.pendingProgress = false;
+                    this.sendSessionProgress(attempt);
+                }
+            },
+            (error: unknown) => {
+                if (attempt.inFlightProgress === req) attempt.inFlightProgress = undefined;
+                if (this.handleProgressError(attempt, sessionId, error)) return;
+                if (attempt.pendingProgress && attempt.live && this.attempt === attempt && attempt.sessionId === sessionId && !attempt.abort.signal.aborted && !attempt.authoritySignal.aborted) {
+                    attempt.pendingProgress = false;
+                    this.sendSessionProgress(attempt);
+                }
+            },
         );
+        attempt.inFlightProgress = req;
+    }
+
+    private handleProgressError(attempt: Attempt, sessionId: string, error: unknown): boolean {
+        if (!attempt.live || this.attempt !== attempt || attempt.sessionId !== sessionId) return false;
+        if (!(error instanceof ApiError)) return false;
+        const status = error.status;
+        if (status === 410) {
+            this.endByServer(attempt);
+            return true;
+        }
+        if (status === 404 || status === 401 || status === 403 || error.problemId === "installation_changed") {
+            attempt.sessionId = undefined;
+            attempt.pendingProgress = false;
+            const mapped = mapFailure(error);
+            this.failAttempt(attempt, mapped.kind, mapped.message, status === 404);
+            return true;
+        }
+        return false;
+    }
+
+    private endByServer(attempt: Attempt): void {
+        if (!attempt.live || this.attempt !== attempt) return;
+        attempt.live = false;
+        attempt.finalSynced = true;
+        attempt.pendingProgress = false;
+        attempt.pendingSyncPosition = undefined;
+        attempt.pauseAfterSeek = undefined;
+        attempt.sessionId = undefined;
+        this.retryPositionSeconds = undefined;
+        attempt.cancelProgressTimer?.();
+        attempt.cancelProgressTimer = undefined;
+        this.cancelStartupTimer();
+        this.sleepTimer.cancel();
+        this.closeTransport();
+        attempt.abort.abort();
+        attempt.removeAuthority();
+        this.attempt = undefined;
+        if (!this.destroyed) {
+            this.emit({ phase: "idle" });
+            this.deps.exits?.onClose?.();
+        }
     }
 
     private queueBookSync(attempt: Attempt, wholeBookSeconds: number): Promise<void> {
         const book = attempt.book;
-        if (book === undefined || attempt.abort.signal.aborted || this.deps.session.authoritySignal.aborted) {
+        if (book === undefined || attempt.authoritySignal.aborted) {
             return Promise.resolve();
         }
         attempt.pendingSyncPosition = wholeBookSeconds;
@@ -1157,13 +1476,13 @@ export class AudiobookController {
         work = (async (): Promise<void> => {
             try {
                 while (attempt.pendingSyncPosition !== undefined) {
-                    if (attempt.abort.signal.aborted || this.deps.session.authoritySignal.aborted) {
+                    if (attempt.authoritySignal.aborted) {
                         attempt.pendingSyncPosition = undefined;
                         return;
                     }
                     const nextPosition = attempt.pendingSyncPosition;
                     attempt.pendingSyncPosition = undefined;
-                    await this.sendBookSyncSnapshot(book, nextPosition, attempt.abort.signal);
+                    await this.sendBookSyncSnapshot(book, nextPosition, attempt.authoritySignal);
                 }
             } finally {
                 if (attempt.syncInFlight === work) attempt.syncInFlight = undefined;
@@ -1173,8 +1492,8 @@ export class AudiobookController {
         return work;
     }
 
-    private async sendBookSyncSnapshot(book: Audiobook, wholeBookSeconds: number, signal: AbortSignal): Promise<void> {
-        if (signal.aborted || this.deps.session.authoritySignal.aborted) return;
+    private async sendBookSyncSnapshot(book: Audiobook, wholeBookSeconds: number, authoritySignal: AbortSignal): Promise<void> {
+        if (authoritySignal.aborted) return;
         const clamped = book.duration > 0 ? Math.min(Math.max(0, wholeBookSeconds), book.duration) : Math.max(0, wholeBookSeconds);
         const spec = audiobookOperations.syncProgress([{
             mediaItemId: book.id,
@@ -1182,7 +1501,7 @@ export class AudiobookController {
             durationSeconds: book.duration,
         }]);
         try {
-            await this.deps.session.call({ ...spec, profileScoped: true, replayAfterRefresh: false, signal });
+            await this.deps.session.call({ ...spec, profileScoped: true, replayAfterRefresh: false, signal: authoritySignal });
         } catch {
             // syncProgress uses non_retryable / replayAfterRefresh=false; failed writes never block or resend.
         }
@@ -1190,8 +1509,9 @@ export class AudiobookController {
 
     private async stopServerSession(attempt: Attempt, sessionId: string, installationId: string, positionSeconds: number, isPaused: boolean): Promise<void> {
         try {
+            attempt.pendingProgress = false;
             await attempt.inFlightProgress;
-            if (attempt.abort.signal.aborted || this.deps.session.authoritySignal.aborted) return;
+            if (attempt.abort.signal.aborted || attempt.authoritySignal.aborted) return;
             const spec = operations.stopPlayback(sessionId, {
                 installation_id: installationId,
                 stop_id: this.newId(),
@@ -1202,13 +1522,19 @@ export class AudiobookController {
             await this.deps.session.call({ ...spec, profileScoped: true, signal: attempt.abort.signal });
         } catch (error) {
             if (error instanceof ApiError && (error.status === 404 || error.status === 410 || error.aborted)) return;
-            try { await sleep(this.deps.clock, 0, attempt.abort.signal, abortedError); } catch { /* ignore */ }
+            // Best-effort session close on transition/teardown.
         }
     }
 
-    private async stopOrphanedSession(sessionId: string, installationId: string, sequence: number, positionSeconds: number, isPaused: boolean): Promise<void> {
-        const signal = this.deps.session.authoritySignal;
-        if (signal.aborted) return;
+    private async stopOrphanedSession(
+        sessionId: string,
+        installationId: string,
+        sequence: number,
+        positionSeconds: number,
+        isPaused: boolean,
+        authoritySignal: AbortSignal,
+    ): Promise<void> {
+        if (authoritySignal.aborted) return;
         try {
             const spec = operations.stopPlayback(sessionId, {
                 installation_id: installationId,
@@ -1217,7 +1543,7 @@ export class AudiobookController {
                 position: Math.max(0, positionSeconds),
                 is_paused: isPaused,
             });
-            await this.deps.session.call({ ...spec, profileScoped: true, signal });
+            await this.deps.session.call({ ...spec, profileScoped: true, signal: authoritySignal });
         } catch {
             // Best-effort server cleanup for rejected plans.
         }
@@ -1226,24 +1552,43 @@ export class AudiobookController {
     private failAttempt(attempt: Attempt, kind: AudiobookErrorKind, message: string, retryable: boolean): void {
         if (!attempt.live) return;
         attempt.live = false;
+        attempt.pendingProgress = false;
         attempt.cancelProgressTimer?.();
         attempt.cancelProgressTimer = undefined;
+        this.cancelStartupTimer();
         this.sleepTimer.cancel();
-        if (attempt.hasPlayed && attempt.wholeBookSeconds > 0) {
-            this.retryPositionSeconds = attempt.wholeBookSeconds;
+        const retryTarget = attempt.pendingPart?.wholeBookSeconds ?? attempt.wholeBookSeconds;
+        if (attempt.hasPlayed) {
+            this.retryPositionSeconds = Math.max(0, retryTarget);
         }
         const sessionId = attempt.sessionId;
         const installationId = attempt.installationId;
         const sequence = attempt.sequence;
-        const localSeconds = attempt.partLocalSeconds;
-        const wasPaused = attempt.paused;
+        const localSeconds = attempt.pendingPart?.localSeconds ?? attempt.partLocalSeconds;
+        const wasPaused = attempt.pauseAfterSeek ?? attempt.paused;
+        attempt.pauseAfterSeek = undefined;
         attempt.sessionId = undefined;
-        if (sessionId !== undefined && installationId !== undefined && !attempt.abort.signal.aborted && !this.deps.session.authoritySignal.aborted) {
-            void this.stopOrphanedSession(sessionId, installationId, sequence, localSeconds, wasPaused);
+        if (sessionId !== undefined && installationId !== undefined && !attempt.abort.signal.aborted && !attempt.authoritySignal.aborted) {
+            void this.stopOrphanedSession(sessionId, installationId, sequence, localSeconds, wasPaused, attempt.authoritySignal);
         }
         this.closeTransport();
         attempt.abort.abort();
-        attempt.removeAuthority();
+        const syncInFlight = attempt.syncInFlight;
+        if (syncInFlight !== undefined) {
+            const prior = this.activeTeardown;
+            let chained!: Promise<void>;
+            chained = (async (): Promise<void> => {
+                if (prior !== undefined) await prior;
+                await syncInFlight;
+            })();
+            this.activeTeardown = chained;
+            void chained.finally(() => {
+                if (this.activeTeardown === chained) this.activeTeardown = undefined;
+                attempt.removeAuthority();
+            });
+        } else {
+            attempt.removeAuthority();
+        }
         if (this.attempt === attempt) this.attempt = undefined;
         this.emit({
             phase: "error",

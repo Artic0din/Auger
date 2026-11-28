@@ -2261,7 +2261,9 @@ export class PlaybackController implements PlayerControls {
     private async open(attempt: Attempt, plan: PlaybackPlan): Promise<void> {
         this.closeTransport();
         const transport = this.transport;
-        await this.pending.closing;
+        while (this.pending.closing !== undefined || this.pending.seek !== undefined || this.pending.restore !== undefined) {
+            await (this.pending.closing ?? this.pending.seek ?? this.pending.restore);
+        }
         if (transport !== this.transport || !attempt.live) {
             return;
         }
@@ -2560,9 +2562,9 @@ export class PlaybackController implements PlayerControls {
         this.startupDue = undefined;
         this.cancelStartup?.();
         this.cancelStartup = undefined;
-        const seek = this.pending.seek;
-        if (seek !== undefined) {
-            const closing = seek.then(() => this.closeAVPlay());
+        const pending = [this.pending.seek, this.pending.restore].filter((op): op is Promise<void> => op !== undefined);
+        if (pending.length > 0) {
+            const closing = Promise.all(pending).then(() => this.closeAVPlay());
             this.pending.closing = closing;
             void closing.then(() => {
                 if (this.pending.closing === closing) {
