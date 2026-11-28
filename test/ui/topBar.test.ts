@@ -50,6 +50,16 @@ async function start(tv: Tv, menu: PrimaryMenu | null = null, catalog: FakeCatal
     await homeDetailsRead(tv);
 }
 
+async function noFurtherReads(tv: Tv): Promise<void> {
+    // A request leaves the page before the fake records it, so take the count once a settled turn sends nothing more.
+    await tv.eventually(async () => {
+        const requests = tv.fake.requests.length;
+        await tv.eventually(async () => tv.pendingReplies <= tv.fake.heldReplies, "answers delivered");
+        await afterPaint(tv);
+        return tv.fake.requests.length === requests && tv.pendingReplies <= tv.fake.heldReplies;
+    }, "no further reads");
+}
+
 class ProfileDestinationsCatalog extends FakeRequests {
     constructor() {
         super();
@@ -199,6 +209,7 @@ test("profile menu rows keep Apple's 55 px height, 65 px pitch and 76 px step ac
         await start(tv, null, new ProfileDestinationsCatalog(), true);
         await tv.page.locator('[data-focus="profiles"]').focus();
         await tv.jump(250);
+        await tv.page.locator('.skyline-selector[data-menu-kind="profile"] [data-focus="requests"]').waitFor();
         const layout = await tv.page.locator('.skyline-selector[data-menu-kind="profile"]').evaluate(panel => {
             for (const animation of document.getAnimations()) animation.finish();
             const top = panel.getBoundingClientRect().top;
@@ -348,6 +359,8 @@ test("For You shares Home shelves and its rows end at their last card", async ()
         assert.equal(await tv.page.locator(".browse > .skyline-marquee .skyline-marquee-art:not(.skyline-outgoing) .skyline-hero-backdrop").count(), 1, "For You uses Home's calibrated artwork and tint owner");
         assert.equal(await tv.page.locator(".browse > .skyline-content .skyline-explore").count(), 0, "RecommendationsView passes no onExploreAll");
         assert.equal(await tv.focused(), "movie:m0001");
+        await homeDetailsRead(tv);
+        await noFurtherReads(tv);
         const reads = tv.fake.requests.length;
         await tv.remote(39);
         assert.equal(await tv.focused(), "movie:m0001", "the last card is the row's last stop");
@@ -706,8 +719,9 @@ test("a long authored menu cannot add roots and Search and the avatar remain fix
         assert.equal(await tv.page.locator('.skyline-roots [data-focus^="library:"]').count(), 0);
         // Movies and Series come from the libraries read, which can land after the first draw; four presses reach Calendar only with all five tabs.
         await tv.eventually(async () => await tv.page.locator(".skyline-roots [data-focus]").count() === 5, "the library tabs");
-        await tv.page.locator('[data-focus="home"]').focus();
+        await noFurtherReads(tv);
         const reads = tv.fake.requests.length;
+        await tv.page.locator('[data-focus="home"]').focus();
         for (let i = 0; i < 4; i++) await tv.remote(39);
         assert.equal(await tv.focused(), "calendar");
         const geometry = await tv.page.evaluate(() => {
@@ -743,13 +757,7 @@ test("fifty libraries: the Movies menu shows six rows at a time as Apple does, s
         await tv.jump(250);
         const rows = '.skyline-selector:not(.skyline-flyout) [role="menuitemradio"]';
         assert.equal(await tv.page.locator(rows).count(), household.libraries.filter(library => library.type === "movies").length, "every library is a menu row");
-        // A request leaves the page before the fake records it, so take the count once a settled turn sends nothing more.
-        await tv.eventually(async () => {
-            const requests = tv.fake.requests.length;
-            await tv.eventually(async () => tv.pendingReplies <= tv.fake.heldReplies, "answers delivered");
-            await afterPaint(tv);
-            return tv.fake.requests.length === requests;
-        }, "no further reads");
+        await noFurtherReads(tv);
         const reads = tv.fake.requests.length;
         const geometry = (): Promise<{ bottom: number; visible: number; focusInside: boolean; offCentre: number; scrollTop: number; maximum: number; headerTop: number }> => tv.page.evaluate((selector) => {
             const panel = document.querySelector<HTMLElement>(".skyline-selector:not(.skyline-flyout)");
