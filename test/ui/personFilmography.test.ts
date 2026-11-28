@@ -190,8 +190,6 @@ journey("a refused refresh dispatch is not resent after the sign-in refreshes", 
 });
 
 journey("metadata polling that expands the hero preserves the settled card reveal", async tv => {
-    // Reduced motion scrolls at once, so only normal motion exercises the unchanged-target guard in SkylineScroll.move.
-    await tv.page.emulateMedia({ reducedMotion: "no-preference" });
     await tv.remote(BACK);
     let complete = false;
     let renamed = false;
@@ -208,6 +206,9 @@ journey("metadata polling that expands the hero preserves the settled card revea
     await tv.page.locator('.details-people [data-focus^="credit:7:"]').first().click();
     await grid(tv).first().waitFor();
     await tv.page.locator('[data-focus="filter:video"]').focus();
+    await tv.page.locator(".browse").evaluate(node => { node.scrollTop = 0; });
+    // Reduced motion scrolls at once, so only normal motion exercises the unchanged-target guard in SkylineScroll.move.
+    await tv.page.emulateMedia({ reducedMotion: "no-preference" });
 
     // A poll answer that changes only the name repaints the grid mid-scroll with the same reveal target; the scroll must not restart.
     renamed = true;
