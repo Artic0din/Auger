@@ -28,7 +28,7 @@ All calls go through `src/api/subtitleOperations.ts`. A subtitle's sync key is t
 - A track retimed while it is not shown needs no reread: the server sends retimeable subtitles with `Cache-Control: private, no-cache` and no validator (silo-server `internal/api/handlers/stream.go`), so its next ordinary read fetches the new timing.
 
 Sync rows do not depend on the overlay: the server's timing applies to the file's subtitle whoever draws it.
-A track AVPlay draws itself (an HLS rendition; Original HTTP asks for artifacts, #538) or that is burned in keeps its old timing on screen until the next plan.
+A track AVPlay draws itself (only Original HTTP's fallback when an artifact fails, #538; the client requests no HLS rendition) or that is burned in keeps its old timing on screen until the next plan.
 
 ## Not built
 

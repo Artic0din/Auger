@@ -13,7 +13,8 @@ The app renders server-issued text artifacts at source timestamps plus `timing_o
 The pinned server's `playback_v3_subtitle_route_test.go` confirms VTT for ordinary text tracks and ASS for ASS/SSA tracks.
 VTT/SRT text and ASS dialogue are supported; ASS styles, drawings, animation, layout and font attachments are not preserved.
 For Original HTTP the client claims sidecar text and no native embedded text, so the server sends every embedded text track as an artifact this overlay draws, and Delay and Appearance apply to it (#538). Bitmap rendering, ASS styling and font attachments stay unclaimed.
-HLS keeps its packaged subtitle renditions, which AVPlay draws.
+HLS plans carry text tracks as the same artifacts, so Delay and Appearance apply there too.
+The client sends no HLS subtitle rendition feature: on the S95C, AVPlay froze on a master that lists a rendition per text track and failed to start one with a single rendition ([TV results](hls-define-workarounds.md#tv-results-29-nov-2026)).
 Bitmap and server-burned subtitles cannot be restyled by this overlay.
 
 Samsung's [AVPlay API](https://developer.samsung.com/smarttv/develop/api-references/samsung-product-api-references/avplay-api.html) offers subtitle callbacks and external synchronization but no general font/color/background styling API.

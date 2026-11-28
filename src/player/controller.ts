@@ -34,7 +34,7 @@ import type { NativeSession } from "../session/session.ts";
 import type { AVPlay, AVPlayListener } from "./avplay.ts";
 import { type PendingTransport, transportLock } from "./avplayTransport.ts";
 import { bandwidthReadings, FALLBACK_MAX_AGE_SECONDS, readingsKey } from "./bandwidthReadings.ts";
-import { BUFFERING_QUALITY_FEATURE, clientCapabilities, clientFeatures, HLS_SUBTITLE_RENDITIONS_ALL_FEATURE, hdrPanelFor, playbackContext, probeHdr, probeUhd, resolutionFor, type HdrPanel, type HdrProbe, type PanelResolution } from "./capabilities.ts";
+import { BUFFERING_QUALITY_FEATURE, clientCapabilities, clientFeatures, hdrPanelFor, playbackContext, probeHdr, probeUhd, resolutionFor, type HdrPanel, type HdrProbe, type PanelResolution } from "./capabilities.ts";
 import { BufferingBridge, type BufferingNoticeView, type BufferingPillView } from "./bufferingBridge.ts";
 import { storedSpeed, type BufferingEvidenceTrace, type SpeedEvidence } from "./bufferingEvidence.ts";
 import { AUTO_QUALITY, DEFAULT_BUFFERING_QUALITY_MODE, type BufferingQualityMode, type ReplanRequest } from "./bufferingQuality.ts";
@@ -440,8 +440,6 @@ interface Attempt {
     trace: AttemptTrace;
     batchedSettings: boolean;
     serverFeatures: readonly string[];
-    /** The capability response advertised `hls_subtitle_renditions_all_v1`. */
-    renditionsAll: boolean;
     trickplayEnabled: boolean;
     thumbnails: SeekThumbnails | undefined;
     markers: { readonly fileId: string; segments: readonly TimelineMarker[] } | undefined;
@@ -653,7 +651,6 @@ export class PlaybackController implements PlayerControls {
             trace: newTrace(++this.traceSeq),
             batchedSettings: true,
             serverFeatures: [],
-            renditionsAll: false,
             trickplayEnabled: false,
             thumbnails: undefined,
             markers: undefined,
@@ -1492,7 +1489,7 @@ export class PlaybackController implements PlayerControls {
      * Never a probe or a read: with no reading, on a metered link or on a server without a speed test it is absent.
      */
     private features(attempt: Attempt): readonly string[] {
-        return clientFeatures(attempt.renditionsAll, attempt.bufferingAdvertised);
+        return clientFeatures(attempt.bufferingAdvertised);
     }
 
     /** `ignore` keeps a limit another profile on this TV learned from lowering plans while the viewer has the feature off. */
@@ -1633,7 +1630,6 @@ export class PlaybackController implements PlayerControls {
             attempt.installationId = installationId;
             attempt.profileId = profile.id;
             attempt.trickplayEnabled = capabilities.features.includes("trickplay_v1");
-            attempt.renditionsAll = capabilities.features.includes(HLS_SUBTITLE_RENDITIONS_ALL_FEATURE);
             attempt.bufferingAdvertised = capabilities.features.includes(BUFFERING_QUALITY_FEATURE);
             reachedStage(trace, "capabilities");
             enterStage(trace, "settings");

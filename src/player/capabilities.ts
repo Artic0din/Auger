@@ -149,32 +149,23 @@ function delivery(containers: readonly string[], features: readonly string[], hd
     };
 }
 
-/** The server carries an embedded text track inside an HLS stream instead of a whole-file sidecar. */
-export const HLS_SUBTITLE_RENDITIONS_FEATURE = "hls_subtitle_renditions_v1";
-/** Same rendition on a copy remux, which `hls_subtitle_renditions_v1` does not cover. */
-export const HLS_REMUX_SUBTITLE_RENDITIONS_FEATURE = "hls_remux_subtitle_renditions_v1";
-/**
- * Every embedded text track is a rendition of the stream. Sent only after the server
- * advertises it, then repeated on every replan of that attempt.
- */
-export const HLS_SUBTITLE_RENDITIONS_ALL_FEATURE = "hls_subtitle_renditions_all_v1";
-
 /**
  * Lower quality when buffering. Sent only after the server advertises it, as Apple's start and
  * replans do, because it opts the request into `bandwidth_estimate_source` and `learned_limit`.
  */
 export const BUFFERING_QUALITY_FEATURE = "buffering_quality_v1";
 
-/** Start and replan send the same base features. Renditions-all and buffering quality follow the server. */
-export const CLIENT_FEATURES: readonly string[] = [
-    "playback_plan_v3",
-    "embedded_subtitles_v1",
-    HLS_SUBTITLE_RENDITIONS_FEATURE,
-    HLS_REMUX_SUBTITLE_RENDITIONS_FEATURE,
-];
+/**
+ * Start and replan send the same base features; buffering quality follows the server.
+ * No HLS subtitle rendition feature is sent. AVPlay opens the plan's playlist itself, and on the S95C a master that
+ * lists a rendition per text track stopped the page until the TV closed the app, while one with a single rendition
+ * failed to start. Without the features the server sends HLS text tracks as artifacts, which the app draws.
+ * The player still handles a rendition a server sends unasked, so the features can be requested again.
+ */
+export const CLIENT_FEATURES: readonly string[] = ["playback_plan_v3", "embedded_subtitles_v1"];
 
-export function clientFeatures(renditionsAll: boolean, bufferingQuality = false): readonly string[] {
-    return [...CLIENT_FEATURES, ...(renditionsAll ? [HLS_SUBTITLE_RENDITIONS_ALL_FEATURE] : []), ...(bufferingQuality ? [BUFFERING_QUALITY_FEATURE] : [])];
+export function clientFeatures(bufferingQuality = false): readonly string[] {
+    return bufferingQuality ? [...CLIENT_FEATURES, BUFFERING_QUALITY_FEATURE] : CLIENT_FEATURES;
 }
 
 const H264_FHD: VideoDecodeCapability = { codec: "h264", hardware: true, bit_depths: [8], max_width: 1920, max_height: 1080 };
@@ -242,7 +233,7 @@ export function playbackContext(model: string, appVersion: string, report?: HdrR
     return { ...context, output: { hdr_details: details } };
 }
 
-/** Audiobooks omit subtitle renditions, software decode, paused timeouts, and seek reanchor. */
+/** Audiobooks send the plan feature alone: no embedded subtitles, software decode, paused timeouts, or seek reanchor. */
 export const AUDIOBOOK_CLIENT_FEATURES: readonly string[] = ["playback_plan_v3"];
 
 /** AVPlay documents whole-integer playback speeds (`1×`, `2×`) on progressive HTTP direct streams only. */

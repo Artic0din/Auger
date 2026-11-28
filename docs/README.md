@@ -42,6 +42,7 @@ Read the matching reference before changing its area.
 - [Subtitle sync](playback/subtitle-sync.md) for sync-to-audio jobs and timing reset.
 - [Secondary subtitles](playback/secondary-subtitles.md) for dual-track overlay rendering.
 - [AI subtitles](playback/ai-subtitles.md) for translation and transcription jobs.
+- [`EXT-X-DEFINE` workarounds](playback/hls-define-workarounds.md) for client-side options while long server-built HLS playlists use variable substitution.
 
 ## Features
 

@@ -3540,29 +3540,24 @@ test("a refused rendition report preserves the newer queued sidecar choice", asy
     r.controller.destroy();
 });
 
-test("start advertises embedded subtitle and HLS rendition features, and repeats renditions-all only when the server advertises it", async () => {
-    const plain = await rig();
-    await playMovie(plain, { ...MOVIE, startSeconds: 0 });
-    const features = only(requests(plain.h, "/playback/start")).body?.client_features;
-    assert.ok(Array.isArray(features));
-    for (const token of ["embedded_subtitles_v1", "hls_subtitle_renditions_v1", "hls_remux_subtitle_renditions_v1"]) {
-        assert.equal(features.includes(token), true, token);
+test("start and replans advertise embedded subtitles but no HLS subtitle rendition feature, even when the server offers all of them", async () => {
+    const r = await rig();
+    r.server.extraCapabilityFeatures.push("hls_subtitle_renditions_v1", "hls_remux_subtitle_renditions_v1", "hls_subtitle_renditions_all_v1");
+    await playMovie(r, { ...MOVIE, startSeconds: 0 });
+    const startFeatures = only(requests(r.h, "/playback/start")).body?.client_features;
+    r.controller.selectAudio("file:42:audio:1");
+    await settle(r);
+    const replanFeatures = only(replans(r.h)).client_features;
+    for (const features of [startFeatures, replanFeatures]) {
+        assert.ok(Array.isArray(features));
+        for (const token of ["playback_plan_v3", "embedded_subtitles_v1"]) {
+            assert.equal(features.includes(token), true, token);
+        }
+        for (const token of ["hls_subtitle_renditions_v1", "hls_remux_subtitle_renditions_v1", "hls_subtitle_renditions_all_v1"]) {
+            assert.equal(features.includes(token), false, token);
+        }
     }
-    assert.equal(features.includes("hls_subtitle_renditions_all_v1"), false);
-    plain.controller.destroy();
-
-    const negotiated = await rig();
-    negotiated.server.extraCapabilityFeatures.push("hls_subtitle_renditions_all_v1");
-    await playMovie(negotiated, { ...MOVIE, startSeconds: 0 });
-    const negotiatedFeatures = only(requests(negotiated.h, "/playback/start")).body?.client_features;
-    assert.ok(Array.isArray(negotiatedFeatures));
-    assert.equal(negotiatedFeatures.includes("hls_subtitle_renditions_all_v1"), true);
-    negotiated.controller.selectAudio("file:42:audio:1");
-    await settle(negotiated);
-    const replanFeatures = only(replans(negotiated.h)).client_features;
-    assert.ok(Array.isArray(replanFeatures));
-    assert.equal(replanFeatures.includes("hls_subtitle_renditions_all_v1"), true);
-    negotiated.controller.destroy();
+    r.controller.destroy();
 });
 
 test("a listed HLS subtitle rendition switches in place and a same-stream answer does not reopen", async () => {
