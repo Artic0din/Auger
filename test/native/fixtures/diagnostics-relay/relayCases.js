@@ -115,6 +115,7 @@ const PLAYBACK_CASES = [
       excludes(body, "Direct play", "stale plan summary must not render when this attempt has no plan");
       excludes(body, "### ELI5", "diagnostics issues must not include an ELI5 section");
       check(body.indexOf("### Event sequence") < body.indexOf("### Device"), "events and outcomes render before device context");
+      equal(issue.body.type, "Bug", "issue type");
       equal(JSON.stringify(issue.body.labels), JSON.stringify(["diagnostics", "needs-triage"]), "labels");
     },
   },

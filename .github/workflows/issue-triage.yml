@@ -1,0 +1,33 @@
+name: Issue triage
+
+# Adopted from Artic0din/devkit templates/github/workflows/issue-triage.yml.
+# Needs the CLAUDE_CODE_OAUTH_TOKEN repository secret.
+# See docs/github-intake.md in Artic0din/devkit.
+
+on:
+  issues:
+    types: [opened]
+  workflow_dispatch:
+    inputs:
+      issue-number:
+        description: Issue to triage or retry
+        required: true
+        type: number
+
+permissions: {}
+
+concurrency:
+  group: issue-triage-${{ github.event.issue.number || inputs.issue-number }}
+  cancel-in-progress: false
+
+jobs:
+  triage:
+    permissions:
+      contents: read
+      issues: write
+    uses: Artic0din/devkit/.github/workflows/issue-triage.yml@10511c9527a817a14fada9558df3c367b27f9b30
+    with:
+      agent-scripts-ref: 10511c9527a817a14fada9558df3c367b27f9b30
+      issue-number: ${{ fromJSON(github.event.issue.number || inputs.issue-number) }}
+    secrets:
+      CLAUDE_CODE_OAUTH_TOKEN: ${{ secrets.CLAUDE_CODE_OAUTH_TOKEN }}

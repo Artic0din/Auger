@@ -75,6 +75,7 @@ export const CASES = [
       includes(auto.body.body, "| Slowest API operation (to response headers) | home_sections · 900 ms |", "api latency");
       check(auto.body.body.indexOf("### Navigation before the report") < auto.body.body.indexOf("### Device"), "navigation before device");
       check(!auto.body.body.includes("### ELI5") && !manual.body.body.includes("### ELI5"), "diagnostics issues must not include an ELI5 section");
+      equal(auto.body.type, "Bug", "issue type");
       equal(JSON.stringify(auto.body.labels), JSON.stringify(["diagnostics", "needs-triage"]), "labels");
 
       const shared = fakeGitHub();

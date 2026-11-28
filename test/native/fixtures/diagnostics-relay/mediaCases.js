@@ -115,6 +115,7 @@ export const MEDIA_CASES = [
         `<!-- auger-group:inc1:${incidentGroupId(APP, TV, captionLoadFailed)} -->`,
       ]) includes(autoIssue.body, row, "caption body");
       check(autoIssue.body.indexOf("### Audio and subtitles") < autoIssue.body.indexOf("### Device"), "audio and subtitles render before device context");
+      equal(autoIssue.type, "Bug", "issue type");
       equal(JSON.stringify(autoIssue.labels), JSON.stringify(["diagnostics", "needs-triage"]), "labels");
 
       const shared = fakeGitHub();

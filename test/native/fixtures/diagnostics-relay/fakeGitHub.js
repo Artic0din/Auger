@@ -25,7 +25,7 @@ export function fakeGitHub(seed = []) {
     outbound.push({ method, url, body });
     if (method === "POST" && url === ISSUES_URL) {
       const number = nextNumber++;
-      issues.push({ number, title: body.title, body: body.body, labels: body.labels, comments: 0, commentBodies: [] });
+      issues.push({ number, title: body.title, body: body.body, type: body.type, labels: body.labels, comments: 0, commentBodies: [] });
       return new Response(JSON.stringify({ number }), { status: 201 });
     }
     if (method === "POST" && commentsMatch) {

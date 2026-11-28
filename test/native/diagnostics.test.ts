@@ -424,6 +424,7 @@ test("Cloudflare Worker diagnostics relay validates, redacts, atomically rate-li
     assert.deepEqual(await first.json(), { ok: true, status: "created", issueNumber: 888, reportId: "AUG-888" });
     assert.equal(posted.length, 1);
     assert.equal(posted[0]?.url, "https://api.github.com/repos/Artic0din/Auger-Tizen/issues");
+    assert.equal(posted[0]?.body.type, "Bug");
     assert.deepEqual(posted[0]?.body.labels, ["diagnostics", "needs-triage"]);
     const issueBody = String(posted[0]?.body.body ?? "");
     assert.ok(!issueBody.includes("private.lan"));
@@ -906,4 +907,45 @@ test("readRuntimeEnvironment formats Chromium memory, device RAM, and screen whe
         if (origScreen) Object.defineProperty(globalThis, "screen", origScreen);
         else delete (globalThis as Record<string, unknown>).screen;
     }
+});
+
+test("diagnostics relay retries issue creation without type when GitHub rejects type with HTTP 422", async () => {
+    const posted: Array<Record<string, unknown>> = [];
+    const fakeFetch = async (input: string | URL, init?: RequestInit): Promise<Response> => {
+        const url = String(input);
+        const method = init?.method ?? "GET";
+        if (method === "GET" && url.includes("/issues?state=open&labels=diagnostics")) {
+            return new Response(JSON.stringify([]), { status: 200 });
+        }
+        if (method === "POST" && url.endsWith("/issues")) {
+            const body = JSON.parse(String(init?.body ?? "{}")) as Record<string, unknown>;
+            posted.push(body);
+            if ("type" in body) {
+                return new Response(JSON.stringify({ message: "Validation Failed" }), { status: 422 });
+            }
+            return new Response(JSON.stringify({ number: 999 }), { status: 201 });
+        }
+        return new Response("unexpected", { status: 500 });
+    };
+
+    const res = await handleRequest(
+        new Request("https://auger-diagnostics.plaintextlab.com/report", {
+            method: "POST",
+            headers: { "Content-Type": "application/json", "CF-Connecting-IP": "203.0.113.99" },
+            body: JSON.stringify({ v: 1, app: "0.2.1", tv: "QE65S95C" }),
+        }),
+        {
+            GITHUB_TOKEN: "ghp_test_token",
+            GITHUB_REPO: "Artic0din/Auger-Tizen",
+            DIAGNOSTICS_RATE_LIMITER: { limit: async () => ({ success: true }) },
+        },
+        { fetch: fakeFetch },
+    );
+
+    assert.equal(res.status, 201);
+    assert.deepEqual(await res.json(), { ok: true, status: "created", issueNumber: 999, reportId: "AUG-999" });
+    assert.equal(posted.length, 2);
+    assert.equal(posted[0]?.type, "Bug");
+    assert.equal("type" in (posted[1] ?? {}), false);
+    assert.deepEqual(posted[1]?.labels, ["diagnostics", "needs-triage"]);
 });
