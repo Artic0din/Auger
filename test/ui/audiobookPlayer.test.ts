@@ -7,6 +7,7 @@ import { FakePlayback } from "../native/support/fakePlayback.ts";
 import { FakeSettings } from "../native/support/fakeSettings.ts";
 import { FakeThemes } from "../native/support/fakeThemes.ts";
 import { problem } from "../native/support/fakeSilo.ts";
+import { pressPin } from "./support/pin.ts";
 import { openTv, pauseTvClock, type Tv } from "./support/tv.ts";
 
 const ENTER = 13;
@@ -523,6 +524,15 @@ for (const lang of ["de", "ar"] as const) {
         assert.equal(await screen.locator(".audio-player-transport").evaluate(el => getComputedStyle(el).direction), "ltr");
         if (lang === "de") {
             assert.equal(await screen.locator('[data-key="stop"]').innerText(), "Wiedergabe beenden");
+        } else {
+            await tv.remote(BACK);
+            await tv.page.locator('[data-view="audiobook:audiobook:tide"]').waitFor();
+            await tv.remote(BACK);
+            await tv.page.locator('[data-view="home"]').waitFor();
+            const label = tv.page.locator(".skyline-now-playing-label");
+            await label.waitFor();
+            assert.equal(await label.evaluate(el => getComputedStyle(el).unicodeBidi), "plaintext");
+            assert.equal(await label.evaluate(el => getComputedStyle(el).textAlign), "right");
         }
     }, ({ settings }) => {
         settings.revision = 28;
@@ -677,6 +687,8 @@ playerTest("Back minimizes playing audio with Skyline Now Playing return and Det
     await pill.waitFor();
     assert.equal(await pill.locator(".skyline-now-playing-label").innerText(), "Stormlight Archive 5 - The Tide Owes (5 of 5)");
     assert.equal(await pill.evaluate(el => el.classList.contains("is-paused")), false);
+    assert.equal(await pill.evaluate(el => getComputedStyle(el).backgroundColor), "rgba(255, 255, 255, 0.14)");
+    assert.equal(await pill.evaluate(el => getComputedStyle(el).color), "rgb(255, 255, 255)");
 
     await tv.page.evaluate(() => window.appHarness.avplay.tick(4200 * 1000));
     await pill.click();
@@ -699,20 +711,32 @@ playerTest("minimized hardware media keys toggle play/pause keeping bar focus, s
     await nowPlaying.waitFor();
     await nowPlaying.focus();
 
+    const writesBeforeActions = catalog.progressWrites.length;
     await tv.remote(PLAY_PAUSE);
     await tv.eventually(() => tv.page.evaluate(() => window.appHarness.avplay.state === "PAUSED"), "paused while minimized");
     assert.equal(await nowPlaying.evaluate(el => el.classList.contains("is-paused")), true);
     assert.equal(await tv.focused(), "audiobook-now-playing", "pause update keeps focus on Now Playing");
+    await tv.eventually(
+        async () => catalog.progressWrites.length === writesBeforeActions + 1 && tv.pendingReplies === 0,
+        "pause sync write landed",
+    );
 
     await tv.remote(PLAY_PAUSE);
     await tv.eventually(() => tv.page.evaluate(() => window.appHarness.avplay.state === "PLAYING"), "resumed while minimized");
     assert.equal(await nowPlaying.evaluate(el => el.classList.contains("is-paused")), false);
     assert.equal(await tv.focused(), "audiobook-now-playing");
+    await tv.eventually(
+        async () => catalog.progressWrites.length === writesBeforeActions + 2 && tv.pendingReplies === 0,
+        "resume sync write landed",
+    );
 
     await tv.remote(FAST_FORWARD);
     await tv.eventually(() => tv.page.evaluate(() => window.appHarness.avplay.calls.some(call => call.startsWith("seekTo "))), "minimized skip seek");
     await tv.page.evaluate(() => window.appHarness.avplay.finishSeek());
-    await tv.eventually(async () => catalog.progressWrites.length === 3, "pause, resume, and seek sync writes");
+    await tv.eventually(
+        async () => catalog.progressWrites.length === writesBeforeActions + 3 && tv.pendingReplies === 0,
+        "pause, resume, and seek sync writes",
+    );
 
     const stopsBefore = tv.fake.requests.filter(req => req.method === "DELETE" && req.path.startsWith("/playback/")).length;
     const writesBefore = catalog.progressWrites.length;
@@ -818,11 +842,22 @@ playerTest("minimized book completing while Settings is open leaves Settings int
         await tv.jump(1500);
         assert.equal(themes.grants.length, 0);
 
-        // With an audiobook progress write held, video awaits audiobook DELETE + surface cleanup before /playback/start.
+        // With an audiobook progress write held and /sync/progress failing on final teardown, video still launches cleanly after audiobook drain.
+        await tv.eventually(async () => tv.pendingReplies === 0, "prior replies settled before held periodic write");
+        const progressBeforeJump = tv.fake.requests.filter(req => req.path === `/playback/${audioSessionId}/progress`).length;
+        const syncsBeforeJump = tv.fake.requests.filter(req => req.path === "/sync/progress").length;
         const heldProgress = tv.fake.hold(`/playback/${audioSessionId}/progress`);
         await tv.jump(10_000);
-        await tv.eventually(async () => tv.fake.requests.some(req => req.path === `/playback/${audioSessionId}/progress`), "audiobook progress in flight");
+        await tv.eventually(
+            async () =>
+                tv.fake.heldReplies > 0
+                && tv.fake.requests.filter(req => req.path === `/playback/${audioSessionId}/progress`).length > progressBeforeJump
+                && tv.fake.requests.filter(req => req.path === "/sync/progress").length === syncsBeforeJump + 1
+                && tv.pendingReplies === tv.fake.heldReplies,
+            "held 10s progress write active and periodic sync landed",
+        );
 
+        tv.fake.scripted.set("/sync/progress", [problem(500, "internal_error", "Sync unavailable")]);
         const mark = tv.fake.requests.length;
         const startsBeforeVideo = tv.fake.requests.filter(req => req.method === "POST" && req.path === "/playback/start").length;
         await tv.page.locator('[data-view="item:movie:m0001"] [data-focus="play"]').click();
@@ -860,6 +895,34 @@ playerTest("minimized book completing while Settings is open leaves Settings int
     });
 }
 
+playerTest("selecting a cross-part chapter on a paused minimized audiobook resumes playback on the new part", async ({ tv }) => {
+    await tv.page.locator('[data-section="shelf"] [data-focus="audiobook:multipart"]').click();
+    await tv.page.locator('[data-view="audiobook:audiobook:multipart"] [data-focus="play"]').waitFor();
+    await tv.page.keyboard.press("Enter");
+    await prepareAudio(tv, true);
+
+    await tv.remote(PLAY_PAUSE);
+    await tv.eventually(() => tv.page.evaluate(() => window.appHarness.avplay.state === "PAUSED"), "paused Part 1");
+    await tv.remote(BACK);
+    await tv.page.locator('[data-view="audiobook:audiobook:multipart"]').waitFor();
+
+    const callsBeforeSwitch = await tv.page.evaluate(() => window.appHarness.avplay.calls.length);
+    await tv.page.locator('[data-view="audiobook:audiobook:multipart"] [data-focus="chapters"]').click();
+    await tv.page.locator('[data-view="audiobook:audiobook:multipart:chapters"] .audiobook-chapter').nth(2).click();
+    await prepareAudio(tv, true);
+
+    const screen = tv.page.locator('[data-screen="audiobook-player"]');
+    assert.equal(await tv.page.evaluate(() => window.appHarness.avplay.state), "PLAYING");
+    assert.equal(await screen.locator(".audio-player-elapsed").innerText(), "20:00");
+    assert.match(await screen.locator(".audio-player-chapter").innerText(), /Part 2 Arrival/);
+    const switchCalls = await tv.page.evaluate(idx => window.appHarness.avplay.calls.slice(idx), callsBeforeSwitch);
+    assert.equal(switchCalls.filter(c => c === "play").length, 1);
+}, ({ catalog }) => {
+    catalog.add({ id: "audiobook:multipart", title: "Way of Kings", year: 2023, type: "audiobook", libraryId: "14" });
+    catalog.households.get("p-owner")?.sections.find(s => s.id === "shelf")?.items.push("audiobook:multipart");
+    catalog.progress.set("audiobook:multipart", 300);
+});
+
 playerTest("switching profile while audiobook is minimized tears down audio with zero cross-profile syncProgress", async ({ tv, catalog }) => {
     await tv.page.locator('[data-section="shelf"] [data-focus="audiobook:tide"]').click();
     await tv.page.locator('[data-view="audiobook:audiobook:tide"] [data-focus="play"]').waitFor();
@@ -872,6 +935,8 @@ playerTest("switching profile while audiobook is minimized tears down audio with
     await tv.page.locator(".skyline-now-playing").waitFor();
 
     await tv.page.evaluate(() => window.appHarness.avplay.tick(4500 * 1000));
+    await tv.jump(10_000);
+    await tv.eventually(async () => catalog.progressWrites.length > 0, "observed p-owner progress write");
 
     await tv.page.locator('[data-focus="profiles"]').click();
     await tv.page.locator('[data-focus="switch-profile"]').click();
@@ -882,6 +947,58 @@ playerTest("switching profile while audiobook is minimized tears down audio with
     assert.equal(await tv.page.evaluate(() => window.appHarness.avplay.calls.includes("close")), true);
     assert.equal(catalog.progressWrites.every(write => write.profileId === "p-owner"), true);
     const writesAtSwitch = catalog.progressWrites.length;
+
+    await tv.page.locator('[data-focus="profile:p-kid"]').click();
+    await pressPin(tv.page, "2468");
+    await tv.page.locator('[data-view="home"]').waitFor();
     await tv.jump(15000);
     assert.equal(catalog.progressWrites.length, writesAtSwitch);
+    assert.equal(catalog.progressWrites.filter(write => write.profileId === "p-kid").length, 0);
+});
+
+playerTest("video playback waits for unsettled audiobook seek close even after minimized audiobook emits idle", async ({ tv }) => {
+    await tv.page.locator('[data-section="shelf"] [data-focus="audiobook:tide"]').click();
+    await tv.page.locator('[data-view="audiobook:audiobook:tide"] [data-focus="play"]').waitFor();
+    await tv.page.keyboard.press("Enter");
+    await prepareAudio(tv, true);
+
+    await tv.remote(BACK);
+    await tv.page.locator('[data-view="audiobook:audiobook:tide"]').waitFor();
+    await tv.remote(BACK);
+    await tv.page.locator('[data-view="home"] [data-section="recently_added"] [data-focus="movie:m0001"]').waitFor();
+    await tv.page.locator('[data-section="recently_added"] [data-focus="movie:m0001"]').first().click();
+    await tv.page.locator('[data-view="item:movie:m0001"] [data-focus="play"]').waitFor();
+
+    // Queue an unsettled seek while minimized, then stop playback so controller emits idle while AVPlay close waits for finishSeek().
+    await tv.remote(FAST_FORWARD);
+    const deletesBefore = tv.fake.requests.filter(req => req.method === "DELETE" && req.path.startsWith("/playback/")).length;
+    const syncsBefore = tv.fake.requests.filter(req => req.method === "POST" && req.path === "/sync/progress").length;
+    await tv.remote(STOP);
+    await tv.eventually(
+        async () =>
+            tv.fake.requests.filter(req => req.method === "DELETE" && req.path.startsWith("/playback/")).length === deletesBefore + 1
+            && tv.fake.requests.filter(req => req.method === "POST" && req.path === "/sync/progress").length === syncsBefore + 1
+            && tv.pendingReplies === 0,
+        "minimized stop network requests landed",
+    );
+    await tv.page.evaluate(() => Promise.resolve().then(() => Promise.resolve()));
+    assert.equal(await tv.page.locator('.audio-avplay-surface object[type="application/avplayer"]').count(), 1);
+
+    const startsBeforeVideo = tv.fake.requests.filter(req => req.method === "POST" && req.path === "/playback/start").length;
+    await tv.page.locator('[data-view="item:movie:m0001"] [data-focus="play"]').click();
+    await tv.jump(50);
+    assert.equal(tv.fake.requests.filter(req => req.method === "POST" && req.path === "/playback/start").length, startsBeforeVideo);
+    assert.equal(await tv.page.locator('[data-screen="player"]').count(), 0);
+    assert.equal(await tv.page.evaluate(() => document.querySelectorAll('object[type="application/avplayer"]').length), 1);
+
+    await tv.page.evaluate(() => window.appHarness.avplay.finishSeek());
+    await tv.eventually(() => tv.page.evaluate(() => window.appHarness.avplay.pendingPrepares > 0), "video prepare after audiobook seek settle");
+    await tv.page.evaluate(() => {
+        const avplay = window.appHarness.avplay;
+        avplay.finishPrepare();
+        if (avplay.calls[avplay.calls.length - 1]?.startsWith("seekTo") === true) avplay.finishSeek();
+    });
+    await tv.page.locator('[data-screen="player"]').waitFor();
+    assert.equal(await tv.page.locator('.audio-avplay-surface').count(), 0);
+    assert.equal(await tv.page.evaluate(() => document.querySelectorAll('object[type="application/avplayer"]').length), 1);
 });

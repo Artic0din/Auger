@@ -2640,8 +2640,8 @@ export function mountBrowse(root: HTMLElement, options: BrowseOptions): Browse {
         setAudiobookNowPlaying(state) {
             if (torn) return;
             const focused = host.focused();
-            if (shell.setNowPlaying(state) && !playing && top() !== undefined) {
-                render(state === undefined && focused?.zone === "nav" && focused.key === "audiobook-now-playing" ? { zone: "nav", key: "profiles" } : focused);
+            if (shell.setNowPlaying(state) && !playing && settingsScreen === undefined && lastRoot !== undefined && top() === lastRoot.route) {
+                refreshChrome(state === undefined && focused?.zone === "nav" && focused.key === "audiobook-now-playing" ? { zone: "nav", key: "profiles" } : focused);
             }
         },
         enterAudiobookOverlay(onOpen) {

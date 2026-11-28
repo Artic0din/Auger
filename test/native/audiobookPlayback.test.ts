@@ -2072,3 +2072,25 @@ test("restarting the same book stops the old server session without overwriting 
     assert.equal(startRequests(r).at(-1)?.body?.start_position, 0);
     r.controller.destroy();
 });
+
+test("resuming via seekTo + play from a paused book across part boundaries starts the target part playing", async () => {
+    const r = await setup();
+    r.catalog.progress.set("audiobook:multipart", 300);
+    void r.controller.start({ contentId: "audiobook:multipart" });
+    await settlePlay(r);
+
+    r.controller.pause();
+    await r.h.clock.advance(0);
+    assert.equal(playingView(r).phase, "paused");
+    assert.equal(r.avplay.state, "PAUSED");
+
+    r.controller.seekTo(1500);
+    r.controller.play();
+    await settlePlay(r);
+
+    assert.equal(playingView(r).phase, "playing");
+    assert.equal(playingView(r).partIndex, 1);
+    assert.equal(playingView(r).position, 1500);
+    assert.equal(r.avplay.state, "PLAYING");
+    await r.controller.destroy();
+});

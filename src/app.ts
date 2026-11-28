@@ -365,7 +365,11 @@ export function mountApp(root: HTMLElement, options: AppOptions): SiloApp {
             }
         };
         if (audiobookHost?.isActive) {
-            await audiobookHost.stop();
+            try {
+                await audiobookHost.stop();
+            } catch {
+                // Best-effort audiobook teardown must not block video playback.
+            }
             if (destroyed || active.signal.aborted || browse !== content || gen !== videoStartGen) return;
         }
         player = options.player === undefined

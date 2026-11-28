@@ -82,7 +82,10 @@ export class AudiobookHost {
     }
 
     get isActive(): boolean {
-        return this.controller.view.phase !== "idle";
+        return this.controller.view.phase !== "idle"
+            || this.controller.transportBusy
+            || this.stopInFlight !== undefined
+            || this.surface !== undefined;
     }
 
     get isVisible(): boolean {

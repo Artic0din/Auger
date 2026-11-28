@@ -7,7 +7,7 @@
 .requests-title-primary, .requests-title-secondary, .requests-synopsis, .watch-party-overview, .watch-party-choice-overview, .watch-party-hero-title,
 .watch-party-seat-name, .watch-party-candidate-title, .watch-party-candidate-line, .watch-party-choice-title, .watch-party-episodes-title, .watch-party-episode-title,
 .skyline-menu-label, .skyline-profile-title, .settings-profile-name, .collection-group-title, .collection-detail-title,
-.audiobook-title, .audiobook-series, .audiobook-credits, .audiobook-state-line, .audiobook-about, .audiobook-passage, .audiobook-fact-value, .audiobook-row-title, .audiobook-section-title, .audiobook-description-title, .audiobook-description-series):where(:not([dir="ltr"] *)),
+.audiobook-title, .audiobook-series, .audiobook-credits, .audiobook-state-line, .audiobook-about, .audiobook-passage, .audiobook-fact-value, .audiobook-row-title, .audiobook-section-title, .audiobook-description-title, .audiobook-description-series, .skyline-now-playing-label):where(:not([dir="ltr"] *)),
 :where(:root[dir="rtl"] .details-person-hero) .browse-title:where(:not([dir="ltr"] *)) { unicode-bidi: plaintext; text-align: right; }
 /* Native browse screens, 1920x1080, targeting Tizen 8.0's Chromium 108 engine. */
 .browse.section-catalog { padding: 56px 80px; font-weight: 400; }
@@ -963,10 +963,6 @@
 .browse-nav .skyline-tabs .browse-button { margin: 0; }
 .browse-nav .skyline-tabs .skyline-search { flex-shrink: 0; margin: 0; }
 .skyline-tools { margin-inline-start: auto; display: flex; align-items: center; }
-.browse-nav .skyline-now-playing { display: inline-flex; align-items: center; gap: 10px; max-width: 280px; margin-inline: 16px 0; padding: 0 20px; background: rgba(255,255,255,.14); border-color: rgba(255,255,255,.12); color: #fff; }
-.browse-nav .skyline-now-playing.is-paused { opacity: .78; }
-.browse-nav .skyline-now-playing svg { width: 22px; height: 22px; flex-shrink: 0; }
-.skyline-now-playing-label { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 /* Apple's 29 px tab inset includes the capsule edge. Labels are 26 pt semibold, white at 62% resting and white selected
    (SiloTheme.swift:189, TVTopMenuBar.swift:440,508-512). TVTopMenuCapsuleChrome springs on focus,
    spring(response: 0.35, dampingFraction: 0.85), which this curve follows within 1.6%; a selection change alone eases
@@ -976,6 +972,10 @@
 .browse-nav .browse-button[aria-current="page"], .browse-nav .browse-button[aria-expanded="true"] { background: rgba(255,255,255,.14); border-color: rgba(255,255,255,.1); color: #fff; }
 .browse .browse-button:focus { background: #fff; color: #000; box-shadow: none; border-color: #fff; }
 .browse-nav .skyline-search, .browse-nav .skyline-profile { position: relative; width: 58px; height: 58px; padding: 0; margin-inline: 22px 0; }
+.browse-nav .skyline-now-playing { display: inline-flex; align-items: center; gap: 10px; max-width: 280px; margin-inline: 16px 0; padding: 0 20px; background: rgba(255,255,255,.14); border-color: rgba(255,255,255,.12); color: #fff; }
+.browse-nav .skyline-now-playing.is-paused { opacity: .78; }
+.browse-nav .skyline-now-playing svg { width: 22px; height: 22px; flex-shrink: 0; }
+.skyline-now-playing-label { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 /* Measured from Apple's 27 pt semibold magnifyingglass: 22 px ring, 3 px stroke, 4 px rounded handle. */
 .skyline-search::before { content: ""; position: absolute; box-sizing: border-box; width: 22px; height: 22px; border: 3px solid currentColor; border-radius: 50%; top: 15px; left: 16px; }
 .skyline-search::after { content: ""; position: absolute; width: 11.5px; height: 4px; border-radius: 2px; background: currentColor; transform: rotate(45deg); left: 31.75px; top: 34.5px; }
