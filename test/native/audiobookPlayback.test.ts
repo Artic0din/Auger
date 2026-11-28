@@ -995,15 +995,22 @@ test("concurrent session progress coalesces and standby fallback clears inFlight
 
 test("mid-book failure at position 0 preserves start_position=0 on retry", async () => {
     const r = await setup();
-    void r.controller.start({ contentId: "audiobook:tide", restart: true });
+    void r.controller.start({ contentId: "audiobook:tide" });
     await settlePlay(r);
+    // Reject sync writes so server progress stays nonzero (4112 s) when reaching position 0.
+    r.catalog.syncProgressReply = problem(500, "internal", "Offline");
+    r.controller.seekTo(0);
+    r.avplay.finishSeek();
+    await r.h.clock.advance(0);
     assert.equal(playingView(r).position, 0);
+    assert.equal(r.catalog.progress.get("audiobook:tide"), 4112);
 
     r.avplay.listener?.onerror("PLAYER_ERROR_CONNECTION_FAILED");
     await r.h.clock.advance(0);
     const err = r.views.at(-1);
     assert.ok(err?.phase === "error" && err.retryable);
 
+    r.catalog.syncProgressReply = undefined;
     r.controller.retry();
     await settlePlay(r);
     assert.equal(startRequests(r).at(-1)?.body?.start_position, 0);
@@ -1131,5 +1138,152 @@ test("same-book Start Over drains in-flight sync and drops queued pre-restart wr
     await r.h.clock.advance(0);
     assert.equal(r.catalog.progressWrites.some(w => w.positionMs === 4_300_000), false);
     assert.equal(r.catalog.progress.get("audiobook:tide"), 0);
+    r.controller.destroy();
+});
+
+test("stale prepareAsync error never cancels replacement startup timeout", async () => {
+    const r = await setup();
+    void r.controller.start({ contentId: "audiobook:dune" });
+    await r.h.clock.advance(0);
+    assert.equal(r.avplay.pendingPrepares, 1);
+
+    void r.controller.start({ contentId: "audiobook:tide" });
+    await r.h.clock.advance(0);
+    assert.equal(r.avplay.pendingPrepares, 2);
+
+    // Older attempt's prepare fails while the newer attempt is preparing: newer 15 s timeout must still fire.
+    r.avplay.finishPrepare("PLAYER_ERROR_CONNECTION_FAILED");
+    await r.h.clock.advance(0);
+    assert.equal(r.views.at(-1)?.phase, "loading");
+
+    await r.h.clock.advance(15_000);
+    const err = r.views.at(-1);
+    assert.ok(err?.phase === "error" && err.retryable);
+    r.controller.destroy();
+});
+
+test("stopping while auto-advance switchPart is retiring Part 1 sends only one DELETE at part duration", async () => {
+    const r = await setup();
+    r.catalog.progress.set("audiobook:multipart", 1100);
+    void r.controller.start({ contentId: "audiobook:multipart" });
+    await settlePlay(r);
+    const part1Session = [...r.playback.sessions.keys()][0];
+    assert.ok(part1Session !== undefined);
+
+    const heldStop = r.h.fake.hold(`/playback/${part1Session}`);
+    r.avplay.listener?.onstreamcompleted();
+    await r.h.clock.advance(0);
+    let stopResolved = false;
+    const stopping = r.controller.stop().then(() => { stopResolved = true; });
+    await r.h.clock.advance(0);
+    assert.equal(r.h.fake.heldReplies, 1, "stop() must not abort held retiring DELETE");
+    assert.equal(stopResolved, false, "stop() waits for retiring DELETE to settle");
+    heldStop.release();
+    await stopping;
+    assert.equal(stopResolved, true);
+
+    const part1Stops = stopRequests(r).filter(req => req.path === `/playback/${part1Session}`);
+    assert.equal(part1Stops.length, 1);
+    assert.equal(part1Stops[0]?.body?.position, 1200);
+    r.controller.destroy();
+
+    // Even when a periodic /progress is in flight during natural auto-advance, stop() still waits for and sends DELETE.
+    const r2 = await setup();
+    r2.catalog.progress.set("audiobook:multipart", 1100);
+    void r2.controller.start({ contentId: "audiobook:multipart" });
+    await settlePlay(r2);
+    const s1 = [...r2.playback.sessions.keys()][0];
+    assert.ok(s1 !== undefined);
+    const heldProgress = r2.h.fake.hold(`/playback/${s1}/progress`);
+    await r2.h.clock.advance(10_000);
+    r2.avplay.listener?.onstreamcompleted();
+    await r2.h.clock.advance(0);
+    const stopping2 = r2.controller.stop();
+    await r2.h.clock.advance(0);
+    assert.equal(stopRequests(r2).filter(req => req.path === `/playback/${s1}`).length, 0);
+    heldProgress.release();
+    await stopping2;
+    const s1Stops = stopRequests(r2).filter(req => req.path === `/playback/${s1}`);
+    assert.equal(s1Stops.length, 1);
+    assert.equal(s1Stops[0]?.body?.position, 1200);
+    r2.controller.destroy();
+});
+
+test("sleep timer expiring while suspended mid-seek still pauses AVPlay after restore and finishSeek", async () => {
+    const r = await setup();
+    void r.controller.start({ contentId: "audiobook:dune" });
+    await settlePlay(r);
+    r.controller.setSleepTimer(15);
+    await r.h.clock.advance(895 * 1000);
+
+    r.controller.seekTo(120);
+    r.controller.suspend();
+    await r.h.clock.advance(5 * 1000);
+    void r.controller.restore();
+    r.avplay.finishSeek();
+    await r.h.clock.advance(0);
+
+    assert.equal(r.avplay.state, "PAUSED");
+    assert.equal(playingView(r).phase, "paused");
+    r.controller.destroy();
+
+    // Also when a second seek is queued while suspended and finishSeek runs before restore().
+    const r2 = await setup();
+    void r2.controller.start({ contentId: "audiobook:dune" });
+    await settlePlay(r2);
+    r2.controller.setSleepTimer(15);
+    await r2.h.clock.advance(895 * 1000);
+    r2.controller.seekTo(120);
+    r2.controller.seekTo(240);
+    r2.controller.suspend();
+    await r2.h.clock.advance(5 * 1000);
+    r2.avplay.finishSeek();
+    await r2.h.clock.advance(0);
+    assert.ok(r2.avplay.calls.includes("suspend"));
+
+    void r2.controller.restore();
+    await r2.h.clock.advance(0);
+    r2.avplay.finishRestore();
+    await r2.h.clock.advance(0);
+    assert.equal(r2.avplay.state, "PAUSED");
+    r2.avplay.finishSeek();
+    await r2.h.clock.advance(0);
+    assert.equal(r2.avplay.state, "PAUSED");
+    assert.equal(playingView(r2).phase, "paused");
+    assert.equal(playingView(r2).position, 240);
+    r2.controller.destroy();
+});
+
+test("setPlaybackRate changed while seeking is applied when seekTo settles", async () => {
+    const r = await setup();
+    void r.controller.start({ contentId: "audiobook:dune" });
+    await settlePlay(r);
+
+    const speedCallsBefore = r.avplay.calls.filter(c => c === "setSpeed 2").length;
+    r.controller.seekTo(120);
+    r.controller.setPlaybackRate(2);
+    assert.equal(r.avplay.calls.filter(c => c === "setSpeed 2").length, speedCallsBefore);
+
+    r.avplay.finishSeek();
+    await r.h.clock.advance(0);
+    assert.equal(playingView(r).playbackRate, 2);
+    assert.equal(r.avplay.calls.filter(c => c === "setSpeed 2").length, speedCallsBefore + 1);
+    r.controller.destroy();
+});
+
+test("voluntary cancel while /playback/start is held retires allocated server session cleanly", async () => {
+    const r = await setup();
+    const heldStart = r.h.fake.hold("/playback/start");
+    void r.controller.start({ contentId: "audiobook:dune" });
+    await r.h.clock.advance(0);
+
+    const stopsBefore = stopRequests(r).length;
+    const urlsBefore = r.avplay.urls.length;
+    await r.controller.stop();
+    heldStart.release();
+    await r.h.clock.advance(0);
+
+    assert.equal(r.avplay.urls.length, urlsBefore);
+    assert.equal(stopRequests(r).length, stopsBefore + 1);
     r.controller.destroy();
 });

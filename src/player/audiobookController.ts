@@ -147,12 +147,14 @@ interface Attempt {
     pendingProgress: boolean;
     buffering: boolean;
     playbackRate: number;
+    rateDirty: boolean;
     seekIntervals: { readonly backward: number; readonly forward: number };
     pendingSeekTarget: number | undefined;
     queuedSeekTarget: number | undefined;
     seekSequence: number;
     sequence: number;
     inFlightProgress: Promise<void> | undefined;
+    stopInFlight: Promise<void> | undefined;
     syncInFlight: Promise<void> | undefined;
     pendingSyncPosition: number | undefined;
     cancelProgressTimer: (() => void) | undefined;
@@ -324,16 +326,25 @@ export class AudiobookController {
     private setPaused(paused: boolean): void {
         const attempt = this.attempt;
         if (attempt === undefined || !attempt.live || (!attempt.partStarted && !attempt.hasPlayed)) return;
-        if (!attempt.partStarted || attempt.hidden || attempt.restoring || this.pending.restore !== undefined || attempt.deferredOpen || attempt.suspended || attempt.suspendedReady) {
-            if (attempt.paused === paused) return;
-            attempt.paused = paused;
-            if (attempt.plan !== undefined && attempt.partStarted) this.emitPlayback(attempt);
-            return;
-        }
-        if (this.pending.seek !== undefined) {
+        if (
+            attempt.partStarted
+            && this.pending.seek !== undefined
+            && !attempt.restoring
+            && this.pending.restore === undefined
+            && !attempt.deferredOpen
+            && !attempt.suspended
+            && !attempt.suspendedReady
+        ) {
             if ((attempt.pauseAfterSeek ?? attempt.paused) === paused) return;
             attempt.pauseAfterSeek = paused;
             this.emitPlayback(attempt);
+            return;
+        }
+        if (!attempt.partStarted || attempt.hidden || attempt.restoring || this.pending.restore !== undefined || attempt.deferredOpen || attempt.suspended || attempt.suspendedReady) {
+            attempt.pauseAfterSeek = undefined;
+            if (attempt.paused === paused) return;
+            attempt.paused = paused;
+            if (attempt.plan !== undefined && attempt.partStarted) this.emitPlayback(attempt);
             return;
         }
         if (attempt.paused === paused) return;
@@ -349,6 +360,7 @@ export class AudiobookController {
                 if (state === "PLAYING") this.deps.avplay.pause();
             } else {
                 if (state === "PAUSED" || state === "READY") this.deps.avplay.play();
+                attempt.rateDirty = false;
                 this.applySpeedSafe(attempt);
             }
             attempt.paused = paused;
@@ -429,7 +441,10 @@ export class AudiobookController {
         if (!allowed.includes(rate)) return;
         attempt.playbackRate = rate;
         if (attempt.partStarted && !attempt.paused && this.pending.seek === undefined && this.pending.restore === undefined && !attempt.hidden && !attempt.restoring) {
+            attempt.rateDirty = false;
             this.applySpeedSafe(attempt);
+        } else {
+            attempt.rateDirty = true;
         }
         this.emitPlayback(attempt);
     }
@@ -557,19 +572,15 @@ export class AudiobookController {
                     return;
                 }
             }
-            // Fallback: retire the prior server session and reopen with a fresh attempt ID.
+            // Fallback: claim sole ownership of retiring the prior session, then reopen with a fresh attempt ID.
             const oldSessionId = attempt.sessionId;
             const installationId = attempt.installationId;
-            if (oldSessionId !== undefined && installationId !== undefined) {
-                try {
-                    await this.stopServerSession(attempt, oldSessionId, installationId, localSeconds, attempt.paused);
-                } finally {
-                    if (attempt.sessionId === oldSessionId) attempt.sessionId = undefined;
-                }
-                if (!attempt.live || this.attempt !== attempt || attempt.abort.signal.aborted || attempt.authoritySignal.aborted || generation !== this.startGen || attempt.restoreGen !== restoreGen || attempt.hidden) return;
-            }
             attempt.sessionId = undefined;
             attempt.pendingProgress = false;
+            if (oldSessionId !== undefined && installationId !== undefined) {
+                await this.stopServerSession(attempt, oldSessionId, installationId, localSeconds, attempt.paused);
+                if (!attempt.live || this.attempt !== attempt || attempt.abort.signal.aborted || attempt.authoritySignal.aborted || generation !== this.startGen || attempt.restoreGen !== restoreGen || attempt.hidden) return;
+            }
             attempt.attemptId = this.newId();
             if (attempt.restoreGen === restoreGen) attempt.restoring = false;
             await this.openPart(attempt, partIndex, localSeconds, generation);
@@ -654,12 +665,14 @@ export class AudiobookController {
             pendingProgress: false,
             buffering: false,
             playbackRate: 1,
+            rateDirty: false,
             seekIntervals: DEFAULT_SEEK_INTERVALS,
             pendingSeekTarget: undefined,
             queuedSeekTarget: undefined,
             seekSequence: 0,
             sequence: 0,
             inFlightProgress: undefined,
+            stopInFlight: undefined,
             syncInFlight: undefined,
             pendingSyncPosition: undefined,
             cancelProgressTimer: undefined,
@@ -739,9 +752,10 @@ export class AudiobookController {
         else attempt.pendingSyncPosition = undefined;
         attempt.pendingProgress = false;
         const pendingSync = attempt.syncInFlight;
+        const pendingStop = attempt.stopInFlight;
         this.closeTransport();
 
-        if (!canSyncBook && !canStopSession && pendingSync === undefined) {
+        if (!canSyncBook && !canStopSession && pendingSync === undefined && pendingStop === undefined) {
             attempt.abort.abort();
             attempt.removeAuthority();
             return;
@@ -754,6 +768,8 @@ export class AudiobookController {
         }
         if (canStopSession && sessionId !== undefined && installationId !== undefined) {
             tasks.push(this.stopServerSession(attempt, sessionId, installationId, finalLocalSeconds, wasPaused));
+        } else if (pendingStop !== undefined) {
+            tasks.push(pendingStop);
         }
         await Promise.all(tasks);
         attempt.abort.abort();
@@ -861,8 +877,13 @@ export class AudiobookController {
                 client_capabilities: AUDIOBOOK_CAPABILITIES,
                 client_playback_context: audiobookPlaybackContext(this.deps.device.model, this.deps.device.appVersion),
             });
-            const decision = await this.deps.session.call({ ...spec, profileScoped: true, signal: attempt.abort.signal });
-            if (!attempt.live || generation !== this.startGen) return;
+            const decision = await this.deps.session.call({ ...spec, profileScoped: true, signal: attempt.authoritySignal });
+            if (!attempt.live || generation !== this.startGen || attempt.abort.signal.aborted) {
+                if (decision.outcome === "playable" && !attempt.authoritySignal.aborted) {
+                    void this.stopOrphanedSession(decision.sessionId, installationId, attempt.sequence, localSeconds, attempt.paused, attempt.authoritySignal);
+                }
+                return;
+            }
             if (decision.outcome === "adaptation_unavailable") {
                 this.failAttempt(attempt, "unavailable", decision.terminal.message || translate("error.capability_unsupported"), decision.terminal.retryable);
                 return;
@@ -947,8 +968,8 @@ export class AudiobookController {
             avplay.prepareAsync(
                 () => this.onPrepared(attempt, plan, partIndex, transport, generation),
                 () => {
-                    this.cancelStartupTimer();
                     if (transport === this.transport && attempt.live && generation === this.startGen) {
+                        this.cancelStartupTimer();
                         this.failAttempt(attempt, "playback_failed", translate("player.error.cantPlayTitle"), true);
                     }
                 },
@@ -1032,8 +1053,8 @@ export class AudiobookController {
             return;
         }
         this.runSeek(startMs, finishStart, () => {
-            this.cancelStartupTimer();
             if (transport === this.transport && attempt.live && generation === this.startGen) {
+                this.cancelStartupTimer();
                 this.failAttempt(attempt, "playback_failed", translate("player.error.cantPlayTitle"), true);
             }
         });
@@ -1106,7 +1127,8 @@ export class AudiobookController {
                     attempt.pauseAfterSeek = undefined;
                     return;
                 }
-                if (attempt.queuedSeekTarget !== undefined && (!moved || attempt.seekSequence !== seq)) {
+                const transportBusyOrHidden = attempt.hidden || attempt.restoring || this.pending.restore !== undefined || attempt.suspended || attempt.suspendedReady || attempt.deferredOpen;
+                if (!transportBusyOrHidden && attempt.queuedSeekTarget !== undefined && (!moved || attempt.seekSequence !== seq)) {
                     const queued = attempt.queuedSeekTarget;
                     attempt.queuedSeekTarget = undefined;
                     if (moved) {
@@ -1120,20 +1142,30 @@ export class AudiobookController {
                 attempt.pauseAfterSeek = undefined;
                 let pauseChanged = false;
                 if (pauseAfterSeek !== undefined && pauseAfterSeek !== attempt.paused) {
-                    if (attempt.hidden || attempt.restoring || this.pending.restore !== undefined || attempt.suspended || attempt.suspendedReady || attempt.deferredOpen) {
+                    if (transportBusyOrHidden) {
                         attempt.paused = pauseAfterSeek;
                         pauseChanged = true;
                     } else {
                         pauseChanged = this.applyPauseState(attempt, pauseAfterSeek);
                         if (!attempt.live) return;
                     }
+                } else if (pauseAfterSeek === undefined && attempt.paused && !transportBusyOrHidden) {
+                    try {
+                        if (this.deps.avplay.getState() === "PLAYING") this.applyPauseState(attempt, true);
+                    } catch {
+                        // Platform state already settled or unavailable.
+                    }
                 }
                 if (moved) {
                     attempt.partLocalSeconds = dest.localSeconds;
                     attempt.wholeBookSeconds = dest.part.offset + dest.localSeconds;
-                    if (attempt.seekSequence === seq) attempt.pendingSeekTarget = undefined;
-                } else {
+                    if (attempt.seekSequence === seq && attempt.queuedSeekTarget === undefined) attempt.pendingSeekTarget = undefined;
+                } else if (attempt.queuedSeekTarget === undefined) {
                     attempt.pendingSeekTarget = undefined;
+                }
+                if (attempt.rateDirty && !attempt.paused && !transportBusyOrHidden) {
+                    attempt.rateDirty = false;
+                    this.applySpeedSafe(attempt);
                 }
                 const hadTransitionSync = attempt.pendingTransitionSync;
                 attempt.pendingTransitionSync = false;
@@ -1159,6 +1191,8 @@ export class AudiobookController {
         const generation = this.startGen;
 
         attempt.partStarted = false;
+        attempt.sessionId = undefined;
+        attempt.pendingProgress = false;
         attempt.cancelProgressTimer?.();
         attempt.cancelProgressTimer = undefined;
         this.closeTransport();
@@ -1167,8 +1201,6 @@ export class AudiobookController {
                 await this.stopServerSession(attempt, oldSessionId, installationId, stopLocalSeconds, attempt.paused);
                 if (!attempt.live || this.attempt !== attempt || generation !== this.startGen) return;
             }
-            attempt.sessionId = undefined;
-            attempt.pendingProgress = false;
             attempt.pendingTransitionSync = true;
             attempt.attemptId = this.newId();
             await this.openPart(attempt, partIndex, localSeconds, generation);
@@ -1244,10 +1276,17 @@ export class AudiobookController {
         const attempt = this.attempt;
         if (attempt === undefined || !attempt.live) return;
         if (!attempt.paused) {
-            if (!attempt.partStarted || attempt.hidden || attempt.restoring || this.pending.restore !== undefined || attempt.deferredOpen || attempt.suspended || attempt.suspendedReady) {
-                attempt.paused = true;
-            } else if (this.pending.seek !== undefined) {
+            const seekPending = attempt.partStarted
+                && this.pending.seek !== undefined
+                && !attempt.restoring
+                && this.pending.restore === undefined
+                && !attempt.deferredOpen
+                && !attempt.suspended
+                && !attempt.suspendedReady;
+            if (seekPending) {
                 attempt.pauseAfterSeek = true;
+            } else if (!attempt.partStarted || attempt.hidden || attempt.restoring || this.pending.restore !== undefined || attempt.deferredOpen || attempt.suspended || attempt.suspendedReady) {
+                attempt.paused = true;
             } else {
                 attempt.paused = true;
                 try {
@@ -1507,23 +1546,32 @@ export class AudiobookController {
         }
     }
 
-    private async stopServerSession(attempt: Attempt, sessionId: string, installationId: string, positionSeconds: number, isPaused: boolean): Promise<void> {
-        try {
-            attempt.pendingProgress = false;
-            await attempt.inFlightProgress;
-            if (attempt.abort.signal.aborted || attempt.authoritySignal.aborted) return;
-            const spec = operations.stopPlayback(sessionId, {
-                installation_id: installationId,
-                stop_id: this.newId(),
-                sequence: ++attempt.sequence,
-                position: Math.max(0, positionSeconds),
-                is_paused: isPaused,
-            });
-            await this.deps.session.call({ ...spec, profileScoped: true, signal: attempt.abort.signal });
-        } catch (error) {
-            if (error instanceof ApiError && (error.status === 404 || error.status === 410 || error.aborted)) return;
-            // Best-effort session close on transition/teardown.
-        }
+    private stopServerSession(attempt: Attempt, sessionId: string, installationId: string, positionSeconds: number, isPaused: boolean): Promise<void> {
+        const previous = attempt.stopInFlight;
+        let work!: Promise<void>;
+        work = (async (): Promise<void> => {
+            if (previous !== undefined) await previous;
+            try {
+                attempt.pendingProgress = false;
+                await attempt.inFlightProgress;
+                if (attempt.authoritySignal.aborted) return;
+                const spec = operations.stopPlayback(sessionId, {
+                    installation_id: installationId,
+                    stop_id: this.newId(),
+                    sequence: ++attempt.sequence,
+                    position: Math.max(0, positionSeconds),
+                    is_paused: isPaused,
+                });
+                await this.deps.session.call({ ...spec, profileScoped: true, signal: attempt.authoritySignal });
+            } catch (error) {
+                if (error instanceof ApiError && (error.status === 404 || error.status === 410 || error.aborted)) return;
+                // Best-effort session close on transition/teardown.
+            } finally {
+                if (attempt.stopInFlight === work) attempt.stopInFlight = undefined;
+            }
+        })();
+        attempt.stopInFlight = work;
+        return work;
     }
 
     private async stopOrphanedSession(
