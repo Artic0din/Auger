@@ -1149,7 +1149,7 @@ export class AudiobookController {
                         pauseChanged = this.applyPauseState(attempt, pauseAfterSeek);
                         if (!attempt.live) return;
                     }
-                } else if (pauseAfterSeek === undefined && attempt.paused && !transportBusyOrHidden) {
+                } else if ((pauseAfterSeek ?? attempt.paused) && !transportBusyOrHidden) {
                     try {
                         if (this.deps.avplay.getState() === "PLAYING") this.applyPauseState(attempt, true);
                     } catch {
@@ -1275,7 +1275,7 @@ export class AudiobookController {
     private onSleepTimerExpired(): void {
         const attempt = this.attempt;
         if (attempt === undefined || !attempt.live) return;
-        if (!attempt.paused) {
+        if (!(attempt.pauseAfterSeek ?? attempt.paused)) {
             const seekPending = attempt.partStarted
                 && this.pending.seek !== undefined
                 && !attempt.restoring
@@ -1286,8 +1286,10 @@ export class AudiobookController {
             if (seekPending) {
                 attempt.pauseAfterSeek = true;
             } else if (!attempt.partStarted || attempt.hidden || attempt.restoring || this.pending.restore !== undefined || attempt.deferredOpen || attempt.suspended || attempt.suspendedReady) {
+                attempt.pauseAfterSeek = undefined;
                 attempt.paused = true;
             } else {
+                attempt.pauseAfterSeek = undefined;
                 attempt.paused = true;
                 try {
                     if (this.deps.avplay.getState() === "PLAYING") this.deps.avplay.pause();

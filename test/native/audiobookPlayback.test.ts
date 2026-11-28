@@ -1287,3 +1287,58 @@ test("voluntary cancel while /playback/start is held retires allocated server se
     assert.equal(stopRequests(r).length, stopsBefore + 1);
     r.controller.destroy();
 });
+
+test("sleep timer expiry overrides pending resume queued while paused mid-seek", async () => {
+    const r = await setup();
+    void r.controller.start({ contentId: "audiobook:multipart" });
+    await settlePlay(r);
+
+    r.controller.pause();
+    await r.h.clock.advance(0);
+    assert.equal(r.avplay.state, "PAUSED");
+
+    r.controller.setSleepTimer(15);
+    await r.h.clock.advance(895 * 1000);
+
+    r.controller.seekTo(120);
+    r.controller.play();
+    await r.h.clock.advance(5 * 1000);
+
+    r.avplay.finishSeek();
+    await r.h.clock.advance(0);
+
+    assert.equal(r.avplay.state, "PAUSED");
+    assert.equal(playingView(r).phase, "paused");
+    assert.equal(playingView(r).position, 120);
+    assert.equal(playingView(r).sleepTimer.active, false);
+    r.controller.destroy();
+});
+
+test("stopping during fallback restore session retirement sends only one DELETE and waits for it", async () => {
+    const r = await setup();
+    void r.controller.start({ contentId: "audiobook:dune" });
+    await settlePlay(r);
+    const firstSession = [...r.playback.sessions.keys()][0];
+    assert.ok(firstSession !== undefined);
+
+    r.controller.suspend();
+    Object.assign(r.avplay, { restoreAsync: undefined });
+    const heldStop = r.h.fake.hold(`/playback/${firstSession}`);
+    const restoring = r.controller.restore();
+    await r.h.clock.advance(0);
+
+    let stopResolved = false;
+    const stopping = r.controller.stop().then(() => { stopResolved = true; });
+    await r.h.clock.advance(0);
+    assert.equal(r.h.fake.heldReplies, 1, "stop() must not abort held fallback retirement DELETE");
+    assert.equal(stopResolved, false, "stop() waits for fallback retirement DELETE to settle");
+
+    heldStop.release();
+    await Promise.all([restoring, stopping]);
+
+    assert.equal(stopResolved, true);
+    assert.equal(stopRequests(r).filter(req => req.path === `/playback/${firstSession}`).length, 1);
+    assert.equal(startRequests(r).length, 1);
+    assert.equal(r.views.at(-1)?.phase, "idle");
+    r.controller.destroy();
+});
