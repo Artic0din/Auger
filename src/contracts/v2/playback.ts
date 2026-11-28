@@ -569,7 +569,7 @@ export type ClientCapabilities = {
     readonly codecs_video_hardware: readonly string[];
     readonly codecs_audio: readonly string[];
     readonly containers: readonly string[];
-    readonly max_resolution: string;
+    readonly max_resolution?: string;
     readonly hdr: boolean;
     readonly hdr_details?: HdrDetails;
     readonly video_decode: readonly VideoDecodeCapability[];
@@ -605,6 +605,8 @@ export type StartPlaybackBody = {
     /** `ignore` when the viewer turned buffering quality off. Only with `buffering_quality_v1`. */
     readonly learned_limit?: "ignore";
     readonly subtitle_fidelity_preference: "preserve" | "compatible";
+    /** Sent by clients owning whole-book progress sync (audiobooks). */
+    readonly progress_persistence?: "client";
     /** Omitted: the server resumes from the profile's saved position. */
     readonly start_position?: number;
     readonly audio_track_id?: string;

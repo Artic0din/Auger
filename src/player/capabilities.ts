@@ -241,3 +241,66 @@ export function playbackContext(model: string, appVersion: string, report?: HdrR
     if (details === undefined) return context;
     return { ...context, output: { hdr_details: details } };
 }
+
+/** Audiobooks omit subtitle renditions, software decode, paused timeouts, and seek reanchor. */
+export const AUDIOBOOK_CLIENT_FEATURES: readonly string[] = ["playback_plan_v3"];
+
+/** AVPlay documents whole-integer playback speeds (`1×`, `2×`) on progressive HTTP direct streams only. */
+export const AUDIOBOOK_SUPPORTED_SPEEDS = [1, 2] as const;
+
+export function audiobookAvailableRates(hasSetSpeed: boolean, streamProtocol: string | undefined): readonly number[] {
+    return hasSetSpeed && streamProtocol === "http_progressive" ? AUDIOBOOK_SUPPORTED_SPEEDS : [1];
+}
+
+const AUDIOBOOK_ORIGINAL_CONTAINERS = ["mp4", "m4a", "m4b", "mp3", "aac"] as const;
+const AUDIOBOOK_CONTAINERS = [...AUDIOBOOK_ORIGINAL_CONTAINERS, "m3u8", "hls"] as const;
+
+const NO_AUDIOBOOK_SUBTITLES = {
+    embedded_text: false,
+    sidecar_text: false,
+    ass_styling: false,
+    embedded_bitmap: false,
+    sidecar_bitmap: false,
+    font_attachments: false,
+};
+
+function audioDelivery(containers: readonly string[], features: readonly string[]): DeliveryCapability {
+    return {
+        enabled: true,
+        supported_on_device: true,
+        containers,
+        video_codecs: [],
+        audio_decode_codecs: AUDIO_CODECS,
+        audio_passthrough_codecs: [],
+        subtitles: NO_AUDIOBOOK_SUBTITLES,
+        features,
+        auth_header_refresh: false,
+        validated_claims: [],
+        transformations: [],
+    };
+}
+
+export const AUDIOBOOK_CAPABILITIES: ClientCapabilities = {
+    video_evidence: "declared",
+    audio_evidence: "declared",
+    codecs_video: [],
+    codecs_video_hardware: [],
+    codecs_audio: AUDIO_CODECS,
+    containers: AUDIOBOOK_CONTAINERS,
+    hdr: false,
+    video_decode: [],
+};
+
+export function audiobookPlaybackContext(model: string, appVersion: string): ClientPlaybackContext {
+    return {
+        protocol_version: 3,
+        form_factor: "tv",
+        app_version: appVersion,
+        device: { platform: "tizen", manufacturer: "Samsung", model },
+        output: {},
+        deliveries: {
+            original_http: audioDelivery(AUDIOBOOK_ORIGINAL_CONTAINERS, []),
+            hls: audioDelivery(["m3u8", "hls"], ["hls_copy_mpegts_v1"]),
+        },
+    };
+}
