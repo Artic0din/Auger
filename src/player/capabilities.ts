@@ -159,7 +159,8 @@ export const BUFFERING_QUALITY_FEATURE = "buffering_quality_v1";
  * Start and replan send the same base features; buffering quality follows the server.
  * No HLS subtitle rendition feature is sent. AVPlay opens the plan's playlist itself, and on the S95C a master that
  * lists a rendition per text track stopped the page until the TV closed the app, while one with a single rendition
- * failed to start. Without the features the server sends HLS text tracks as sidecars, which the app draws.
+ * failed to start. Without the features the server sends HLS text tracks as artifacts, which the app draws.
+ * The player still handles a rendition a server sends unasked, so the features can be requested again.
  */
 export const CLIENT_FEATURES: readonly string[] = ["playback_plan_v3", "embedded_subtitles_v1"];
 
@@ -232,7 +233,7 @@ export function playbackContext(model: string, appVersion: string, report?: HdrR
     return { ...context, output: { hdr_details: details } };
 }
 
-/** Audiobooks omit subtitle renditions, software decode, paused timeouts, and seek reanchor. */
+/** Audiobooks send the plan feature alone: no embedded subtitles, software decode, paused timeouts, or seek reanchor. */
 export const AUDIOBOOK_CLIENT_FEATURES: readonly string[] = ["playback_plan_v3"];
 
 /** AVPlay documents whole-integer playback speeds (`1×`, `2×`) on progressive HTTP direct streams only. */

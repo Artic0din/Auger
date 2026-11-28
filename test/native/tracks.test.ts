@@ -3550,7 +3550,9 @@ test("start and replans advertise embedded subtitles but no HLS subtitle renditi
     const replanFeatures = only(replans(r.h)).client_features;
     for (const features of [startFeatures, replanFeatures]) {
         assert.ok(Array.isArray(features));
-        assert.equal(features.includes("embedded_subtitles_v1"), true);
+        for (const token of ["playback_plan_v3", "embedded_subtitles_v1"]) {
+            assert.equal(features.includes(token), true, token);
+        }
         for (const token of ["hls_subtitle_renditions_v1", "hls_remux_subtitle_renditions_v1", "hls_subtitle_renditions_all_v1"]) {
             assert.equal(features.includes(token), false, token);
         }

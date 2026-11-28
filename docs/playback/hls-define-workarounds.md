@@ -59,6 +59,7 @@ The S95C confirmed the literal playlist on 29 Nov 2026 (see [TV results, 29 Nov 
 Samsung S95C (QA77S95CAWXXY, Tizen 9.0), installed Auger 0.14.17, one 2 h 6 m film (H.264 1920x804, E-AC-3 5.1, MKV, about 47 embedded text subtitle tracks).
 The app was driven over the SDK debug inspector with injected remote keys.
 Remux plans were forced by removing `eac3` from the audio lists of the app's `POST /playback/start` body in transit; a title with DTS audio should plan the same way, which was not tested.
+Rendition features were removed from `client_features` the same way, so the last two rows send what the client now sends itself.
 
 | Case | Playlists the app received | Result |
 |---|---|---|
@@ -67,6 +68,8 @@ Remux plans were forced by removing `eac3` from the audio lists of the app's `PO
 | Remux, features as shipped | Multivariant master, 79,715 bytes, one variant plus a rendition per text track; video playlist, version 6, `EVENT`, literal `st` and `token` on every URI, no `#EXT-X-DEFINE` | The guard passed, AVPlay opened the master, the page stopped answering and the TV closed the app |
 | Remux without `hls_subtitle_renditions_all_v1` | `master.m3u8` is the media playlist itself: version 6, `EVENT`, literal, 17,825 to 44,985 bytes while growing | Played on three starts, across one skip that reopened the stream, and past 2:00 |
 | Remux without `hls_subtitle_renditions_all_v1`, one subtitle selected | Multivariant master, 3,095 bytes, one variant and one subtitle rendition; video playlist literal | The app's error page after about 8 s; the app kept running |
+| Remux with no rendition feature | `master.m3u8` is the media playlist itself: version 6, `EVENT`, literal, growing from 43,627 to 643,863 bytes (474 segments) | Played to 10:55 in one run, with the position advancing at every 15 s check |
+| Remux with no rendition feature, one subtitle selected | The same media playlist; the replan stayed `server_remux_hls` with subtitle mode `render` and a `subtitles/2.vtt` artifact | The stream reopened and kept playing, and the app's overlay drew the cues for the 4 minutes it was on |
 
 What this establishes:
 
@@ -74,6 +77,10 @@ What this establishes:
 - The app-closing freeze first recorded in #650 does not need `#EXT-X-DEFINE` in the video playlist: a multivariant master with a rendition per text track is enough.
   `playlistUnreadable` reads only the master and the first video variant, so it does not catch this.
 - A long copy remux plays on AVPlay when the plan carries no subtitle rendition.
+- Without the rendition features the server sends an HLS plan's text track as an artifact, and the app's overlay draws it.
+  Choosing, changing or turning off a text track on HLS then replans and reopens the stream.
+- One earlier run with a subtitle on ended after about 4 minutes: progress reports stopped and the debug port closed, while the TV still listed the app as running.
+  The next run did not repeat it, and its cause is unknown.
 - Subtitle-rendition playlists were not read in this run.
   The server builds them itself ([`subtitle_rendition.go:818-820`](https://github.com/Silo-Server/silo-server/blob/0a631fb9cba82de78c6461a6edcc9a2291957354/internal/playback/subtitle_rendition.go#L818-L820)), so they probably carry `#EXT-X-DEFINE` on a long title; that would explain both rendition failures and is unverified.
 
@@ -163,7 +170,8 @@ Its README claims this works on Tizen 5 and later; that is the project's claim, 
 - hls.js resolves `EXT-X-DEFINE` from [v1.4.0](https://github.com/video-dev/hls.js/releases/tag/v1.4.0) ([PR #5161](https://github.com/video-dev/hls.js/pull/5161)), but only in the full build: `__USE_VARIABLE_SUBSTITUTION__` is off in the light build ([`build-config.js:67-72`](https://github.com/video-dev/hls.js/blob/v1.6.15/build-config.js#L67-L72)).
 - In MPEG-TS, the latest release v1.7.4 rejects E-AC-3 ("Unsupported EC-3 in M2TS found") and parses HEVC only in the full build (`__USE_M2TS_ADVANCED_CODECS__`); AC-3 is parsed ([`tsdemuxer.ts`](https://github.com/video-dev/hls.js/blob/v1.7.4/src/demux/tsdemuxer.ts)).
 - Samsung lists MSE as supported ([Web Engine Specifications](https://developer.samsung.com/smarttv/develop/specifications/web-engine-specifications.html); Tizen 8.0 is Chromium M108) but documents no MSE codec list; which of HEVC, AC-3 and E-AC-3 `MediaSource.isTypeSupported` accepts on the S95C is unverified.
-- `app/config.xml` sets `default-src *` and `script-src 'self'`; under CSP Level 3 the `*` wildcard does not match `blob:`, so a MediaSource object URL likely needs `media-src blob:`, and hls.js's blob worker needs a packaged worker file. Unverified on Tizen.
+- `app/config.xml` sets `default-src *` and `script-src 'self'`; under CSP Level 3 the `*` wildcard does not match `blob:`, so a MediaSource object URL likely needs `media-src blob:`, and hls.js's blob worker needs a packaged worker file.
+  Unverified on Tizen.
 - Moonfin, the client behind #5466, plays through AVPlay only on Tizen: its fallback ladder never reaches hls.js there ([`playbackFallback.js`](https://github.com/Moonfin-Client/Smart-TV/blob/76b471c1fbf2ea7f95c3f3a8733faa5d621dda79/src/pages/Player/playbackFallback.js), [`videoEngine.js:737-760`](https://github.com/Moonfin-Client/Smart-TV/blob/76b471c1fbf2ea7f95c3f3a8733faa5d621dda79/src/state/videoEngine.js#L737-L760)), so it offers no Tizen precedent.
 
 It breaks the AGENTS.md invariant that AVPlay plays primary video, needs a CSP change and a new dependency, and duplicates suspend and restore, the HUD Stats tab, audio track switching and the reconnect ladder for a second engine.
