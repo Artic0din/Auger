@@ -19,6 +19,8 @@
  "audiobook.chapters.open": "章节",
  "audiobook.error.noPlayableTrack": "没有可播放的音轨。",
  "audiobook.error.unavailablePart": "服务器选择了一个不可用的有声书部分。",
+ "audiobook.miniPlayer.nowPlaying": "正在播放：{title}",
+ "audiobook.miniPlayer.openHint": "打开完整播放器",
  "audiobook.player.label": "有声书",
  "audiobook.player.playbackPosition": "播放位置",
  "audiobook.player.starting": "正在启动有声书",

@@ -19,6 +19,8 @@
  "audiobook.chapters.open": "Kapitler",
  "audiobook.error.noPlayableTrack": "Der er intet lydspor, der kan afspilles.",
  "audiobook.error.unavailablePart": "Serveren valgte en del af lydbogen, der ikke er tilgængelig.",
+ "audiobook.miniPlayer.nowPlaying": "Afspilles nu: {title}",
+ "audiobook.miniPlayer.openHint": "Åbner den fulde afspiller",
  "audiobook.player.label": "Lydbog",
  "audiobook.player.playbackPosition": "Afspilningsposition",
  "audiobook.player.starting": "Starter lydbog",

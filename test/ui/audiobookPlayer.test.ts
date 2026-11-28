@@ -1,10 +1,11 @@
 import assert from "node:assert/strict";
 import { after, before, test } from "node:test";
 import type { Browser } from "playwright";
-import { APP_LANGUAGE_KEY, AUDIOBOOK_SEEK_BACK_KEY, AUDIOBOOK_SEEK_FORWARD_KEY } from "../../src/contracts/v2/settings.ts";
+import { APP_LANGUAGE_KEY, AUDIOBOOK_SEEK_BACK_KEY, AUDIOBOOK_SEEK_FORWARD_KEY, THEME_MUSIC_ENABLED_KEY } from "../../src/contracts/v2/settings.ts";
 import { FakeAudiobooks } from "../native/support/fakeAudiobooks.ts";
 import { FakePlayback } from "../native/support/fakePlayback.ts";
 import { FakeSettings } from "../native/support/fakeSettings.ts";
+import { FakeThemes } from "../native/support/fakeThemes.ts";
 import { problem } from "../native/support/fakeSilo.ts";
 import { openTv, pauseTvClock, type Tv } from "./support/tv.ts";
 
@@ -16,6 +17,7 @@ const RIGHT = 39;
 const DOWN = 40;
 const PLAY_PAUSE = 10252;
 const REWIND = 412;
+const STOP = 413;
 const FAST_FORWARD = 417;
 
 let browser: Browser;
@@ -290,7 +292,7 @@ playerTest("chapterless audiobook disables chapter buttons, hides missing cover,
     await tv.remote(ENTER);
     assert.deepEqual(await screen.locator('[role="dialog"] [data-rate]').allInnerTexts(), ["1×"]);
     await tv.remote(BACK);
-    await tv.remote(BACK);
+    await tv.remote(STOP);
     await tv.page.locator('[data-view="audiobook:audiobook:fresh"] [data-focus="play"]').waitFor();
 
     // Open chapterless book without poster_url via scripted responses.
@@ -586,7 +588,7 @@ playerTest("natural completion waits for unsettled seek before firing finished e
     const syncsBefore2 = progressSyncs();
     const detailGetsBefore2 = detailGets();
 
-    await tv.remote(BACK);
+    await tv.remote(STOP);
     await tv.eventually(
         async () => stopDeletes() === deletesBefore2 + 1 && progressSyncs() === syncsBefore2 + 1 && tv.pendingReplies === 0,
         "timeout stop network requests landed",
@@ -635,4 +637,251 @@ playerTest("profile selection expiry tears down active audiobook host, screen, a
     await tv.page.locator('[data-focus="profile:p-owner"]').click();
     await tv.page.locator('[data-view="home"] [data-section="shelf"] [data-focus="audiobook:tide"]').waitFor();
     assert.equal(await screen.count(), 0);
+});
+
+playerTest("Back minimizes playing audio with Skyline Now Playing return and Detail resume-in-place", async ({ tv }) => {
+    await tv.page.locator('[data-section="shelf"] [data-focus="audiobook:tide"]').click();
+    await tv.page.locator('[data-view="audiobook:audiobook:tide"] [data-focus="play"]').waitFor();
+    await tv.page.keyboard.press("Enter");
+    await prepareAudio(tv, true);
+
+    const startsAfterPlay = tv.fake.requests.filter(req => req.method === "POST" && req.path === "/playback/start").length;
+
+    await tv.remote(BACK);
+    await tv.page.locator('[data-view="audiobook:audiobook:tide"] [data-focus="play"]').waitFor();
+    assert.equal(await tv.page.locator('[data-screen="audiobook-player"]').count(), 0);
+    assert.equal(await tv.page.evaluate(() => window.appHarness.avplay.state), "PLAYING");
+
+    // Reopen the live session in place from Detail Resume without sending a second /playback/start.
+    await tv.page.locator('[data-view="audiobook:audiobook:tide"] [data-focus="play"]').click();
+    const screen = tv.page.locator('[data-screen="audiobook-player"]');
+    await screen.locator(".audio-player-elapsed").waitFor();
+    assert.equal(tv.fake.requests.filter(req => req.method === "POST" && req.path === "/playback/start").length, startsAfterPlay);
+
+    // Minimize again, open Detail Chapters sheet on active book, and click Chapter 1 -> seeks in place without second start.
+    await tv.remote(BACK);
+    await tv.page.locator('[data-view="audiobook:audiobook:tide"] [data-focus="chapters"]').waitFor();
+    await tv.page.locator('[data-view="audiobook:audiobook:tide"] [data-focus="chapters"]').click();
+    await tv.page.locator('[data-view="audiobook:audiobook:tide:chapters"] .audiobook-chapter').first().click();
+    await tv.eventually(() => tv.page.evaluate(() => window.appHarness.avplay.calls.some(call => call === "seekTo 0")), "chapter click seek in place");
+    await tv.page.evaluate(() => window.appHarness.avplay.finishSeek());
+    await tv.eventually(async () => await screen.locator(".audio-player-elapsed").innerText() === "0:00", "chapter 1 elapsed 0:00");
+    assert.equal(tv.fake.requests.filter(req => req.method === "POST" && req.path === "/playback/start").length, startsAfterPlay);
+
+    // Minimize back to Detail, exit to Home where Skyline chrome is shown, advance while minimized, and reopen via Now Playing.
+    await tv.remote(BACK);
+    await tv.page.locator('[data-view="audiobook:audiobook:tide"] [data-focus="play"]').waitFor();
+    await tv.remote(BACK);
+    await tv.page.locator('[data-view="home"]').waitFor();
+    const pill = tv.page.locator(".skyline-now-playing");
+    await pill.waitFor();
+    assert.equal(await pill.locator(".skyline-now-playing-label").innerText(), "Stormlight Archive 5 - The Tide Owes (5 of 5)");
+    assert.equal(await pill.evaluate(el => el.classList.contains("is-paused")), false);
+
+    await tv.page.evaluate(() => window.appHarness.avplay.tick(4200 * 1000));
+    await pill.click();
+    await screen.locator(".audio-player-elapsed").waitFor();
+    assert.equal(await screen.locator(".audio-player-elapsed").innerText(), "1:10:00");
+    assert.equal(tv.fake.requests.filter(req => req.method === "POST" && req.path === "/playback/start").length, startsAfterPlay);
+});
+
+playerTest("minimized hardware media keys toggle play/pause keeping bar focus, seek, and stop cleanly", async ({ tv, catalog }) => {
+    await tv.page.locator('[data-section="shelf"] [data-focus="audiobook:tide"]').click();
+    await tv.page.locator('[data-view="audiobook:audiobook:tide"] [data-focus="play"]').waitFor();
+    await tv.page.keyboard.press("Enter");
+    await prepareAudio(tv, true);
+    await tv.remote(BACK);
+    await tv.page.locator('[data-view="audiobook:audiobook:tide"]').waitFor();
+    await tv.remote(BACK);
+    await tv.page.locator('[data-view="home"]').waitFor();
+
+    const nowPlaying = tv.page.locator(".skyline-now-playing");
+    await nowPlaying.waitFor();
+    await nowPlaying.focus();
+
+    await tv.remote(PLAY_PAUSE);
+    await tv.eventually(() => tv.page.evaluate(() => window.appHarness.avplay.state === "PAUSED"), "paused while minimized");
+    assert.equal(await nowPlaying.evaluate(el => el.classList.contains("is-paused")), true);
+    assert.equal(await tv.focused(), "audiobook-now-playing", "pause update keeps focus on Now Playing");
+
+    await tv.remote(PLAY_PAUSE);
+    await tv.eventually(() => tv.page.evaluate(() => window.appHarness.avplay.state === "PLAYING"), "resumed while minimized");
+    assert.equal(await nowPlaying.evaluate(el => el.classList.contains("is-paused")), false);
+    assert.equal(await tv.focused(), "audiobook-now-playing");
+
+    await tv.remote(FAST_FORWARD);
+    await tv.eventually(() => tv.page.evaluate(() => window.appHarness.avplay.calls.some(call => call.startsWith("seekTo "))), "minimized skip seek");
+    await tv.page.evaluate(() => window.appHarness.avplay.finishSeek());
+    await tv.eventually(async () => catalog.progressWrites.length === 3, "pause, resume, and seek sync writes");
+
+    const stopsBefore = tv.fake.requests.filter(req => req.method === "DELETE" && req.path.startsWith("/playback/")).length;
+    const writesBefore = catalog.progressWrites.length;
+    await tv.remote(STOP);
+    await tv.eventually(() => nowPlaying.count().then(count => count === 0), "Now Playing cleared");
+    assert.equal(await tv.focused(), "profiles", "disappearing focused pill moves focus to profiles");
+    await tv.eventually(
+        async () => tv.fake.requests.filter(req => req.method === "DELETE" && req.path.startsWith("/playback/")).length === stopsBefore + 1
+            && catalog.progressWrites.length === writesBefore + 1,
+        "stop DELETE and final syncProgress landed",
+    );
+});
+
+// Profile-aware Browse + Player integration for minimize, Settings/failure handoffs, theme suppression, video handoff, and profile teardown.
+playerTest("minimized book completing while Settings is open leaves Settings intact and does not unhide Browse", async ({ tv }) => {
+    await tv.page.locator('[data-section="shelf"] [data-focus="audiobook:tide"]').click();
+    await tv.page.locator('[data-view="audiobook:audiobook:tide"] [data-focus="play"]').waitFor();
+    await tv.page.keyboard.press("Enter");
+    await prepareAudio(tv, true);
+    await tv.remote(BACK);
+    await tv.page.locator('[data-view="audiobook:audiobook:tide"]').waitFor();
+    await tv.remote(BACK);
+    await tv.page.locator('[data-view="home"]').waitFor();
+
+    await tv.page.locator('[data-focus="profiles"]').click();
+    await tv.page.getByRole("menuitem", { name: "Settings", exact: true }).click();
+    await tv.page.locator('[data-focus="title-art"]').waitFor();
+    assert.equal(await tv.page.locator('.browse[data-view="home"]').isHidden(), true);
+
+    await tv.page.evaluate(() => window.appHarness.avplay.listener?.onstreamcompleted());
+    await tv.eventually(() => tv.page.evaluate(() => window.appHarness.avplay.calls.includes("close")), "audio closed on finish");
+    await tv.eventually(async () => await tv.page.locator('.audio-avplay-surface, object[type="application/avplayer"]').count() === 0, "audiobook surface removed on finish");
+    assert.equal(await tv.page.locator('[data-focus="title-art"]').isVisible(), true);
+    assert.equal(await tv.page.locator('.browse[data-view="home"]').isHidden(), true);
+    assert.equal(await tv.page.locator(".skyline-now-playing").count(), 0);
+});
+
+{
+    let themes!: FakeThemes;
+    playerTest("minimized book failure clears Now Playing, removes surface, restores theme music, and stops swallowing media keys", async ({ tv }) => {
+        await tv.page.locator('[data-section="shelf"] [data-focus="audiobook:tide"]').click();
+        await tv.page.locator('[data-view="audiobook:audiobook:tide"] [data-focus="play"]').waitFor();
+        await tv.page.keyboard.press("Enter");
+        await prepareAudio(tv, true);
+        await tv.remote(BACK);
+        await tv.page.locator('[data-view="audiobook:audiobook:tide"]').waitFor();
+        await tv.remote(BACK);
+        await tv.page.locator('[data-view="home"]').waitFor();
+        await tv.page.locator(".skyline-now-playing").waitFor();
+
+        await tv.page.evaluate(() => window.appHarness.avplay.listener?.onerror("PLAYER_ERROR_CONNECTION_FAILED"));
+        await tv.eventually(async () => await tv.page.locator(".skyline-now-playing").count() === 0, "Now Playing cleared on failure");
+        assert.equal(await tv.page.locator('.audio-avplay-surface, object[type="application/avplayer"]').count(), 0);
+
+        await tv.page.locator('[data-section="recently_added"] [data-focus="movie:m0001"]').first().click();
+        await tv.page.locator('[data-view="item:movie:m0001"] [data-focus="play"]').waitFor();
+        await tv.eventually(async () => themes.grants.length === 1, "theme music restored after minimized failure");
+
+        await tv.remote(BACK);
+        await tv.page.locator('[data-view="home"]').waitFor();
+        await tv.page.locator('[data-section="recently_added"] [data-focus="movie:m0001"]').first().focus();
+        await tv.remote(PLAY_PAUSE);
+        await tv.eventually(() => tv.page.evaluate(() => window.appHarness.avplay.pendingPrepares > 0), "movie PLAY_PAUSE reaches Browse");
+        await tv.page.evaluate(() => {
+            const avplay = window.appHarness.avplay;
+            avplay.finishPrepare();
+            if (avplay.calls[avplay.calls.length - 1]?.startsWith("seekTo") === true) avplay.finishSeek();
+        });
+        await tv.page.locator('[data-screen="player"]').waitFor();
+    }, ({ tv, settings }) => {
+        themes = new FakeThemes(tv.fake);
+        settings.profile().set(THEME_MUSIC_ENABLED_KEY, true);
+    });
+}
+
+{
+    let themes!: FakeThemes;
+    playerTest("active audiobook suppresses theme music until stopped and yields cleanly to video playback", async ({ tv, playback }) => {
+        await tv.page.locator('[data-section="shelf"] [data-focus="audiobook:tide"]').click();
+        await tv.page.locator('[data-view="audiobook:audiobook:tide"] [data-focus="play"]').waitFor();
+        await tv.page.keyboard.press("Enter");
+        await prepareAudio(tv, true);
+        const audioSessionId = [...playback.sessions.keys()][0];
+        assert.ok(audioSessionId !== undefined);
+        await tv.remote(BACK);
+        await tv.page.locator('[data-view="audiobook:audiobook:tide"]').waitFor();
+        await tv.remote(BACK);
+        await tv.page.locator('[data-view="home"] [data-section="recently_added"] [data-focus="movie:m0001"]').waitFor();
+
+        // While playing minimized, movie Details suppresses theme music.
+        await tv.page.locator('[data-section="recently_added"] [data-focus="movie:m0001"]').first().click();
+        await tv.page.locator('[data-view="item:movie:m0001"] [data-focus="play"]').waitFor();
+        await tv.jump(1500);
+        assert.equal(themes.grants.length, 0);
+
+        // Pausing the minimized audiobook still keeps theme music suppressed.
+        await tv.remote(PLAY_PAUSE);
+        await tv.eventually(() => tv.page.evaluate(() => window.appHarness.avplay.state === "PAUSED"), "paused before reopen");
+        await tv.remote(BACK);
+        await tv.page.locator('[data-view="home"]').waitFor();
+        await tv.page.locator('[data-section="recently_added"] [data-focus="movie:m0001"]').first().click();
+        await tv.page.locator('[data-view="item:movie:m0001"] [data-focus="play"]').waitFor();
+        await tv.jump(1500);
+        assert.equal(themes.grants.length, 0);
+
+        // With an audiobook progress write held, video awaits audiobook DELETE + surface cleanup before /playback/start.
+        const heldProgress = tv.fake.hold(`/playback/${audioSessionId}/progress`);
+        await tv.jump(10_000);
+        await tv.eventually(async () => tv.fake.requests.some(req => req.path === `/playback/${audioSessionId}/progress`), "audiobook progress in flight");
+
+        const mark = tv.fake.requests.length;
+        const startsBeforeVideo = tv.fake.requests.filter(req => req.method === "POST" && req.path === "/playback/start").length;
+        await tv.page.locator('[data-view="item:movie:m0001"] [data-focus="play"]').click();
+        await tv.jump(50);
+        assert.equal(tv.fake.requests.filter(req => req.method === "POST" && req.path === "/playback/start").length, startsBeforeVideo);
+        assert.equal(await tv.page.locator('[data-screen="player"]').count(), 0);
+
+        heldProgress.release();
+        await tv.eventually(() => tv.page.evaluate(() => window.appHarness.avplay.urls.length >= 2 && window.appHarness.avplay.pendingPrepares > 0), "video prepare");
+        await tv.page.evaluate(() => {
+            const avplay = window.appHarness.avplay;
+            avplay.finishPrepare();
+            if (avplay.calls[avplay.calls.length - 1]?.startsWith("seekTo") === true) avplay.finishSeek();
+        });
+        await tv.page.locator('[data-screen="player"]').waitFor();
+        assert.equal(await tv.page.locator(".browse").isHidden(), true, "audiobook stop exit must not unhide browse over video");
+        assert.equal(await tv.page.locator(".skyline-now-playing").count(), 0);
+        assert.equal(await tv.page.evaluate(() => document.querySelectorAll('object[type="application/avplayer"]').length), 1);
+
+        const tail = tv.fake.requests.slice(mark);
+        const audioStopIdx = tail.findIndex(req => req.method === "DELETE" && req.path.startsWith("/playback/"));
+        const audioSyncIdx = tail.findIndex(req => req.method === "POST" && req.path === "/sync/progress");
+        const videoStartIdx = tail.findIndex(req => req.method === "POST" && req.path === "/playback/start");
+        assert.ok(audioStopIdx >= 0 && audioSyncIdx >= 0 && videoStartIdx >= 0);
+        assert.ok(audioStopIdx < videoStartIdx && audioSyncIdx < videoStartIdx, "audiobook stops and syncs before video starts");
+
+        // Closing video (dismissing visible OSD first if needed) returns to movie Details where theme music plays normally.
+        await tv.remote(BACK);
+        if (await tv.page.locator('[data-screen="player"]').count() > 0) await tv.remote(BACK);
+        await tv.page.locator('[data-view="item:movie:m0001"] [data-focus="play"]').waitFor();
+        await tv.eventually(async () => themes.grants.length === 1, "theme music allowed once audiobook cleared");
+    }, ({ tv, settings }) => {
+        themes = new FakeThemes(tv.fake);
+        settings.profile().set(THEME_MUSIC_ENABLED_KEY, true);
+    });
+}
+
+playerTest("switching profile while audiobook is minimized tears down audio with zero cross-profile syncProgress", async ({ tv, catalog }) => {
+    await tv.page.locator('[data-section="shelf"] [data-focus="audiobook:tide"]').click();
+    await tv.page.locator('[data-view="audiobook:audiobook:tide"] [data-focus="play"]').waitFor();
+    await tv.page.keyboard.press("Enter");
+    await prepareAudio(tv, true);
+    await tv.remote(BACK);
+    await tv.page.locator('[data-view="audiobook:audiobook:tide"]').waitFor();
+    await tv.remote(BACK);
+    await tv.page.locator('[data-view="home"]').waitFor();
+    await tv.page.locator(".skyline-now-playing").waitFor();
+
+    await tv.page.evaluate(() => window.appHarness.avplay.tick(4500 * 1000));
+
+    await tv.page.locator('[data-focus="profiles"]').click();
+    await tv.page.locator('[data-focus="switch-profile"]').click();
+    await tv.page.locator('[data-screen="profiles"]').waitFor();
+
+    assert.equal(await tv.page.locator(".skyline-now-playing").count(), 0);
+    assert.equal(await tv.page.locator('.audio-avplay-surface, object[type="application/avplayer"]').count(), 0);
+    assert.equal(await tv.page.evaluate(() => window.appHarness.avplay.calls.includes("close")), true);
+    assert.equal(catalog.progressWrites.every(write => write.profileId === "p-owner"), true);
+    const writesAtSwitch = catalog.progressWrites.length;
+    await tv.jump(15000);
+    assert.equal(catalog.progressWrites.length, writesAtSwitch);
 });

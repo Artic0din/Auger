@@ -963,6 +963,10 @@
 .browse-nav .skyline-tabs .browse-button { margin: 0; }
 .browse-nav .skyline-tabs .skyline-search { flex-shrink: 0; margin: 0; }
 .skyline-tools { margin-inline-start: auto; display: flex; align-items: center; }
+.browse-nav .skyline-now-playing { display: inline-flex; align-items: center; gap: 10px; max-width: 280px; margin-inline: 16px 0; padding: 0 20px; background: rgba(255,255,255,.14); border-color: rgba(255,255,255,.12); color: #fff; }
+.browse-nav .skyline-now-playing.is-paused { opacity: .78; }
+.browse-nav .skyline-now-playing svg { width: 22px; height: 22px; flex-shrink: 0; }
+.skyline-now-playing-label { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 /* Apple's 29 px tab inset includes the capsule edge. Labels are 26 pt semibold, white at 62% resting and white selected
    (SiloTheme.swift:189, TVTopMenuBar.swift:440,508-512). TVTopMenuCapsuleChrome springs on focus,
    spring(response: 0.35, dampingFraction: 0.85), which this curve follows within 1.6%; a selection change alone eases

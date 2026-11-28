@@ -19,6 +19,8 @@
  "audiobook.chapters.open": "チャプター",
  "audiobook.error.noPlayableTrack": "再生できる音声トラックがありません。",
  "audiobook.error.unavailablePart": "サーバーが利用できないオーディオブックのパートを選択しました。",
+ "audiobook.miniPlayer.nowPlaying": "再生中：{title}",
+ "audiobook.miniPlayer.openHint": "フルプレーヤーを開きます",
  "audiobook.player.label": "オーディオブック",
  "audiobook.player.playbackPosition": "再生位置",
  "audiobook.player.starting": "オーディオブックを開始中",

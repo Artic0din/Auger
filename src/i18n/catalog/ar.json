@@ -19,6 +19,8 @@
  "audiobook.chapters.open": "الفصول",
  "audiobook.error.noPlayableTrack": "لا يتوفر مسار صوتي قابل للتشغيل.",
  "audiobook.error.unavailablePart": "حدد الخادم جزءًا غير متاح من الكتاب الصوتي.",
+ "audiobook.miniPlayer.nowPlaying": "قيد التشغيل: {title}",
+ "audiobook.miniPlayer.openHint": "يفتح المشغّل الكامل",
  "audiobook.player.label": "كتاب صوتي",
  "audiobook.player.playbackPosition": "موضع التشغيل",
  "audiobook.player.starting": "جارٍ بدء الكتاب الصوتي",

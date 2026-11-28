@@ -2022,3 +2022,53 @@ test("stop() bounds missing seekTo callback by STARTUP_TIMEOUT_MS and retires AV
     assert.equal(r2.avplay.state, "NONE");
     await r2.controller.destroy();
 });
+
+test("starting another book while active flushes final syncProgress and stops old session first", async () => {
+    const r = await setup();
+    void r.controller.start({ contentId: "audiobook:tide" });
+    await settlePlay(r);
+    r.avplay.tick(4500 * 1000);
+    await r.h.clock.advance(0);
+
+    const requestMark = r.h.fake.requests.length;
+    const writesBefore = r.catalog.progressWrites.length;
+    void r.controller.start({ contentId: "audiobook:dune" });
+    await settlePlay(r);
+
+    const view = playingView(r);
+    assert.equal(view.contentId, "audiobook:dune");
+    assert.equal(r.catalog.progressWrites.length, writesBefore + 1);
+    assert.deepEqual(r.catalog.progressWrites.at(-1), {
+        profileId: "p-owner",
+        mediaItemId: "audiobook:tide",
+        positionMs: 4_500_000,
+        durationMs: 10_800_000,
+        forceOverwrite: true,
+    });
+
+    const tail = r.h.fake.requests.slice(requestMark);
+    const stopIdx = tail.findIndex(req => req.method === "DELETE" && req.path.startsWith("/playback/"));
+    const syncIdx = tail.findIndex(req => req.method === "POST" && req.path === "/sync/progress");
+    const nextStartIdx = tail.findIndex(req => req.method === "POST" && req.path === "/playback/start");
+    assert.ok(stopIdx >= 0 && syncIdx >= 0 && nextStartIdx >= 0);
+    assert.ok(stopIdx < nextStartIdx && syncIdx < nextStartIdx, "old session stop + syncProgress precede next book start");
+    r.controller.destroy();
+});
+
+test("restarting the same book stops the old server session without overwriting progress", async () => {
+    const r = await setup();
+    void r.controller.start({ contentId: "audiobook:dune" });
+    await settlePlay(r);
+    r.avplay.tick(120 * 1000);
+    await r.h.clock.advance(0);
+
+    const writesBefore = r.catalog.progressWrites.length;
+    const stopsBefore = stopRequests(r).length;
+    void r.controller.start({ contentId: "audiobook:dune", restart: true });
+    await settlePlay(r);
+
+    assert.equal(stopRequests(r).length, stopsBefore + 1);
+    assert.equal(r.catalog.progressWrites.length, writesBefore, "restart skips flushing old mid-book position");
+    assert.equal(startRequests(r).at(-1)?.body?.start_position, 0);
+    r.controller.destroy();
+});

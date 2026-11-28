@@ -80,7 +80,7 @@ File pointers are repository-relative.
 | Rows of collections on Home and library pages | ✅ | ✅ | ? | `collection_posters` sections decoded into `SectionCollectionCard`s and drawn as rows on Home and library pages (#676; `docs/features/library-discovery.md`). Layout parity tracked in #100 and #765. Apple: `TVCollectionsRow`. Android TV not checked |
 | Library Shuffle | ✅ | ✅ | ✅ | Server-owned; hidden in mixed-library scope. Apple: `ShuffleFeatureStore`. Android: no mixed-library screen on TV |
 | Music | 🚧 | ✅ | 🟡 | Blocked on the server parity contract (#56). Android: Music tab browses the library (`TvLibraryTabType.Music`); no music player found in `androidTvApp` |
-| Audiobooks | 🟡 | ✅ | ✅ | #55. Apple: `TVAudiobookDetailView`, `AudioFullPlayerView`. Android: `TvAudiobookPlayerScreen`; top-bar tab is opt-in (Settings → Show Audiobooks). Tizen has browsing, detail, full-screen AVPlay playback, multi-part timeline, chapter navigation, skip intervals, honest AVPlay speed (`1×`, `2×` on progressive streams), sleep timer, and whole-book `syncProgress`; minimize/background playback, mini-player return, and live Samsung TV verification stay open |
+| Audiobooks | 🟡 | ✅ | ✅ | #55. Apple: `TVAudiobookDetailView`, `AudioFullPlayerView`. Android: `TvAudiobookPlayerScreen`; top-bar tab is opt-in (Settings → Show Audiobooks). Tizen has browsing, detail, full-screen AVPlay playback, multi-part timeline, chapter navigation, skip intervals, honest AVPlay speed (`1×`, `2×` on progressive streams), sleep timer, whole-book `syncProgress`, Back-to-minimize background playback with top-bar Now Playing return and Detail resume-in-place, minimized media-key controls, and clean theme/video/profile handoffs; live Samsung TV audio and hardware verification stays open |
 
 ## Search
 
@@ -216,7 +216,7 @@ File pointers are repository-relative.
 ## Platform summary
 
 **Tizen** is a Skyline-style 10-foot client for sign-in, profiles, Movies and Series browsing, details, search, lists, calendar, requests, opt-in audiobooks, and AVPlay playback with audio, text subtitles and AI subtitles.
-It has no music browsing or Smart Hub row, and audiobook playback currently stops when closed with Back.
+It has no music browsing or Smart Hub row, and audiobook playback minimizes to the background on Back with a top-bar Now Playing shortcut until explicitly stopped or handed off to video or profile changes.
 Its playback speed is limited to 1× and 2× on direct-file plans.
 Watch Party is partly built and off by default: the lobby, Ready and voting work, and synchronized playback waits on #13 ([Watch Party](docs/features/watch-party.md)).
 

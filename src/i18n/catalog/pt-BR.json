@@ -19,6 +19,8 @@
  "audiobook.chapters.open": "Capítulos",
  "audiobook.error.noPlayableTrack": "Nenhuma faixa de áudio reproduzível está disponível.",
  "audiobook.error.unavailablePart": "O servidor selecionou uma parte do audiolivro que está indisponível.",
+ "audiobook.miniPlayer.nowPlaying": "Tocando agora: {title}",
+ "audiobook.miniPlayer.openHint": "Abre o player completo",
  "audiobook.player.label": "Audiolivro",
  "audiobook.player.playbackPosition": "Posição da reprodução",
  "audiobook.player.starting": "Iniciando audiolivro",

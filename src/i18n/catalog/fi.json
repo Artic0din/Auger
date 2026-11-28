@@ -19,6 +19,8 @@
  "audiobook.chapters.open": "Luvut",
  "audiobook.error.noPlayableTrack": "Toistettavaa ääniraitaa ei ole saatavilla.",
  "audiobook.error.unavailablePart": "Palvelin valitsi äänikirjan osan, joka ei ole saatavilla.",
+ "audiobook.miniPlayer.nowPlaying": "Nyt toistetaan: {title}",
+ "audiobook.miniPlayer.openHint": "Avaa koko soittimen",
  "audiobook.player.label": "Äänikirja",
  "audiobook.player.playbackPosition": "Toistokohta",
  "audiobook.player.starting": "Käynnistetään äänikirjaa…",

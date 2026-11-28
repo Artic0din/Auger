@@ -5,9 +5,18 @@ import { AudiobookController, type AudiobookPlaybackView, type AudiobookPlayRequ
 import { type AudiobookPlayerScreen, mountAudiobookPlayerScreen } from "./audiobookPlayerScreen.ts";
 import type { PlayerPlatform } from "./playerScreen.ts";
 
+export interface AudiobookNowPlaying {
+    readonly contentId: string;
+    readonly title: string;
+    readonly authorLine: string | undefined;
+    readonly posterUrl: string | undefined;
+    readonly paused: boolean;
+}
+
 export interface AudiobookHostDeps {
     readonly server: ConnectedServer;
     readonly platform: PlayerPlatform;
+    readonly onMinimize?: () => void;
     readonly onExit?: () => void;
     readonly onFinished?: () => void;
 }
@@ -20,7 +29,8 @@ export class AudiobookHost {
     private readonly root: HTMLElement;
     private readonly server: ConnectedServer;
     private readonly controller: AudiobookController;
-    private readonly listeners: ((view: AudiobookPlaybackView) => void)[] = [];
+    private readonly listeners: ((view: AudiobookPlaybackView, visible: boolean) => void)[] = [];
+    private readonly onMinimize: (() => void) | undefined;
     private readonly onExit: (() => void) | undefined;
     private readonly onFinished: (() => void) | undefined;
     private surface: HTMLDivElement | undefined;
@@ -29,6 +39,7 @@ export class AudiobookHost {
     private removingSurface = false;
     private stopInFlight: Promise<void> | undefined;
     private screen: AudiobookPlayerScreen | undefined;
+    private pendingExitRestore = false;
     private destroyed = false;
 
     private readonly onVisibility = (): void => {
@@ -43,6 +54,7 @@ export class AudiobookHost {
     constructor(root: HTMLElement, deps: AudiobookHostDeps) {
         this.root = root;
         this.server = deps.server;
+        this.onMinimize = deps.onMinimize;
         this.onExit = deps.onExit;
         this.onFinished = deps.onFinished;
 
@@ -60,7 +72,7 @@ export class AudiobookHost {
         this.controller.subscribe(view => {
             if (view.phase === "idle" || view.phase === "error") this.removeSurface();
             else this.ensureSurface();
-            for (const listener of [...this.listeners]) listener(view);
+            this.notify();
         });
         document.addEventListener("visibilitychange", this.onVisibility);
     }
@@ -82,9 +94,22 @@ export class AudiobookHost {
         return view.phase === "idle" ? undefined : view.contentId;
     }
 
-    subscribe(listener: (view: AudiobookPlaybackView) => void): () => void {
+    get nowPlaying(): AudiobookNowPlaying | undefined {
+        const view = this.controller.view;
+        if (view.phase !== "playing" && view.phase !== "paused") return undefined;
+        if (this.destroyed || this.stopInFlight !== undefined) return undefined;
+        return {
+            contentId: view.contentId,
+            title: view.title,
+            authorLine: view.authorLine,
+            posterUrl: view.posterUrl,
+            paused: view.phase === "paused",
+        };
+    }
+
+    subscribe(listener: (view: AudiobookPlaybackView, visible: boolean) => void): () => void {
         this.listeners.push(listener);
-        listener(this.controller.view);
+        listener(this.controller.view, this.isVisible);
         return () => {
             const index = this.listeners.indexOf(listener);
             if (index >= 0) this.listeners.splice(index, 1);
@@ -95,6 +120,7 @@ export class AudiobookHost {
         if (this.destroyed) return;
         this.exitGen += 1;
         this.stopInFlight = undefined;
+        this.pendingExitRestore = false;
         this.hideScreen();
         this.ensureSurface();
         this.show();
@@ -104,12 +130,17 @@ export class AudiobookHost {
     private finishExit(kind: "close" | "finished"): void {
         if (this.destroyed) return;
         const gen = ++this.exitGen;
+        const shouldRestore = kind === "finished"
+            ? this.screen !== undefined
+            : this.screen !== undefined || this.pendingExitRestore;
+        this.pendingExitRestore = false;
         const finalize = (): void => {
             if (this.destroyed || this.exitGen !== gen || this.controller.view.phase !== "idle") return;
             const hadScreen = this.screen !== undefined;
             this.hideScreen();
             this.removeSurface();
-            if (hadScreen) {
+            this.notify();
+            if (hadScreen || shouldRestore) {
                 if (kind === "finished") this.onFinished?.();
                 else this.onExit?.();
             }
@@ -119,6 +150,7 @@ export class AudiobookHost {
             return;
         }
         this.screen?.setStopping();
+        this.notify();
         // AudiobookController bounds pending seekTo/restoreAsync by STARTUP_TIMEOUT_MS before retiring AVPlay.
         void this.controller.whenTransportIdle().finally(finalize);
     }
@@ -162,12 +194,34 @@ export class AudiobookHost {
 
     show(): void {
         if (this.destroyed || this.screen !== undefined) return;
+        this.pendingExitRestore = false;
         this.screen = mountAudiobookPlayerScreen(this.root, {
             controller: this.controller,
             baseUrl: this.server.server.http.base.baseUrl,
-            onClose: () => { void this.stop(); },
+            onClose: () => {
+                const phase = this.controller.view.phase;
+                if (phase === "playing" || phase === "paused") this.minimize();
+                else void this.stop();
+            },
             onStop: () => { void this.stop(); },
         });
+        this.notify();
+    }
+
+    seekAndShow(seconds: number): void {
+        if (this.destroyed || this.stopInFlight !== undefined) return;
+        this.ensureSurface();
+        this.show();
+        this.controller.seekTo(seconds);
+        this.controller.play();
+    }
+
+    minimize(): void {
+        if (this.destroyed || this.screen === undefined || this.stopInFlight !== undefined) return;
+        this.pendingExitRestore = false;
+        this.hideScreen();
+        this.notify();
+        this.onMinimize?.();
     }
 
     hideScreen(): void {
@@ -181,13 +235,16 @@ export class AudiobookHost {
             await this.stopInFlight;
             return;
         }
+        const wasVisible = this.screen !== undefined;
         if (this.controller.view.phase === "idle" && !this.controller.transportBusy) {
-            const wasVisible = this.screen !== undefined;
+            this.pendingExitRestore = false;
             this.hideScreen();
             this.removeSurface();
+            this.notify();
             if (wasVisible) this.onExit?.();
             return;
         }
+        if (wasVisible) this.pendingExitRestore = true;
         this.screen?.setStopping();
         let work!: Promise<void>;
         work = (async (): Promise<void> => {
@@ -200,17 +257,21 @@ export class AudiobookHost {
             if (current) this.stopInFlight = undefined;
             if (current && !this.destroyed && this.controller.view.phase === "idle" && !this.controller.transportBusy) {
                 const hadScreen = this.screen !== undefined;
+                const shouldRestore = hadScreen || this.pendingExitRestore;
+                this.pendingExitRestore = false;
                 this.hideScreen();
                 this.removeSurface();
-                if (hadScreen) this.onExit?.();
+                this.notify();
+                if (shouldRestore) this.onExit?.();
             }
         });
         this.stopInFlight = work;
+        this.notify();
         await work;
     }
 
     handleMediaKey(event: KeyboardEvent): boolean {
-        if (this.destroyed || !this.isActive) return false;
+        if (this.destroyed || this.nowPlaying === undefined) return false;
         const key = physicalKey(event);
         switch (key) {
             case "play_pause": this.controller.togglePlayPause(); return true;
@@ -227,10 +288,18 @@ export class AudiobookHost {
         if (this.destroyed) return;
         this.destroyed = true;
         this.exitGen += 1;
+        this.pendingExitRestore = false;
         document.removeEventListener("visibilitychange", this.onVisibility);
         this.hideScreen();
         this.listeners.length = 0;
         void this.controller.destroy();
         this.removeSurface();
+    }
+
+    private notify(): void {
+        if (this.destroyed) return;
+        const current = this.controller.view;
+        const visible = this.isVisible;
+        for (const listener of [...this.listeners]) listener(current, visible);
     }
 }

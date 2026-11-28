@@ -32,7 +32,7 @@ import { CardActions } from "./cardActions.ts";
 import type { ConnectedServer } from "../session/core.ts";
 import type { PublicStorage } from "../session/deviceIdentity.ts";
 import type { TizenKeyManager } from "../session/secretStore.ts";
-import { Skyline } from "./skyline.ts";
+import { Skyline, type SkylineNowPlaying } from "./skyline.ts";
 import { decodeImageCapabilities, detailArtworkQuery, episodeArtworkQuery, type ImageCapabilities, homeArtworkQuery } from "../contracts/v2/images.ts";
 import { FocusHost, type FocusTarget, type Zone } from "./browseFocus.ts";
 import { type Destination, type PlayRequest, applySeriesLine, artworkUrl, destinationOf, seriesLineFor, playChoices, visibleLibraries, withStartAudioLanguage } from "./browseModel.ts";
@@ -126,6 +126,12 @@ export interface Browse {
     updateProfile(profile: Pick<ProfileSummary, "name" | "avatarUrl" | "avatar">): void;
     /** Opens an in-browse destination (for tests). */
     open(destination: Destination): void;
+    /** Sets active audiobook audio state so Detail theme music stays suppressed until audio stops. */
+    setAudiobookActive(active: boolean): void;
+    /** Updates the minimized audiobook Now Playing shortcut in the Skyline bar. */
+    setAudiobookNowPlaying(state: SkylineNowPlaying | undefined): void;
+    /** Hides browse cleanly and invokes `onOpen` to present the full audiobook player overlay. */
+    enterAudiobookOverlay(onOpen: () => void): void;
     /** Removes browse and its container; nothing else in `root` is touched. */
     destroy(): void;
     /** The profile spoiler switches playback uses for Up Next. */
@@ -639,7 +645,8 @@ export function mountBrowse(root: HTMLElement, options: BrowseOptions): Browse {
             loop: themePrefs.loops,
         };
     };
-    const syncThemeMusic = (): void => themeCenter.update(themePage(), playing);
+    let audiobookActive = false;
+    const syncThemeMusic = (): void => themeCenter.update(themePage(), playing || audiobookActive);
     const themeVisibility = (): void => syncThemeMusic();
     document.addEventListener("visibilitychange", themeVisibility);
     themePrefs.subscribe(syncThemeMusic);
@@ -2045,7 +2052,7 @@ export function mountBrowse(root: HTMLElement, options: BrowseOptions): Browse {
         }
     };
 
-    const handoff = (request: PlayRequest, focus?: FocusTarget): void => {
+    const hideForOverlay = (onEntered: () => void, focus?: FocusTarget): void => {
         const current = top();
         if (current === undefined || torn || playing) {
             return;
@@ -2060,24 +2067,17 @@ export function mountBrowse(root: HTMLElement, options: BrowseOptions): Browse {
         shell.hide();
         host.stop();
         container.hidden = true;
-        options.onPlay(request);
+        onEntered();
+    };
+
+    const handoff = (request: PlayRequest, focus?: FocusTarget): void => {
+        hideForOverlay(() => options.onPlay(request), focus);
     };
 
     const handoffAudiobook = (request: AudiobookPlayRequest, focus?: FocusTarget): void => {
-        const current = top();
-        if (current === undefined || torn || playing || options.onPlayAudiobook === undefined) {
-            return;
-        }
-        current.focus = focus ?? host.focused();
-        stopDetails();
-        playing = true;
-        syncThemeMusic();
-        cancelCalendarDay();
-        host.holdVisit();
-        shell.hide();
-        host.stop();
-        container.hidden = true;
-        options.onPlayAudiobook(request);
+        const onPlay = options.onPlayAudiobook;
+        if (onPlay === undefined) return;
+        hideForOverlay(() => onPlay(request), focus);
     };
 
     const coverBrowse = (open: (back: () => void) => void, focus?: FocusTarget): void => {
@@ -2631,6 +2631,21 @@ export function mountBrowse(root: HTMLElement, options: BrowseOptions): Browse {
             if (current !== undefined) {
                 showRoute(current, current.focus);
             }
+        },
+        setAudiobookActive(active) {
+            if (torn) return;
+            audiobookActive = active;
+            syncThemeMusic();
+        },
+        setAudiobookNowPlaying(state) {
+            if (torn) return;
+            const focused = host.focused();
+            if (shell.setNowPlaying(state) && !playing && top() !== undefined) {
+                render(state === undefined && focused?.zone === "nav" && focused.key === "audiobook-now-playing" ? { zone: "nav", key: "profiles" } : focused);
+            }
+        },
+        enterAudiobookOverlay(onOpen) {
+            hideForOverlay(onOpen);
         },
         updateProfile(profile) {
             if (torn) return;

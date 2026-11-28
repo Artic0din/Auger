@@ -19,6 +19,8 @@
  "audiobook.chapters.open": "Kapitoly",
  "audiobook.error.noPlayableTrack": "Není k dispozici žádná přehratelná zvuková stopa.",
  "audiobook.error.unavailablePart": "Server vybral nedostupnou část audioknihy.",
+ "audiobook.miniPlayer.nowPlaying": "Právě hraje: {title}",
+ "audiobook.miniPlayer.openHint": "Otevře celý přehrávač",
  "audiobook.player.label": "Audiokniha",
  "audiobook.player.playbackPosition": "Pozice přehrávání",
  "audiobook.player.starting": "Spouštění audioknihy",

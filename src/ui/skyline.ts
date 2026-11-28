@@ -22,7 +22,14 @@ import type { LibraryMode } from "./libraryDiscovery.ts";
 import { documentIsRightToLeft } from "../i18n/direction.ts";
 import { type MessageKey, translate } from "../i18n/translate.ts";
 import type { PersonalSource } from "./personalLists.ts";
+import { waveformIcon } from "../player/playerIcons.ts";
 import { signOutConfirmationCopy } from "./signOutConfirmation.ts";
+
+export interface SkylineNowPlaying {
+    readonly title: string;
+    readonly paused: boolean;
+    readonly onOpen: () => void;
+}
 
 type VideoTab = "movies" | "series" | "music" | "audiobooks";
 
@@ -250,6 +257,76 @@ export class Skyline {
     }
 
     private avatarState: { readonly name: string; readonly reference: string | undefined; readonly baseUrl: string; readonly text?: string | undefined } | undefined;
+    private nowPlayingState: SkylineNowPlaying | undefined;
+    private rootItems: FocusItem[] = [];
+    private searchItem: FocusItem | undefined;
+    private profileItem: FocusItem | undefined;
+    private nowPlayingItem: FocusItem | undefined;
+
+    private buildNowPlayingElement(state: SkylineNowPlaying): FocusItem {
+        const mini = actionButton("audiobook-now-playing", "", () => this.nowPlayingState?.onOpen());
+        mini.element.classList.add("skyline-now-playing");
+        mini.element.innerHTML = `${waveformIcon()}<span class="skyline-now-playing-label"></span>`;
+        this.updateNowPlayingElement(mini, state);
+        return mini;
+    }
+
+    private updateNowPlayingElement(item: FocusItem, state: SkylineNowPlaying): void {
+        item.element.classList.toggle("is-paused", state.paused);
+        item.element.setAttribute("aria-label", translate("audiobook.miniPlayer.nowPlaying", { title: state.title }));
+        item.element.setAttribute("title", translate("audiobook.miniPlayer.openHint"));
+        const label = item.element.querySelector(".skyline-now-playing-label");
+        if (label !== null) label.textContent = state.title;
+    }
+
+    private syncItems(): void {
+        if (this.searchItem === undefined || this.profileItem === undefined) return;
+        this.items = [
+            this.searchItem,
+            ...this.rootItems,
+            ...(this.nowPlayingItem === undefined ? [] : [this.nowPlayingItem]),
+            this.profileItem,
+        ];
+    }
+
+    private rebuildToolsDom(): void {
+        if (this.searchItem === undefined || this.profileItem === undefined) return;
+        const toolItems: FocusItem[] = [];
+        if (this.nowPlayingState !== undefined) {
+            this.nowPlayingItem ??= this.buildNowPlayingElement(this.nowPlayingState);
+            this.updateNowPlayingElement(this.nowPlayingItem, this.nowPlayingState);
+            toolItems.push(this.nowPlayingItem);
+        } else {
+            this.nowPlayingItem = undefined;
+        }
+        toolItems.push(this.profileItem);
+        this.syncItems();
+        replaceNodes(this.tools, toolItems.map(item => item.element));
+    }
+
+    /** Shows or updates the minimized audiobook shortcut beside the profile avatar; returns true when item membership changed. */
+    setNowPlaying(state: SkylineNowPlaying | undefined): boolean {
+        const had = this.nowPlayingState !== undefined;
+        const has = state !== undefined;
+        this.nowPlayingState = state;
+        if (!had && !has) return false;
+        if (had && has && state !== undefined) {
+            if (this.nowPlayingItem !== undefined) this.updateNowPlayingElement(this.nowPlayingItem, state);
+            return false;
+        }
+        if (this.searchItem === undefined || this.profileItem === undefined) return had !== has;
+        const focusedNowPlaying = this.nowPlayingItem !== undefined && document.activeElement === this.nowPlayingItem.element;
+        if (state !== undefined) {
+            this.nowPlayingItem = this.buildNowPlayingElement(state);
+            this.tools.insertBefore(this.nowPlayingItem.element, this.profileItem.element);
+        } else {
+            this.nowPlayingItem?.element.remove();
+            this.nowPlayingItem = undefined;
+        }
+        this.syncItems();
+        if (focusedNowPlaying) this.profileItem.element.focus({ preventScroll: true });
+        return true;
+    }
 
     update(libraries: readonly UserLibrary[]): void {
         this.libraries = libraries;
@@ -273,21 +350,23 @@ export class Skyline {
             return item;
         });
         const searchItem = actionButton("search", "", () => this.commit("search"));
-        this.items = [searchItem, ...rootItems, actionButton("profiles", this.profiles.name.slice(0, 1).toUpperCase(), () => this.openProfile(true))];
-        const search = this.items.find((item) => item.key === "search");
-        search?.element.setAttribute("aria-label", translate("topBar.search"));
-        search?.element.classList.add("skyline-search");
-        const profiles = this.items.find((item) => item.key === "profiles");
-        profiles?.element.setAttribute("aria-label", translate("topBar.profileButton"));
-        profiles?.element.classList.add("skyline-profile");
-        profiles?.element.setAttribute("aria-haspopup", "menu");
-        this.syncSelection(this.selected, false);
-        if (this.avatarState !== undefined) this.applyAvatar(this.avatarState);
+        const profileItem = actionButton("profiles", this.profiles.name.slice(0, 1).toUpperCase(), () => this.openProfile(true));
+        this.rootItems = rootItems;
+        this.searchItem = searchItem;
+        this.profileItem = profileItem;
+        this.nowPlayingItem = this.nowPlayingState === undefined ? undefined : this.buildNowPlayingElement(this.nowPlayingState);
+        searchItem.element.setAttribute("aria-label", translate("topBar.search"));
+        searchItem.element.classList.add("skyline-search");
+        profileItem.element.setAttribute("aria-label", translate("topBar.profileButton"));
+        profileItem.element.classList.add("skyline-profile");
+        profileItem.element.setAttribute("aria-haspopup", "menu");
         replaceNodes(this.roots, rootItems.map(item => item.element));
         const balance = el("span", "skyline-search-balance");
         balance.setAttribute("aria-hidden", "true");
         replaceNodes(this.tabs, [searchItem.element, this.roots, balance]);
-        replaceNodes(this.tools, this.items.slice(-1).map(item => item.element));
+        this.rebuildToolsDom();
+        this.syncSelection(this.selected, false);
+        if (this.avatarState !== undefined) this.applyAvatar(this.avatarState);
         // Removing the focused tab moves focus to the next control, the first title. Put the same
         // tab back when it is still in the strip, before that move can be recorded as content focus.
         if (focusedKey !== undefined) this.items.find((item) => item.key === focusedKey)?.element.focus({ preventScroll: true });

@@ -19,6 +19,8 @@
  "audiobook.chapters.open": "Poglavlja",
  "audiobook.error.noPlayableTrack": "Nema dostupnog audiozapisa za reprodukciju.",
  "audiobook.error.unavailablePart": "Poslužitelj je odabrao nedostupan dio audioknjige.",
+ "audiobook.miniPlayer.nowPlaying": "Sada se reproducira: {title}",
+ "audiobook.miniPlayer.openHint": "Otvara puni prikaz reproduktora",
  "audiobook.player.label": "Audioknjiga",
  "audiobook.player.playbackPosition": "Položaj reprodukcije",
  "audiobook.player.starting": "Pokretanje audioknjige",

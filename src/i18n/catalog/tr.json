@@ -19,6 +19,8 @@
  "audiobook.chapters.open": "Bölümler",
  "audiobook.error.noPlayableTrack": "Oynatılabilir ses parçası yok.",
  "audiobook.error.unavailablePart": "Sunucu, kullanılamayan bir sesli kitap parçası seçti.",
+ "audiobook.miniPlayer.nowPlaying": "Şimdi oynatılıyor: {title}",
+ "audiobook.miniPlayer.openHint": "Tam oynatıcıyı açar",
  "audiobook.player.label": "Sesli kitap",
  "audiobook.player.playbackPosition": "Oynatma konumu",
  "audiobook.player.starting": "Sesli kitap başlatılıyor",
