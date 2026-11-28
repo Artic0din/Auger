@@ -80,7 +80,7 @@ File pointers are repository-relative.
 | Rows of collections on Home and library pages | ✅ | ✅ | ? | `collection_posters` sections decoded into `SectionCollectionCard`s and drawn as rows on Home and library pages (#676; `docs/features/library-discovery.md`). Layout parity tracked in #100 and #765. Apple: `TVCollectionsRow`. Android TV not checked |
 | Library Shuffle | ✅ | ✅ | ✅ | Server-owned; hidden in mixed-library scope. Apple: `ShuffleFeatureStore`. Android: no mixed-library screen on TV |
 | Music | 🚧 | ✅ | 🟡 | Blocked on the server parity contract (#56). Android: Music tab browses the library (`TvLibraryTabType.Music`); no music player found in `androidTvApp` |
-| Audiobooks | 🚧 | ✅ | ✅ | #55. Apple: `TVAudiobookDetailView`, `AudioFullPlayerView`. Android: `TvAudiobookPlayerScreen`; top-bar tab is opt-in (Settings → Show Audiobooks). Tizen has the tab, library, cards, detail and Apple's loading frame; audiobook playback is not built |
+| Audiobooks | 🟡 | ✅ | ✅ | #55. Apple: `TVAudiobookDetailView`, `AudioFullPlayerView`. Android: `TvAudiobookPlayerScreen`; top-bar tab is opt-in (Settings → Show Audiobooks). Tizen has browsing, detail, full-screen AVPlay playback, multi-part timeline, chapter navigation, skip intervals, honest AVPlay speed (`1×`, `2×` on progressive streams), sleep timer, and whole-book `syncProgress`; minimize/background playback, mini-player return, and live Samsung TV verification stay open |
 
 ## Search
 
@@ -150,7 +150,7 @@ File pointers are repository-relative.
 | Up Next panel before the episode ends (Play Now, Keep Watching) | ✅ | ✅ | ✅ | Shows 10, 30, 60 or 120 seconds before the end, set by Show Next Up (default 30); At end turns the early panel off and Play next follows the episode ([series autoplay](docs/playback/series-autoplay.md)). Apple: `PlayerView`, with a Show Next Up time setting. Android: `TvPlayerScreen` |
 | Retry after playback fails to start | ✅ | ✅ | ✅ | A retryable first start (network, server, retryable terminal, or a route recovery that ran out of attempts) focuses Retry and replays that request at the same position. Go Back stays available. Apple: `PlayerViewModel.retry()`. Android: `TvPlayerScreen` |
 | Playback speed | 🟡 | ✅ | ✅ | The Video tab's Speed row offers 1× and 2× on `http_progressive` plans only (`videoOptions` in `src/player/playerHUD.ts`). Apple: HUD Speed row, 0.75× to 2.0×. AVPlay `setSpeed` takes only whole-number rates (±1, 2, 4, 8, 16×), so Apple's range cannot be matched |
-| Sleep timer | ➖ | 🟡 | ✅ | Apple: audiobook player only (`AudioFullPlayerView`); the video HUD has no way to start it |
+| Sleep timer | ✅ | 🟡 | ✅ | Apple & Tizen: audiobook player (`AudioFullPlayerView`, `AudiobookSleepTimer`: 15/30/60 min and Off, live countdown on option pill, pauses and syncs progress at expiry); the video HUD has no way to start it |
 | Chapters | ✅ | ✅ | ✅ | The player panel's Chapters tab lists the file's chapters with the current one marked, and hides when the file has none (`src/player/hudPanes.ts`, `watchChapters` in `src/api/chapterOperations.ts`). Apple: HUD Chapters tab. Android: scrubber markers |
 | Info / stats HUD | 🟡 | ✅ | ✅ | The player panel has Info and Stats tabs. Stats show the playback plan (engine, protocol, codecs, resolution, configured bitrate), not measured buffer, network or frame figures ([Player HUD](docs/player-hud.md)). Apple: `TVPlayerInfoHUD`. Android: `TvPlayerHud` |
 | In-player aspect mode, auto-play switch, subtitle appearance and delay | 🟡 | ✅ | ✅ | #103. The Video tab has Aspect (Fit, Stretch) and Auto-play next, and the Subtitles tab has Appearance and Delay. Fill is missing: AVPlay has no crop mode for it. Apple: `TVPlayerInfoHUD`. Android: `TvPlayerHud` |
@@ -215,8 +215,8 @@ File pointers are repository-relative.
 
 ## Platform summary
 
-**Tizen** is a Skyline-style 10-foot client for sign-in, profiles, Movies and Series browsing, details, search, lists, calendar, requests and AVPlay playback with audio, text subtitles and AI subtitles.
-It has no music browsing, audiobook playback, Smart Hub row or sleep timer.
+**Tizen** is a Skyline-style 10-foot client for sign-in, profiles, Movies and Series browsing, details, search, lists, calendar, requests, opt-in audiobooks, and AVPlay playback with audio, text subtitles and AI subtitles.
+It has no music browsing or Smart Hub row, and audiobook playback currently stops when closed with Back.
 Its playback speed is limited to 1× and 2× on direct-file plans.
 Watch Party is partly built and off by default: the lobby, Ready and voting work, and synchronized playback waits on #13 ([Watch Party](docs/features/watch-party.md)).
 

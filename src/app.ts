@@ -1,3 +1,5 @@
+import type { AudiobookPlayRequest } from "./player/audiobookController.ts";
+import { AudiobookHost } from "./player/audiobookHost.ts";
 import { startPlayback, type PlayerPlatform, type PlayerScreen } from "./player/playerScreen.ts";
 import { DiagnosticsCollector, type DiagnosticsDeviceInfo, type DiagnosticsIncidentRecord, diagnosticsFingerprint, sendDiagnosticsReportFor } from "./diagnostics.ts";
 import { connect, type ConnectedServer, type SessionCoreDeps } from "./session/core.ts";
@@ -41,6 +43,7 @@ export function mountApp(root: HTMLElement, options: AppOptions): SiloApp {
     let profiles: ProfileScreens | undefined;
     let browse: Browse | undefined;
     let player: PlayerScreen | undefined;
+    let audiobookHost: AudiobookHost | undefined;
     let profile: ProfileHandoff | undefined;
     let exitDialog: ExitDialog | undefined;
     let reconcileStartup: (() => void) | undefined;
@@ -109,6 +112,8 @@ export function mountApp(root: HTMLElement, options: AppOptions): SiloApp {
         closeExit();
         player?.destroy();
         player = undefined;
+        audiobookHost?.destroy();
+        audiobookHost = undefined;
         browse?.destroy();
         browse = undefined;
     };
@@ -294,9 +299,36 @@ export function mountApp(root: HTMLElement, options: AppOptions): SiloApp {
             },
             onAddProfile: back => profiles?.addProfile(back),
             onPlay: (request) => play(server, active, content, request),
+            onPlayAudiobook: (request) => playAudiobook(active, content, request),
             ...(options.core.clock === undefined ? {} : { clock: options.core.clock }),
         });
+        audiobookHost = options.player === undefined
+            ? undefined
+            : new AudiobookHost(root, {
+                server,
+                platform: options.player,
+                onExit: () => {
+                    if (!destroyed && !active.signal.aborted && browse === content) content.resumeAfterPlayback();
+                },
+                onFinished: () => {
+                    if (!destroyed && !active.signal.aborted && browse === content) content.resumeAfterPlayback();
+                },
+            });
         browse = content;
+    };
+
+    const playAudiobook = (active: ProfileHandoff, content: Browse, request: AudiobookPlayRequest): void => {
+        const resume = (): void => {
+            player = undefined;
+            if (!destroyed && !active.signal.aborted && browse === content) {
+                content.resumeAfterPlayback();
+            }
+        };
+        if (options.player === undefined || audiobookHost === undefined) {
+            player = unavailablePlayer(root, resume);
+            return;
+        }
+        audiobookHost.start(request);
     };
 
     const play = (server: ConnectedServer, active: ProfileHandoff, content: Browse, request: PlayRequest): void => {
@@ -320,6 +352,8 @@ export function mountApp(root: HTMLElement, options: AppOptions): SiloApp {
             activeServer?.profileLaunch.recordAway();
             player?.destroy();
             player = undefined;
+            audiobookHost?.destroy();
+            audiobookHost = undefined;
             options.exit();
             destroy();
         }, () => { exitDialog = undefined; window.setTimeout(() => reconcileStartup?.(), 0); });

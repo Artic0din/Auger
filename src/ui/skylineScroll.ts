@@ -236,7 +236,7 @@ export class SkylineScroll {
     reveal(element: HTMLElement, container: HTMLElement, previous?: Element | null, movingUp?: boolean): void {
         if (element.closest(".settings-categories") !== null) return;
         if (element.closest(".browse-nav, .skyline-selector:not(.details-audio-picker)") !== null) return;
-        const viewport = element.closest<HTMLElement>(".browse-panel-list, .browse-letters, .details-popover-scroll, .details-audio-picker, .settings-modal-options, .settings-pane, .skyline-content, .accounts-rail, .accounts-pane, .accounts-settings, .audiobook-description-body") ?? container;
+        const viewport = element.closest<HTMLElement>(".browse-panel-list, .browse-letters, .details-popover-scroll, .details-audio-picker, .settings-modal-options, .settings-pane, .skyline-content, .accounts-rail, .accounts-pane, .accounts-settings, .audiobook-description-body, .audio-player-modal-list") ?? container;
         // TVAlphabetRail.swift:43-44: the open rail scrolls to the focused letter. Entering, its chips are still growing
         // from 10 to 38, so measure the letter where it lands: each open chip is 38 tall, 4 below the one above. The rail draws
         // into the bottom safe area like Apple's ScrollView but reveals within its frame, so its bottom padding stays clear.
@@ -259,7 +259,7 @@ export class SkylineScroll {
         }
         // TVActionPopoverMenu.onAppear: a long list opens with its initial row in the centre. Apple draws no other anchor;
         // its native focus scroll then keeps the moving row in the middle of the window (#542, S95C 4c319416 vs Apple 9b8b3528).
-        if (viewport.matches(".details-popover-scroll")) {
+        if (viewport.matches(".details-popover-scroll, .audio-player-modal-list")) {
             const top = Math.min(viewport.scrollHeight - viewport.clientHeight, Math.max(0, element.offsetTop - (viewport.clientHeight - element.offsetHeight) / 2));
             if (previous === undefined || previous === null || !viewport.contains(previous)) viewport.scrollTop = top;
             else this.move(viewport, 0, top);

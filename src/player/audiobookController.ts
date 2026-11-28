@@ -226,6 +226,8 @@ export class AudiobookController {
     private transport = 0;
     private cancelStartup: (() => void) | undefined;
     private activeTeardown: Promise<void> | undefined;
+    private pendingDestroyClose = false;
+    private destroyWork: Promise<void> | undefined;
     private hidden = false;
     private destroyed = false;
 
@@ -256,6 +258,18 @@ export class AudiobookController {
 
     get view(): AudiobookPlaybackView {
         return this.current;
+    }
+
+    get transportBusy(): boolean {
+        return this.pendingDestroyClose
+            || this.pending.closing !== undefined
+            || this.pending.seek !== undefined
+            || this.pending.restore !== undefined;
+    }
+
+    async whenTransportIdle(): Promise<void> {
+        if (this.destroyWork !== undefined) await this.destroyWork;
+        await this.waitTransport();
     }
 
     subscribe(listener: (view: AudiobookPlaybackView) => void): () => void {
@@ -659,18 +673,25 @@ export class AudiobookController {
         this.deps.exits?.onClose?.();
     }
 
-    destroy(): void {
-        if (this.destroyed) return;
+    destroy(): Promise<void> {
+        if (this.destroyed) return this.destroyWork ?? Promise.resolve();
         this.destroyed = true;
         this.startGen++;
         this.lastRequest = undefined;
         this.retryPositionSeconds = undefined;
         this.cancelStartupTimer();
-        void this.teardownActive(true, true);
+        if (this.attempt !== undefined && this.activeTeardown !== undefined) {
+            this.pendingDestroyClose = true;
+        }
+        const teardown = this.teardownActive(true, true);
         this.stopAuthority();
         this.sleepTimer.cancel();
         this.current = { phase: "idle" };
         this.listeners.length = 0;
+        this.destroyWork = teardown
+            .finally(() => { this.pendingDestroyClose = false; })
+            .then(() => this.waitTransport());
+        return this.destroyWork;
     }
 
     // --- internal lifecycle ---
@@ -786,8 +807,18 @@ export class AudiobookController {
         const sessionId = attempt.sessionId;
         const installationId = attempt.installationId;
         const book = attempt.book;
-        const finalWholeSeconds = attempt.wholeBookSeconds;
-        const finalLocalSeconds = attempt.pendingPart?.localSeconds ?? attempt.partLocalSeconds;
+        // Apply pending scrubber targets only while an active part is already running; mid-transition
+        // part loads preserve the last confirmed position until the replacement part finishes preparing.
+        const pendingSeek = attempt.partStarted && attempt.pendingPart === undefined
+            ? (attempt.queuedSeekTarget ?? attempt.pendingSeekTarget)
+            : undefined;
+        const seekDest = pendingSeek !== undefined && book !== undefined ? bookPosition(book, pendingSeek) : undefined;
+        const finalWholeSeconds = seekDest !== undefined
+            ? seekDest.part.offset + seekDest.localSeconds
+            : attempt.wholeBookSeconds;
+        const finalLocalSeconds = seekDest !== undefined && seekDest.partIndex === attempt.partIndex
+            ? seekDest.localSeconds
+            : (attempt.pendingPart?.localSeconds ?? attempt.partLocalSeconds);
         const wasPaused = attempt.pauseAfterSeek ?? attempt.paused;
         const authorityOk = !attempt.abort.signal.aborted && !attempt.authoritySignal.aborted;
         const canSyncBook = sendBookSync && attempt.hasPlayed && book !== undefined && !attempt.finalSynced && authorityOk;
@@ -798,6 +829,7 @@ export class AudiobookController {
         const pendingSync = attempt.syncInFlight;
         const pendingStop = attempt.stopInFlight;
         this.closeTransport();
+        this.pendingDestroyClose = false;
 
         if (!canSyncBook && !canStopSession && pendingSync === undefined && pendingStop === undefined) {
             attempt.abort.abort();
@@ -1687,7 +1719,7 @@ export class AudiobookController {
         attempt.cancelProgressTimer = undefined;
         this.cancelStartupTimer();
         this.sleepTimer.cancel();
-        const retryTarget = attempt.pendingPart?.wholeBookSeconds ?? attempt.wholeBookSeconds;
+        const retryTarget = attempt.queuedSeekTarget ?? attempt.pendingSeekTarget ?? attempt.pendingPart?.wholeBookSeconds ?? attempt.wholeBookSeconds;
         if (attempt.hasPlayed) {
             this.retryPositionSeconds = Math.max(0, retryTarget);
         }

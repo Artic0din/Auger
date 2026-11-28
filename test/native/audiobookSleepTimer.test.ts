@@ -10,13 +10,14 @@ test("sleep timer offers the Apple TV audiobook presets and starts inactive", ()
     const timer = new AudiobookSleepTimer(clock, () => undefined);
     assert.equal(timer.active, false);
     assert.equal(timer.remainingSeconds, 0);
+    assert.equal(timer.presetMinutes, undefined);
     assert.equal(clock.scheduled, 0);
 });
 
 test("sleep timer counts down once per second, fires at zero, and leaves no lingering timers", async () => {
     const clock = new ManualClock();
     const fired: number[] = [];
-    const changes: { active: boolean; remainingSeconds: number }[] = [];
+    const changes: { active: boolean; remainingSeconds: number; presetMinutes: number | undefined }[] = [];
     const timer = new AudiobookSleepTimer(
         clock,
         () => fired.push(clock.now()),
@@ -26,15 +27,18 @@ test("sleep timer counts down once per second, fires at zero, and leaves no ling
     timer.start(15);
     assert.equal(timer.active, true);
     assert.equal(timer.remainingSeconds, 900);
+    assert.equal(timer.presetMinutes, 15);
     assert.equal(clock.scheduled, 1);
 
     await clock.advance(1000);
     assert.equal(timer.remainingSeconds, 899);
+    assert.equal(timer.presetMinutes, 15);
     assert.equal(fired.length, 0);
 
     await clock.advance(898 * 1000);
     assert.equal(timer.active, true);
     assert.equal(timer.remainingSeconds, 1);
+    assert.equal(timer.presetMinutes, 15);
     assert.equal(fired.length, 0);
 
     await clock.advance(1000);
@@ -42,9 +46,11 @@ test("sleep timer counts down once per second, fires at zero, and leaves no ling
     assert.equal(fired[0], start + 900 * 1000);
     assert.equal(timer.active, false);
     assert.equal(timer.remainingSeconds, 0);
+    assert.equal(timer.presetMinutes, undefined);
     assert.equal(clock.scheduled, 0);
     assert.equal(changes.at(-1)?.active, false);
     assert.equal(changes.at(-1)?.remainingSeconds, 0);
+    assert.equal(changes.at(-1)?.presetMinutes, undefined);
 });
 
 test("starting a new interval replaces the old timer and zero/cancel clears it", async () => {
@@ -52,23 +58,29 @@ test("starting a new interval replaces the old timer and zero/cancel clears it",
     let fires = 0;
     const timer = new AudiobookSleepTimer(clock, () => { fires++; });
     timer.start(30);
+    assert.equal(timer.presetMinutes, 30);
     await clock.advance(5000);
     assert.equal(timer.remainingSeconds, 1795);
+    assert.equal(timer.presetMinutes, 30);
 
     timer.start(15);
     assert.equal(timer.active, true);
     assert.equal(timer.remainingSeconds, 900);
+    assert.equal(timer.presetMinutes, 15);
     assert.equal(clock.scheduled, 1);
 
     timer.start(0);
     assert.equal(timer.active, false);
     assert.equal(timer.remainingSeconds, 0);
+    assert.equal(timer.presetMinutes, undefined);
     assert.equal(clock.scheduled, 0);
 
     timer.start(15);
+    assert.equal(timer.presetMinutes, 15);
     timer.cancel();
     assert.equal(timer.active, false);
     assert.equal(timer.remainingSeconds, 0);
+    assert.equal(timer.presetMinutes, undefined);
     assert.equal(clock.scheduled, 0);
 
     await clock.advance(60 * 60 * 1000);
@@ -140,7 +152,7 @@ test("reconcile handles external updates, backward clock jumps, no-op fire, and 
     };
     const activeEntries = () => pending.filter(entry => !entry.cancelled);
 
-    const changes: { active: boolean; remainingSeconds: number }[] = [];
+    const changes: { active: boolean; remainingSeconds: number; presetMinutes: number | undefined }[] = [];
     let fires = 0;
     const timer = new AudiobookSleepTimer(
         clock,
@@ -181,10 +193,10 @@ test("reconcile handles external updates, backward clock jumps, no-op fire, and 
     assert.equal(timer.reconcile(false), true);
     assert.equal(fires, 1);
     assert.equal(timer.active, false);
-    assert.deepEqual(changes, [{ active: false, remainingSeconds: 0 }]);
+    assert.deepEqual(changes, [{ active: false, remainingSeconds: 0, presetMinutes: undefined }]);
 
-    // onFire calling start() then cancel() emits { active: false, remainingSeconds: 0 } only once.
-    const reentrantChanges: { active: boolean; remainingSeconds: number }[] = [];
+    // onFire calling start() then cancel() emits { active: false, remainingSeconds: 0, presetMinutes: undefined } only once.
+    const reentrantChanges: { active: boolean; remainingSeconds: number; presetMinutes: number | undefined }[] = [];
     let reentrantTimer!: AudiobookSleepTimer;
     reentrantTimer = new AudiobookSleepTimer(
         clock,
@@ -199,12 +211,12 @@ test("reconcile handles external updates, backward clock jumps, no-op fire, and 
     currentMs += 900_000;
     reentrantTimer.reconcile();
     assert.deepEqual(reentrantChanges, [
-        { active: true, remainingSeconds: 900 },
-        { active: false, remainingSeconds: 0 },
+        { active: true, remainingSeconds: 900, presetMinutes: 15 },
+        { active: false, remainingSeconds: 0, presetMinutes: undefined },
     ]);
 
-    // onFire calling start(0) still emits { active: false, remainingSeconds: 0 } cleanly.
-    const zeroChanges: { active: boolean; remainingSeconds: number }[] = [];
+    // onFire calling start(0) still emits { active: false, remainingSeconds: 0, presetMinutes: undefined } cleanly.
+    const zeroChanges: { active: boolean; remainingSeconds: number; presetMinutes: number | undefined }[] = [];
     let zeroTimer!: AudiobookSleepTimer;
     zeroTimer = new AudiobookSleepTimer(
         clock,
@@ -215,5 +227,5 @@ test("reconcile handles external updates, backward clock jumps, no-op fire, and 
     zeroChanges.length = 0;
     currentMs += 900_000;
     zeroTimer.reconcile();
-    assert.deepEqual(zeroChanges, [{ active: false, remainingSeconds: 0 }]);
+    assert.deepEqual(zeroChanges, [{ active: false, remainingSeconds: 0, presetMinutes: undefined }]);
 });

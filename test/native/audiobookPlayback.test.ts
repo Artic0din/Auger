@@ -1892,3 +1892,133 @@ test("suspend() while replacement start awaits previous teardown defers replacem
     assert.equal(playingView(r2).contentId, "audiobook:dune");
     r2.controller.destroy();
 });
+
+test("stop() syncs pending or queued seek targets before AVPlay seek settles", async () => {
+    const r = await setup();
+    void r.controller.start({ contentId: "audiobook:tide" });
+    await settlePlay(r);
+
+    // Case 1: single skip before finishSeek() -> stop() syncs 4112 + 30 = 4142 s.
+    r.controller.skip("forward");
+    assert.equal(playingView(r).bufferedTarget, 4142);
+    await r.controller.stop();
+    assert.equal(r.catalog.progress.get("audiobook:tide"), 4142);
+    assert.equal(stopRequests(r).at(-1)?.body?.position, 4142);
+    r.avplay.finishSeek();
+    await r.h.clock.advance(0);
+
+    // Case 2: rapid double-skip while first seek is pending (queuedSeekTarget set) -> stop() syncs +60 s.
+    void r.controller.start({ contentId: "audiobook:tide" });
+    await settlePlay(r);
+    r.controller.skip("forward");
+    r.controller.skip("forward");
+    assert.equal(playingView(r).bufferedTarget, 4202);
+    await r.controller.stop();
+    assert.equal(r.catalog.progress.get("audiobook:tide"), 4202);
+    assert.equal(stopRequests(r).at(-1)?.body?.position, 4202);
+    r.avplay.finishSeek();
+    await r.h.clock.advance(0);
+    await r.controller.destroy();
+});
+
+test("destroy() defers AVPlay close and reports transportBusy until in-flight seek settles", async () => {
+    const r = await setup();
+    void r.controller.start({ contentId: "audiobook:tide" });
+    await settlePlay(r);
+
+    r.controller.skip("forward");
+    const closesBefore = r.avplay.calls.filter(call => call === "close").length;
+    const destroying = r.controller.destroy();
+    assert.equal(r.controller.transportBusy, true);
+    assert.equal(r.avplay.calls.filter(call => call === "close").length, closesBefore);
+
+    r.avplay.finishSeek();
+    await destroying;
+    assert.equal(r.controller.transportBusy, false);
+    assert.equal(r.avplay.calls.filter(call => call === "close").length, closesBefore + 1);
+    assert.equal(r.avplay.state, "NONE");
+});
+
+test("stop() persists queued cross-part skip position to syncProgress while keeping retiring part stop file-local", async () => {
+    const r = await setup();
+    r.catalog.progress.set("audiobook:multipart", 1150);
+    void r.controller.start({ contentId: "audiobook:multipart" });
+    await settlePlay(r);
+
+    r.controller.skip("forward");
+    r.controller.skip("forward");
+    assert.equal(playingView(r).bufferedTarget, 1210);
+    await r.controller.stop();
+    assert.equal(r.catalog.progress.get("audiobook:multipart"), 1210);
+    assert.equal(stopRequests(r).at(-1)?.body?.position, 1150);
+
+    r.avplay.finishSeek();
+    await r.h.clock.advance(0);
+    await r.controller.destroy();
+});
+
+test("retry() after playback error during an unsettled seek resumes at the pending or queued target", async () => {
+    const r = await setup();
+    void r.controller.start({ contentId: "audiobook:tide" });
+    await settlePlay(r);
+
+    r.controller.skip("forward");
+    r.controller.skip("forward");
+    assert.equal(playingView(r).bufferedTarget, 4172);
+    r.avplay.listener?.onerror("PLAYER_ERROR_CONNECTION_FAILED");
+    await r.h.clock.advance(0);
+    assert.equal(r.views.at(-1)?.phase, "error");
+
+    r.avplay.finishSeek();
+    await r.h.clock.advance(0);
+    r.controller.retry();
+    await settlePlay(r);
+    assert.equal(startRequests(r).at(-1)?.body?.start_position, 4172);
+    assert.equal(playingView(r).position, 4172);
+    await r.controller.destroy();
+});
+
+test("stop() bounds missing seekTo callback by STARTUP_TIMEOUT_MS and retires AVPlay on timeout or late callback", async () => {
+    // Case 1: AVPlay refuses close() while seek is still unwinding natively; timeout releases whenTransportIdle() and late callback performs deferred close.
+    const r = await setup();
+    void r.controller.start({ contentId: "audiobook:tide" });
+    await settlePlay(r);
+
+    r.controller.skip("forward");
+    await r.controller.stop();
+    assert.equal(r.controller.transportBusy, true);
+    let idleResolved = false;
+    const idle = r.controller.whenTransportIdle().then(() => { idleResolved = true; });
+
+    await r.h.clock.advance(14_999);
+    assert.equal(idleResolved, false);
+    assert.equal(r.controller.transportBusy, true);
+
+    await r.h.clock.advance(1);
+    await idle;
+    assert.equal(idleResolved, true);
+    assert.equal(r.controller.transportBusy, false);
+    assert.equal(r.avplay.state, "PLAYING");
+
+    r.avplay.finishSeek();
+    await r.h.clock.advance(0);
+    assert.equal(r.avplay.state, "NONE");
+    await r.controller.destroy();
+
+    // Case 2: seekTo callback is dropped natively without blocking close(); timeout immediately closes AVPlay.
+    const r2 = await setup();
+    void r2.controller.start({ contentId: "audiobook:tide" });
+    await settlePlay(r2);
+    Object.assign(r2.avplay, { seekTo: () => undefined });
+    const closesBefore = r2.avplay.calls.filter(c => c === "close").length;
+
+    r2.controller.skip("forward");
+    await r2.controller.stop();
+    assert.equal(r2.controller.transportBusy, true);
+    await r2.h.clock.advance(15_000);
+    await r2.controller.whenTransportIdle();
+    assert.equal(r2.controller.transportBusy, false);
+    assert.equal(r2.avplay.calls.filter(c => c === "close").length, closesBefore + 1);
+    assert.equal(r2.avplay.state, "NONE");
+    await r2.controller.destroy();
+});

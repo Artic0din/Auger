@@ -7,7 +7,7 @@ Start with [README.md](../README.md) for install and build setup, [FEATURES.md](
 
 - Talks only to Silo's native `/api/v2` and plays video through AVPlay, with the Server planning Direct Play, Remux, or HLS Transcode.
 - Top bar uses Apple's fixed `visibleRoots` order (`Home`, `Movies`, `Series`, `Music`, opt-in `Audiobooks`, `For You`, `Calendar`) with Search to the left and Profile to the right. Library tabs appear only when a matching visible Library exists.
-- Music shows an explicit unavailable screen (no music catalog queries). Audiobooks is opt-in (Settings > General > Show Audiobooks) with browsing and detail only, no playback.
+- Music shows an explicit unavailable screen (no music catalog queries). Audiobooks is opt-in (Settings > General > Show Audiobooks) with browsing, detail, full-screen playback, chapters, skip intervals, speed control, sleep timer, and whole-book `syncProgress`.
 - Requests appears in the profile menu only when enabled by the Server for the active Profile.
 - **Settings > Diagnostics** provides 1-click **Send Diagnostics Report** (through `workers/diagnostics-relay/` to GitHub Issues) plus a zero-backend **Share via QR Code** backup for Discord and GitHub ([#847](https://github.com/Artic0din/Auger-Tizen/issues/847)); first-party Silo Server diagnostics upload is not used ([#138](https://github.com/Artic0din/Auger-Tizen/issues/138)).
 - Ships through Apps2Samsung and GitHub Releases ([Releasing](releasing.md)).
@@ -35,6 +35,7 @@ Read the matching reference before changing its area.
 ## Playback
 
 - [Playback quality, completion, and recovery](playback/playback-quality.md) for quality selection, manual episode EOF, and reconnect recovery.
+- [Audiobook playback](playback/audiobooks.md) for stitched multi-part playback, `syncProgress`, speed limits, and sleep timer.
 - [Series autoplay](playback/series-autoplay.md) for Up Next timing, countdowns, and On Deck behavior.
 - [Seek thumbnails](playback/seek-thumbnails.md) for trickplay sprite-sheet scrubbing.
 - [Subtitle appearance](playback/subtitle-appearance.md) for overlay styling and scope persistence.
