@@ -6,6 +6,12 @@ All notable changes to this project are documented in this file.
 
 <!-- changelog:releases -->
 
+## [0.18.0] - 2026-11-28
+
+### Features
+
+- **Audiobooks**: Add full-screen audio player and detail playback controls ([#982](https://github.com/Artic0din/Auger-Tizen/pull/982), [`cdee41f1`](https://github.com/Artic0din/Auger-Tizen/commit/cdee41f1))
+
 ## [0.17.0] - 2026-11-28
 
 ### Features
