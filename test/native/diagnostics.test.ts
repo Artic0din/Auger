@@ -424,6 +424,7 @@ test("Cloudflare Worker diagnostics relay validates, redacts, atomically rate-li
     assert.deepEqual(await first.json(), { ok: true, status: "created", issueNumber: 888, reportId: "AUG-888" });
     assert.equal(posted.length, 1);
     assert.equal(posted[0]?.url, "https://api.github.com/repos/Artic0din/Auger-Tizen/issues");
+    assert.equal(posted[0]?.body.type, "Bug");
     assert.deepEqual(posted[0]?.body.labels, ["diagnostics", "needs-triage"]);
     const issueBody = String(posted[0]?.body.body ?? "");
     assert.ok(!issueBody.includes("private.lan"));

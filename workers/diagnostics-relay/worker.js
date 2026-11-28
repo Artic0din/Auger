@@ -327,6 +327,7 @@ export async function handleRequest(request, env, deps = {}) {
       body: JSON.stringify({
         title: issue.title,
         body: issue.body,
+        type: "Bug",
         labels: ["diagnostics", "needs-triage"],
       }),
     });

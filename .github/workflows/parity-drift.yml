@@ -42,10 +42,16 @@ jobs:
           if [[ -s "${RUNNER_TEMP}/drift.md" ]]; then
             cat "${RUNNER_TEMP}/drift.md" >> "${GITHUB_STEP_SUMMARY}"
             if [[ -n "${existing}" ]]; then
-              gh issue edit "${existing}" --repo "${GITHUB_REPOSITORY}" --body-file "${RUNNER_TEMP}/drift.md"
+              gh issue edit "${existing}" --repo "${GITHUB_REPOSITORY}" --add-label parity --body-file "${RUNNER_TEMP}/drift.md"
+              issue_number="${existing}"
               echo "Updated #${existing}."
             else
-              gh issue create --repo "${GITHUB_REPOSITORY}" --title "${TITLE}" --body-file "${RUNNER_TEMP}/drift.md"
+              created_url="$(gh issue create --repo "${GITHUB_REPOSITORY}" --title "${TITLE}" --label parity --body-file "${RUNNER_TEMP}/drift.md")"
+              issue_number="${created_url##*/}"
+            fi
+            if [[ "${issue_number}" =~ ^[0-9]+$ ]]; then
+              gh api -X PATCH "repos/${GITHUB_REPOSITORY}/issues/${issue_number}" -f type="Task" >/dev/null || \
+                echo "::warning::Could not set issue type Task on #${issue_number}."
             fi
           else
             echo "No drift." >> "${GITHUB_STEP_SUMMARY}"

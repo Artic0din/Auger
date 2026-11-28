@@ -3,7 +3,7 @@ import type { handleRequest } from "../../../../workers/diagnostics-relay/worker
 export interface OutboundCall {
     readonly method: string;
     readonly url: string;
-    readonly body: { readonly title?: string; readonly body?: string; readonly labels?: readonly string[] };
+    readonly body: { readonly title?: string; readonly body?: string; readonly type?: string; readonly labels?: readonly string[] };
 }
 
 export interface FakeGitHub {
