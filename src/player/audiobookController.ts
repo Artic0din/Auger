@@ -812,13 +812,12 @@ export class AudiobookController {
         const pendingSeek = attempt.partStarted && attempt.pendingPart === undefined
             ? (attempt.queuedSeekTarget ?? attempt.pendingSeekTarget)
             : undefined;
-        const inPartDest = pendingSeek !== undefined && book !== undefined ? bookPosition(book, pendingSeek) : undefined;
-        const usePendingSeek = inPartDest !== undefined && inPartDest.partIndex === attempt.partIndex;
-        const finalWholeSeconds = usePendingSeek && inPartDest !== undefined
-            ? inPartDest.part.offset + inPartDest.localSeconds
+        const seekDest = pendingSeek !== undefined && book !== undefined ? bookPosition(book, pendingSeek) : undefined;
+        const finalWholeSeconds = seekDest !== undefined
+            ? seekDest.part.offset + seekDest.localSeconds
             : attempt.wholeBookSeconds;
-        const finalLocalSeconds = usePendingSeek && inPartDest !== undefined
-            ? inPartDest.localSeconds
+        const finalLocalSeconds = seekDest !== undefined && seekDest.partIndex === attempt.partIndex
+            ? seekDest.localSeconds
             : (attempt.pendingPart?.localSeconds ?? attempt.partLocalSeconds);
         const wasPaused = attempt.pauseAfterSeek ?? attempt.paused;
         const authorityOk = !attempt.abort.signal.aborted && !attempt.authoritySignal.aborted;

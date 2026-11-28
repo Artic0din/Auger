@@ -361,7 +361,7 @@ playerTest("loading screen focuses Cancel, stopping screen swallows Back during 
     await tv.page.locator('[data-view="audiobook:audiobook:tide"] [data-focus="play"]').waitFor();
     assert.equal(await screen.count(), 0);
 
-    // Start a third time, queue an unsettled seek, stop playback, and verify surface stays until seekTo settles close().
+    // Start a third time, queue an unsettled seek, stop playback, and verify Browse stays hidden with stopping screen until seekTo settles close() and detaches surface.
     await tv.page.keyboard.press("Enter");
     await prepareAudio(tv, true);
     const closesBeforeThirdStop = await tv.page.evaluate(() => window.appHarness.avplay.calls.filter(c => c === "close").length);
@@ -370,8 +370,19 @@ playerTest("loading screen focuses Cancel, stopping screen swallows Back during 
     await tv.remote(RIGHT);
     await tv.remote(RIGHT);
     await tv.remote(RIGHT);
+    const deletesBefore = tv.fake.requests.filter(req => req.method === "DELETE" && req.path.startsWith("/playback/")).length;
+    const syncsBefore = tv.fake.requests.filter(req => req.method === "POST" && req.path === "/sync/progress").length;
     await tv.remote(ENTER);
-    await tv.page.locator('[data-view="audiobook:audiobook:tide"] [data-focus="play"]').waitFor();
+    await tv.eventually(
+        async () =>
+            tv.fake.requests.filter(req => req.method === "DELETE" && req.path.startsWith("/playback/")).length === deletesBefore + 1
+            && tv.fake.requests.filter(req => req.method === "POST" && req.path === "/sync/progress").length === syncsBefore + 1
+            && tv.pendingReplies === 0,
+        "stop network requests landed",
+    );
+    await tv.page.evaluate(() => Promise.resolve().then(() => Promise.resolve()));
+    assert.equal(await screen.getAttribute("data-stopping"), "true");
+    assert.equal(await tv.page.locator('[data-view="audiobook:audiobook:tide"]').isHidden(), true);
     assert.equal(await tv.page.evaluate(() => window.appHarness.avplay.calls.filter(c => c === "close").length), closesBeforeThirdStop);
     assert.equal(await tv.page.locator('.audio-avplay-surface object[type="application/avplayer"]').count(), 1);
 
@@ -381,6 +392,8 @@ playerTest("loading screen focuses Cancel, stopping screen swallows Back during 
         "deferred close after seek settle",
     );
     await tv.eventually(async () => await tv.page.locator('.audio-avplay-surface, object[type="application/avplayer"]').count() === 0, "surface detached after close");
+    await tv.page.locator('[data-view="audiobook:audiobook:tide"] [data-focus="play"]').waitFor();
+    assert.equal(await screen.count(), 0);
 });
 
 playerTest("held Select activates error, transport, and modal actions once on release", async ({ tv, playback }) => {
@@ -401,6 +414,16 @@ playerTest("held Select activates error, transport, and modal actions once on re
     assert.equal(tv.fake.requests.filter(req => req.method === "POST" && req.path === "/playback/start").length, startsBeforeRetry);
     await tv.up(ENTER);
     await prepareAudio(tv, true);
+
+    // Tab moving DOM focus dispatches Select to the focused button rather than stale play-pause.
+    await tv.page.keyboard.press("Tab");
+    assert.equal(await screen.locator(":focus").getAttribute("data-key"), "skip-forward");
+    await tv.remote(ENTER);
+    await tv.eventually(() => tv.page.evaluate(() => window.appHarness.avplay.calls.some(call => call === "seekTo 4142000")), "skip-forward activated after Tab");
+    await tv.page.evaluate(() => window.appHarness.avplay.finishSeek());
+    assert.equal(await tv.page.evaluate(() => window.appHarness.avplay.state), "PLAYING");
+    await tv.remote(LEFT);
+    assert.equal(await screen.locator(":focus").getAttribute("data-key"), "play-pause");
 
     // Transport play-pause acts only on Enter release, and blur cancels a held press.
     await tv.down(ENTER, false);

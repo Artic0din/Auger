@@ -25,6 +25,7 @@ export class AudiobookHost {
     private readonly onFinished: (() => void) | undefined;
     private surface: HTMLDivElement | undefined;
     private surfaceGen = 0;
+    private exitGen = 0;
     private removingSurface = false;
     private stopInFlight: Promise<void> | undefined;
     private screen: AudiobookPlayerScreen | undefined;
@@ -52,16 +53,8 @@ export class AudiobookHost {
             randomBytes: deps.platform.randomBytes,
             device: { model: deps.platform.model, appVersion: deps.platform.appVersion },
             exits: {
-                onFinished: () => {
-                    this.hideScreen();
-                    this.removeSurface();
-                    this.onFinished?.();
-                },
-                onClose: () => {
-                    this.hideScreen();
-                    this.removeSurface();
-                    this.onExit?.();
-                },
+                onFinished: () => this.finishExit("finished"),
+                onClose: () => this.finishExit("close"),
             },
         });
         this.controller.subscribe(view => {
@@ -100,11 +93,33 @@ export class AudiobookHost {
 
     start(request: AudiobookPlayRequest): void {
         if (this.destroyed) return;
+        this.exitGen += 1;
         this.stopInFlight = undefined;
         this.hideScreen();
         this.ensureSurface();
         this.show();
         void this.controller.start(request);
+    }
+
+    private finishExit(kind: "close" | "finished"): void {
+        if (this.destroyed) return;
+        const gen = ++this.exitGen;
+        const finalize = (): void => {
+            if (this.destroyed || this.exitGen !== gen || this.controller.view.phase !== "idle") return;
+            const hadScreen = this.screen !== undefined;
+            this.hideScreen();
+            this.removeSurface();
+            if (hadScreen) {
+                if (kind === "finished") this.onFinished?.();
+                else this.onExit?.();
+            }
+        };
+        if (!this.controller.transportBusy) {
+            finalize();
+            return;
+        }
+        this.screen?.setStopping();
+        void this.controller.whenTransportIdle().finally(finalize);
     }
 
     private ensureSurface(): void {
@@ -165,7 +180,7 @@ export class AudiobookHost {
             await this.stopInFlight;
             return;
         }
-        if (this.controller.view.phase === "idle") {
+        if (this.controller.view.phase === "idle" && !this.controller.transportBusy) {
             const wasVisible = this.screen !== undefined;
             this.hideScreen();
             this.removeSurface();
@@ -176,12 +191,17 @@ export class AudiobookHost {
         let work!: Promise<void>;
         work = (async (): Promise<void> => {
             await this.controller.stop();
+            if (!this.destroyed && this.stopInFlight === work && this.controller.view.phase === "idle" && this.controller.transportBusy) {
+                await this.controller.whenTransportIdle();
+            }
         })().finally(() => {
             const current = this.stopInFlight === work;
             if (current) this.stopInFlight = undefined;
-            if (current && !this.destroyed && this.controller.view.phase === "idle") {
+            if (current && !this.destroyed && this.controller.view.phase === "idle" && !this.controller.transportBusy) {
+                const hadScreen = this.screen !== undefined;
                 this.hideScreen();
                 this.removeSurface();
+                if (hadScreen) this.onExit?.();
             }
         });
         this.stopInFlight = work;
@@ -205,6 +225,7 @@ export class AudiobookHost {
     destroy(): void {
         if (this.destroyed) return;
         this.destroyed = true;
+        this.exitGen += 1;
         document.removeEventListener("visibilitychange", this.onVisibility);
         this.hideScreen();
         this.listeners.length = 0;

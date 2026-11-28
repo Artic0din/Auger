@@ -1938,3 +1938,42 @@ test("destroy() defers AVPlay close and reports transportBusy until in-flight se
     assert.equal(r.avplay.calls.filter(call => call === "close").length, closesBefore + 1);
     assert.equal(r.avplay.state, "NONE");
 });
+
+test("stop() persists queued cross-part skip position to syncProgress while keeping retiring part stop file-local", async () => {
+    const r = await setup();
+    r.catalog.progress.set("audiobook:multipart", 1150);
+    void r.controller.start({ contentId: "audiobook:multipart" });
+    await settlePlay(r);
+
+    r.controller.skip("forward");
+    r.controller.skip("forward");
+    assert.equal(playingView(r).bufferedTarget, 1210);
+    await r.controller.stop();
+    assert.equal(r.catalog.progress.get("audiobook:multipart"), 1210);
+    assert.equal(stopRequests(r).at(-1)?.body?.position, 1150);
+
+    r.avplay.finishSeek();
+    await r.h.clock.advance(0);
+    await r.controller.destroy();
+});
+
+test("retry() after playback error during an unsettled seek resumes at the pending or queued target", async () => {
+    const r = await setup();
+    void r.controller.start({ contentId: "audiobook:tide" });
+    await settlePlay(r);
+
+    r.controller.skip("forward");
+    r.controller.skip("forward");
+    assert.equal(playingView(r).bufferedTarget, 4172);
+    r.avplay.listener?.onerror("PLAYER_ERROR_CONNECTION_FAILED");
+    await r.h.clock.advance(0);
+    assert.equal(r.views.at(-1)?.phase, "error");
+
+    r.avplay.finishSeek();
+    await r.h.clock.advance(0);
+    r.controller.retry();
+    await settlePlay(r);
+    assert.equal(startRequests(r).at(-1)?.body?.start_position, 4172);
+    assert.equal(playingView(r).position, 4172);
+    await r.controller.destroy();
+});

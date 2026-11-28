@@ -766,25 +766,57 @@ export function mountAudiobookPlayerScreen(container: HTMLElement, deps: Audiobo
         const active = document.activeElement;
         if (held.context !== selectContext() || active !== held.element || disabledControl(active)) return;
 
-        if (lastView.phase === "error") {
-            errorButtons.find(btn => btn.dataset.key === currentFocus.key)?.click();
-            return;
-        }
-        if (lastView.phase === "loading") {
-            loadingButton?.click();
-            return;
-        }
-        if (currentMenu !== undefined) {
-            currentMenu.buttons[currentMenu.focusedIndex]?.click();
-            return;
-        }
-        if (currentFocus.zone === "scrubber") {
+        if (currentMenu === undefined && active === activeDom?.scrubberEl) {
             deps.controller.togglePlayPause();
             return;
         }
+        if (!(active instanceof HTMLButtonElement)) return;
+        if (lastView.phase === "error") {
+            if (errorButtons.includes(active)) active.click();
+            return;
+        }
+        if (lastView.phase === "loading") {
+            if (active === loadingButton) active.click();
+            return;
+        }
+        if (currentMenu !== undefined) {
+            if (currentMenu.buttons.includes(active)) active.click();
+            return;
+        }
         const chapters = hasBookChapters();
-        const pool = currentFocus.zone === "transport" ? transportButtons(chapters) : optionButtons(chapters);
-        pool.find(btn => btn.dataset.key === currentFocus.key)?.click();
+        if (transportButtons(chapters).includes(active) || optionButtons(chapters).includes(active)) {
+            active.click();
+        }
+    };
+
+    const onFocusIn = (event: FocusEvent): void => {
+        const target = event.target;
+        if (!(target instanceof HTMLElement)) return;
+        if (currentMenu !== undefined) {
+            if (target instanceof HTMLButtonElement) {
+                const index = currentMenu.buttons.indexOf(target);
+                if (index >= 0) currentMenu.focusedIndex = index;
+            }
+            return;
+        }
+        if (target === activeDom?.scrubberEl) {
+            currentFocus = { zone: "scrubber", key: "scrubber" };
+            return;
+        }
+        if (target === loadingButton) {
+            currentFocus = { zone: "loading", key: "cancel" };
+            return;
+        }
+        if (target instanceof HTMLButtonElement) {
+            if (errorButtons.includes(target)) {
+                currentFocus = { zone: "error", key: target.dataset.key ?? "" };
+                return;
+            }
+            const zone = target.dataset.zone;
+            if (zone === "transport" || zone === "options") {
+                currentFocus = { zone, key: target.dataset.key ?? "" };
+            }
+        }
     };
 
     const onFocusOut = (event: FocusEvent): void => {
@@ -802,6 +834,7 @@ export function mountAudiobookPlayerScreen(container: HTMLElement, deps: Audiobo
     window.addEventListener("keydown", onKeyDown, true);
     window.addEventListener("keyup", onKeyUp, true);
     window.addEventListener("blur", endSelect);
+    screen.addEventListener("focusin", onFocusIn);
     document.addEventListener("focusout", onFocusOut, true);
     document.addEventListener("visibilitychange", onVisibility);
     const unsubscribe = deps.controller.subscribe(render);
@@ -822,6 +855,7 @@ export function mountAudiobookPlayerScreen(container: HTMLElement, deps: Audiobo
             window.removeEventListener("keydown", onKeyDown, true);
             window.removeEventListener("keyup", onKeyUp, true);
             window.removeEventListener("blur", endSelect);
+            screen.removeEventListener("focusin", onFocusIn);
             document.removeEventListener("focusout", onFocusOut, true);
             document.removeEventListener("visibilitychange", onVisibility);
             unsubscribe();
