@@ -321,16 +321,20 @@ export async function handleRequest(request, env, deps = {}) {
       return jsonResponse({ ok: true, status: "updated", issueNumber: existing.number, reportId }, 200);
     }
 
-    const ghResponse = await fetchFn(`https://api.github.com/repos/${repo}/issues`, {
+    const issuePayload = {
+      title: issue.title,
+      body: issue.body,
+      labels: ["diagnostics", "needs-triage"],
+    };
+    const createIssue = (payload) => fetchFn(`https://api.github.com/repos/${repo}/issues`, {
       method: "POST",
       headers: githubHeaders(env.GITHUB_TOKEN),
-      body: JSON.stringify({
-        title: issue.title,
-        body: issue.body,
-        type: "Bug",
-        labels: ["diagnostics", "needs-triage"],
-      }),
+      body: JSON.stringify(payload),
     });
+    let ghResponse = await createIssue({ ...issuePayload, type: "Bug" });
+    if (ghResponse.status === 422) {
+      ghResponse = await createIssue(issuePayload);
+    }
 
     if (!ghResponse.ok) {
       return jsonResponse({ ok: false, error: "github_error", status: ghResponse.status }, 502);
