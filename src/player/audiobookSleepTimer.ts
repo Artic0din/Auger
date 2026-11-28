@@ -18,7 +18,9 @@ export class AudiobookSleepTimer {
     private readonly onChange: ((snapshot: SleepTimerSnapshot) => void) | undefined;
     private activeState = false;
     private remaining = 0;
+    private deadlineMs: number | undefined;
     private cancelStep: (() => void) | undefined;
+    private generation = 0;
 
     constructor(clock: Clock, onFire: () => void, onChange?: (snapshot: SleepTimerSnapshot) => void) {
         this.clock = clock;
@@ -40,27 +42,17 @@ export class AudiobookSleepTimer {
 
     /** Starts or replaces the countdown; non-positive minutes cancel instead. */
     start(minutes: number): void {
-        const wasActive = this.activeState;
-        const previousRemaining = this.remaining;
+        const seconds = Number.isFinite(minutes) ? Math.round(minutes) * 60 : 0;
+        if (seconds <= 0) {
+            this.cancel();
+            return;
+        }
         this.clearTimer();
-        if (!Number.isFinite(minutes) || minutes <= 0) {
-            if (wasActive || previousRemaining !== 0) {
-                this.onChange?.(this.snapshot());
-            }
-            return;
-        }
         this.activeState = true;
-        this.remaining = Math.round(minutes) * 60;
-        if (this.remaining <= 0) {
-            this.activeState = false;
-            this.remaining = 0;
-            if (wasActive || previousRemaining !== 0) {
-                this.onChange?.(this.snapshot());
-            }
-            return;
-        }
+        this.remaining = seconds;
+        this.deadlineMs = this.clock.now() + seconds * 1000;
+        this.scheduleTick(seconds * 1000);
         this.onChange?.(this.snapshot());
-        this.scheduleTick();
     }
 
     cancel(): void {
@@ -69,27 +61,54 @@ export class AudiobookSleepTimer {
         this.onChange?.(this.snapshot());
     }
 
+    /** Recomputes remaining time against `Clock.now()`, expiring immediately if the deadline has passed. */
+    reconcile(fireOnExpiry = true): boolean {
+        if (!this.activeState || this.deadlineMs === undefined) return false;
+        const now = this.clock.now();
+        let remainingMs = this.deadlineMs - now;
+        const maxRemainingMs = this.remaining * 1000;
+        if (remainingMs > maxRemainingMs) {
+            this.deadlineMs = now + maxRemainingMs;
+            remainingMs = maxRemainingMs;
+        }
+        if (remainingMs <= 0) {
+            this.clearTimer();
+            const gen = this.generation;
+            if (fireOnExpiry) {
+                this.onFire();
+            }
+            if (this.generation === gen) {
+                this.onChange?.(this.snapshot());
+            }
+            return true;
+        }
+        const nextRemaining = Math.ceil(remainingMs / 1000);
+        const changed = nextRemaining !== this.remaining;
+        this.remaining = nextRemaining;
+        this.cancelStep?.();
+        this.cancelStep = undefined;
+        this.scheduleTick(remainingMs);
+        if (changed) {
+            this.onChange?.(this.snapshot());
+        }
+        return false;
+    }
+
     private clearTimer(): void {
+        this.generation += 1;
         this.cancelStep?.();
         this.cancelStep = undefined;
         this.activeState = false;
         this.remaining = 0;
+        this.deadlineMs = undefined;
     }
 
-    private scheduleTick(): void {
+    private scheduleTick(remainingMs: number): void {
+        const nextRemaining = Math.ceil(remainingMs / 1000);
+        const delayMs = Math.max(1, Math.ceil(remainingMs - (nextRemaining - 1) * 1000));
         this.cancelStep = this.clock.schedule(() => {
             this.cancelStep = undefined;
-            if (!this.activeState) return;
-            if (this.remaining > 1) {
-                this.remaining -= 1;
-                this.onChange?.(this.snapshot());
-                this.scheduleTick();
-                return;
-            }
-            this.remaining = 0;
-            this.activeState = false;
-            this.onFire();
-            this.onChange?.(this.snapshot());
-        }, 1000);
+            this.reconcile();
+        }, delayMs);
     }
 }

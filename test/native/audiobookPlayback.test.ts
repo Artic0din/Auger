@@ -1368,3 +1368,224 @@ test("stopping during fallback restore session retirement sends only one DELETE 
     assert.equal(r.views.at(-1)?.phase, "idle");
     r.controller.destroy();
 });
+
+test("restore pauses instead of resuming when sleep deadline passed during suspend with delayed timers", async () => {
+    const r = await setup();
+    void r.controller.start({ contentId: "audiobook:dune" });
+    await settlePlay(r);
+
+    let clockJumpMs = 0;
+    const origNow = r.h.clock.now.bind(r.h.clock);
+    r.h.clock.now = () => origNow() + clockJumpMs;
+
+    r.controller.setSleepTimer(15);
+    r.controller.suspend();
+
+    const progressBeforeRestore = progressRequests(r).length;
+    clockJumpMs = 20 * 60 * 1000;
+    const restoring = r.controller.restore();
+    await r.h.clock.advance(0);
+    r.avplay.finishRestore();
+    await restoring;
+    await r.h.clock.advance(0);
+
+    assert.equal(r.avplay.state, "PAUSED");
+    assert.equal(playingView(r).phase, "paused");
+    assert.equal(playingView(r).sleepTimer.active, false);
+    assert.equal(playingView(r).sleepTimer.remainingSeconds, 0);
+    assert.equal(progressRequests(r).length, progressBeforeRestore + 1);
+    assert.equal(progressRequests(r).at(-1)?.body?.is_paused, true);
+
+    // Fallback reopen when deadline passes while failing restoreAsync is pending retires with is_paused=true and stays READY/paused.
+    r.controller.play();
+    await r.h.clock.advance(0);
+    r.controller.setSleepTimer(15);
+    r.controller.suspend();
+    const fallback = r.controller.restore();
+    await r.h.clock.advance(0);
+    clockJumpMs += 20 * 60 * 1000;
+    r.avplay.finishRestore("PLAYER_ERROR_CONNECTION_FAILED");
+    await r.h.clock.advance(0);
+    r.avplay.finishPrepare();
+    await r.h.clock.advance(0);
+    r.avplay.finishSeek();
+    await r.h.clock.advance(0);
+    await fallback;
+
+    assert.equal(stopRequests(r).at(-1)?.body?.is_paused, true);
+    assert.equal(r.avplay.state, "READY");
+    assert.equal(playingView(r).phase, "paused");
+    assert.equal(playingView(r).sleepTimer.active, false);
+    r.controller.destroy();
+});
+
+test("sleep deadline passing during pending restoreAsync, thrown suspend(), or cross-part prepareAsync keeps playback paused", async () => {
+    // Subcase A: deadline passes while warm restoreAsync is pending.
+    const r1 = await setup();
+    void r1.controller.start({ contentId: "audiobook:dune" });
+    await settlePlay(r1);
+    let jump1 = 0;
+    const origNow1 = r1.h.clock.now.bind(r1.h.clock);
+    r1.h.clock.now = () => origNow1() + jump1;
+
+    r1.controller.setSleepTimer(15);
+    r1.controller.suspend();
+    const progressBeforeWarm = progressRequests(r1).length;
+    const restoring = r1.controller.restore();
+    await r1.h.clock.advance(0);
+    jump1 = 20 * 60 * 1000;
+    r1.avplay.finishRestore();
+    await restoring;
+    await r1.h.clock.advance(0);
+
+    assert.equal(r1.avplay.state, "PAUSED");
+    assert.equal(playingView(r1).phase, "paused");
+    assert.equal(playingView(r1).sleepTimer.active, false);
+    assert.equal(progressRequests(r1).length, progressBeforeWarm + 1);
+    assert.equal(progressRequests(r1).at(-1)?.body?.is_paused, true);
+    r1.controller.destroy();
+
+    // Subcase B: avplay.suspend() throws leaving hidden=true, suspended=false, state=PLAYING; restore() must pause AVPlay.
+    const r2 = await setup();
+    void r2.controller.start({ contentId: "audiobook:dune" });
+    await settlePlay(r2);
+    let jump2 = 0;
+    const origNow2 = r2.h.clock.now.bind(r2.h.clock);
+    r2.h.clock.now = () => origNow2() + jump2;
+
+    r2.controller.setSleepTimer(15);
+    const origSuspend = r2.avplay.suspend.bind(r2.avplay);
+    Object.assign(r2.avplay, {
+        suspend: () => {
+            Object.assign(r2.avplay, { suspend: origSuspend });
+            throw new Error("suspend rejected");
+        },
+    });
+    r2.controller.suspend();
+    assert.equal(r2.avplay.state, "PLAYING");
+
+    jump2 = 20 * 60 * 1000;
+    await r2.controller.restore();
+    assert.equal(r2.avplay.state, "PAUSED");
+    assert.equal(playingView(r2).phase, "paused");
+    assert.equal(playingView(r2).sleepTimer.active, false);
+    r2.controller.destroy();
+
+    // Subcase C: deadline passes while cross-part prepareAsync is pending (finishStart() reconcile).
+    const r3 = await setup();
+    void r3.controller.start({ contentId: "audiobook:multipart" });
+    await settlePlay(r3);
+    let jump3 = 0;
+    const origNow3 = r3.h.clock.now.bind(r3.h.clock);
+    r3.h.clock.now = () => origNow3() + jump3;
+
+    r3.controller.setSleepTimer(15);
+    r3.controller.seekTo(1300);
+    await r3.h.clock.advance(0);
+    assert.equal(r3.avplay.pendingPrepares, 1);
+
+    jump3 = 20 * 60 * 1000;
+    r3.avplay.finishPrepare();
+    await r3.h.clock.advance(0);
+    r3.avplay.finishSeek();
+    await r3.h.clock.advance(0);
+
+    assert.equal(r3.avplay.state, "READY");
+    assert.equal(playingView(r3).phase, "paused");
+    assert.equal(playingView(r3).sleepTimer.active, false);
+    r3.controller.destroy();
+});
+
+test("intra-part seek settlement and explicit play() reconcile delayed sleep timer deadlines", async () => {
+    const r = await setup();
+    void r.controller.start({ contentId: "audiobook:dune" });
+    await settlePlay(r);
+    let clockJumpMs = 0;
+    const origNow = r.h.clock.now.bind(r.h.clock);
+    r.h.clock.now = () => origNow() + clockJumpMs;
+
+    // Subcase A: paused mid-seek + queued play() + delayed deadline passing before finishSeek().
+    r.controller.pause();
+    await r.h.clock.advance(0);
+    r.controller.setSleepTimer(15);
+    r.controller.seekTo(120);
+    r.controller.play();
+    const progressBeforeSeek = progressRequests(r).length;
+    const writesBeforeSeek = r.catalog.progressWrites.length;
+    clockJumpMs = 20 * 60 * 1000;
+    r.avplay.finishSeek();
+    await r.h.clock.advance(0);
+
+    assert.equal(r.avplay.state, "PAUSED");
+    assert.equal(playingView(r).phase, "paused");
+    assert.equal(playingView(r).position, 120);
+    assert.equal(playingView(r).sleepTimer.active, false);
+    assert.equal(progressRequests(r).length, progressBeforeSeek + 1);
+    assert.equal(r.catalog.progressWrites.length, writesBeforeSeek + 1);
+    assert.equal(progressRequests(r).at(-1)?.body?.is_paused, true);
+    assert.equal(progressRequests(r).at(-1)?.body?.position, 120);
+
+    // Subcase B: explicit play() past a delayed deadline clears the expired timer without later re-pausing.
+    r.controller.setSleepTimer(15);
+    clockJumpMs += 20 * 60 * 1000;
+    r.controller.play();
+    await r.h.clock.advance(0);
+
+    assert.equal(r.avplay.state, "PLAYING");
+    assert.equal(playingView(r).phase, "playing");
+    assert.equal(playingView(r).sleepTimer.active, false);
+
+    await r.h.clock.advance(5000);
+    assert.equal(r.avplay.state, "PLAYING");
+    assert.equal(playingView(r).phase, "playing");
+    r.controller.destroy();
+});
+
+test("on-time sleep expiry during suspend or thrown suspend() pauses AVPlay and syncs immediately on restore", async () => {
+    // Case 1: on-time expiry during normal suspend syncs pause immediately on warm restore.
+    const r = await setup();
+    void r.controller.start({ contentId: "audiobook:dune" });
+    await settlePlay(r);
+    r.controller.setSleepTimer(15);
+    r.controller.suspend();
+    await r.h.clock.advance(15 * 60 * 1000);
+
+    const progressBefore = progressRequests(r).length;
+    const restoring = r.controller.restore();
+    await r.h.clock.advance(0);
+    r.avplay.finishRestore();
+    await restoring;
+    await r.h.clock.advance(0);
+
+    assert.equal(r.avplay.state, "PAUSED");
+    assert.equal(playingView(r).phase, "paused");
+    assert.equal(progressRequests(r).length, progressBefore + 1);
+    assert.equal(progressRequests(r).at(-1)?.body?.is_paused, true);
+    r.controller.destroy();
+
+    // Case 2: on-time expiry after avplay.suspend() throws pauses AVPlay and syncs on fast-path restore.
+    const r2 = await setup();
+    void r2.controller.start({ contentId: "audiobook:dune" });
+    await settlePlay(r2);
+    r2.controller.setSleepTimer(15);
+    const origSuspend = r2.avplay.suspend.bind(r2.avplay);
+    Object.assign(r2.avplay, {
+        suspend: () => {
+            Object.assign(r2.avplay, { suspend: origSuspend });
+            throw new Error("suspend rejected");
+        },
+    });
+    r2.controller.suspend();
+    assert.equal(r2.avplay.state, "PLAYING");
+    await r2.h.clock.advance(15 * 60 * 1000);
+
+    const progressBefore2 = progressRequests(r2).length;
+    await r2.controller.restore();
+    await r2.h.clock.advance(0);
+
+    assert.equal(r2.avplay.state, "PAUSED");
+    assert.equal(playingView(r2).phase, "paused");
+    assert.equal(progressRequests(r2).length, progressBefore2 + 1);
+    assert.equal(progressRequests(r2).at(-1)?.body?.is_paused, true);
+    r2.controller.destroy();
+});
