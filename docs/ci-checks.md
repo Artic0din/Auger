@@ -71,7 +71,7 @@ The callee job names (`Repository baseline` and `Pull request hygiene`) come fro
   1. The pull request title uses a Conventional Commit prefix (`feat`, `fix`, `test`, `refactor`, `perf`, `docs`, `style`, `chore`, `ci`, `build`, or `revert`).
   2. Every non-merge commit by the pull request author uses a Conventional Commit headline or starts with `Revert "`.
   3. Agent attribution rules match the base commit's pull request templates.
-     Because `.github/PULL_REQUEST_TEMPLATE.md` requires an AI disclosure section, disclosure is permitted.
+     `.github/PULL_REQUEST_TEMPLATE.md` does not ask for AI disclosure, so agent attribution in the body or commits fails this check.
   4. No added, modified, renamed, or copied file touches a forbidden path (`node_modules` by default).
 
 ### External code review apps
