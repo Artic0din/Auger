@@ -26,8 +26,6 @@ new there.
 - If you found the cause or have a fix in mind, add it under a Technical notes
   heading, apart from what you observed. Point to the files involved; a short
   code excerpt is fine. We may implement it differently.
-- Disclose AI use: name the harness, tools, and models you used, and how
-  much of the issue they wrote.
 
 Report security vulnerabilities privately with **Report a vulnerability** on
 the repository's Security tab, not in a public issue.
@@ -69,9 +67,7 @@ npm test
 
 Use a Conventional Commit title, fill in the pull request template, explain
 which surfaces are affected, paste the actual validation results, and call out
-any server, Apple or Android compatibility concerns. Fill in the template's
-AI Disclosure section: the harness, tools, and models used, the level of AI
-involvement, and any adversarial review, or "none" and "No AI used".
+any server, Apple or Android compatibility concerns.
 Write the template's `## Release Notes` section for people using Auger, or
 "None" for an internal-only change, because it becomes the GitHub Release notes.
 
@@ -89,4 +85,5 @@ You retain copyright in your contribution; no assignment is requested.
 
 ## Instructions for coding agents
 
-Read [AGENTS.md](AGENTS.md) (`CLAUDE.md` imports it) and [GLOSSARY.md](GLOSSARY.md) before changing the repository. This guide and the pull request template's AI Disclosure apply equally to agent and human authors.
+Read [AGENTS.md](AGENTS.md) (`CLAUDE.md` imports it) and [GLOSSARY.md](GLOSSARY.md) before changing the repository. This guide applies equally to agent and human authors.
+Do not add AI attribution to issues, pull requests, reviews, comments, or commits.
