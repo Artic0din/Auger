@@ -10,6 +10,7 @@ export interface PendingTransport {
     seek: Promise<void> | undefined;
     restore: Promise<void> | undefined;
     closing: Promise<void> | undefined;
+    deferredClose: boolean;
 }
 
 const pendingTransports = new WeakMap<AVPlay, PendingTransport>();
@@ -18,7 +19,7 @@ const pendingTransports = new WeakMap<AVPlay, PendingTransport>();
 export function transportLock(avplay: AVPlay): PendingTransport {
     const existing = pendingTransports.get(avplay);
     if (existing !== undefined) return existing;
-    const created: PendingTransport = { seek: undefined, restore: undefined, closing: undefined };
+    const created: PendingTransport = { seek: undefined, restore: undefined, closing: undefined, deferredClose: false };
     pendingTransports.set(avplay, created);
     return created;
 }

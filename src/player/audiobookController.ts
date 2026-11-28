@@ -1003,6 +1003,7 @@ export class AudiobookController {
         this.armStartup(attempt, transport, generation);
         try {
             avplay.open(url);
+            this.pending.deferredClose = false;
             avplay.setListener(this.createListener(attempt, plan, transport));
             avplay.prepareAsync(
                 () => this.onPrepared(attempt, plan, partIndex, transport, generation),
@@ -1393,8 +1394,9 @@ export class AudiobookController {
     private closeAVPlay(): void {
         try {
             this.deps.avplay.close();
+            this.pending.deferredClose = false;
         } catch {
-            // Already closed or settled; platform state cannot be recovered here.
+            this.pending.deferredClose = true;
         }
     }
 
@@ -1405,6 +1407,7 @@ export class AudiobookController {
     }
 
     private runSeek(milliseconds: number, onSuccess: () => void, onError: () => void): void {
+        const transport = this.transport;
         let release: () => void = () => undefined;
         const seek = new Promise<void>(resolve => { release = resolve; });
         this.pending.seek = seek;
@@ -1419,9 +1422,18 @@ export class AudiobookController {
             release();
             cb();
         };
+        const onNativeCallback = (cb: () => void): void => {
+            if (settled) {
+                if (this.pending.deferredClose && transport !== this.transport) {
+                    this.closeAVPlay();
+                }
+                return;
+            }
+            settle(cb);
+        };
         cancelTimeout = this.deps.clock.schedule(() => settle(onError), STARTUP_TIMEOUT_MS);
         try {
-            this.deps.avplay.seekTo(milliseconds, () => settle(onSuccess), () => settle(onError));
+            this.deps.avplay.seekTo(milliseconds, () => onNativeCallback(onSuccess), () => onNativeCallback(onError));
         } catch {
             settle(onError);
         }
@@ -1443,6 +1455,15 @@ export class AudiobookController {
                 release();
                 resolve(ok);
             };
+            const onNativeCallback = (ok: boolean): void => {
+                if (settled) {
+                    if (this.pending.deferredClose && transport !== this.transport) {
+                        this.closeAVPlay();
+                    }
+                    return;
+                }
+                finish(ok);
+            };
             cancelTimeout = this.deps.clock.schedule(() => finish(false), STARTUP_TIMEOUT_MS);
             try {
                 restoreFn.call(
@@ -1450,8 +1471,8 @@ export class AudiobookController {
                     url,
                     resumeMs,
                     false,
-                    () => finish(transport === this.transport && attempt.live && !attempt.hidden),
-                    () => finish(false),
+                    () => onNativeCallback(transport === this.transport && attempt.live && !attempt.hidden),
+                    () => onNativeCallback(false),
                 );
             } catch {
                 finish(false);
@@ -1549,7 +1570,7 @@ export class AudiobookController {
         this.sleepTimer.cancel();
         this.closeTransport();
         attempt.abort.abort();
-        attempt.removeAuthority();
+        this.drainPendingSyncOnExit(attempt);
         this.attempt = undefined;
         if (!this.destroyed) {
             this.emit({ phase: "idle" });
@@ -1674,6 +1695,20 @@ export class AudiobookController {
         }
         this.closeTransport();
         attempt.abort.abort();
+        this.drainPendingSyncOnExit(attempt);
+        if (this.attempt === attempt) this.attempt = undefined;
+        this.emit({
+            phase: "error",
+            contentId: attempt.book?.id ?? attempt.request.contentId,
+            title: attempt.book?.title ?? attempt.request.title ?? "",
+            posterUrl: attempt.book?.posterUrl ?? attempt.request.posterUrl,
+            kind,
+            message,
+            retryable,
+        });
+    }
+
+    private drainPendingSyncOnExit(attempt: Attempt): void {
         const syncInFlight = attempt.syncInFlight;
         if (syncInFlight !== undefined) {
             const prior = this.activeTeardown;
@@ -1687,19 +1722,9 @@ export class AudiobookController {
                 if (this.activeTeardown === chained) this.activeTeardown = undefined;
                 attempt.removeAuthority();
             });
-        } else {
-            attempt.removeAuthority();
+            return;
         }
-        if (this.attempt === attempt) this.attempt = undefined;
-        this.emit({
-            phase: "error",
-            contentId: attempt.book?.id ?? attempt.request.contentId,
-            title: attempt.book?.title ?? attempt.request.title ?? "",
-            posterUrl: attempt.book?.posterUrl ?? attempt.request.posterUrl,
-            kind,
-            message,
-            retryable,
-        });
+        attempt.removeAuthority();
     }
 
     private emitPlayback(attempt: Attempt): void {

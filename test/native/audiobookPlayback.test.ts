@@ -1494,6 +1494,30 @@ test("sleep deadline passing during pending restoreAsync, thrown suspend(), or c
     assert.equal(playingView(r3).phase, "paused");
     assert.equal(playingView(r3).sleepTimer.active, false);
     r3.controller.destroy();
+
+    // Subcase D: clock jumps past deadline BEFORE seeking across parts retires old session with is_paused=true.
+    const r4 = await setup();
+    void r4.controller.start({ contentId: "audiobook:multipart" });
+    await settlePlay(r4);
+    let jump4 = 0;
+    const origNow4 = r4.h.clock.now.bind(r4.h.clock);
+    r4.h.clock.now = () => origNow4() + jump4;
+
+    r4.controller.setSleepTimer(15);
+    jump4 = 20 * 60 * 1000;
+    r4.controller.seekTo(1300);
+    await r4.h.clock.advance(0);
+    assert.equal(stopRequests(r4).at(-1)?.body?.is_paused, true);
+
+    r4.avplay.finishPrepare();
+    await r4.h.clock.advance(0);
+    r4.avplay.finishSeek();
+    await r4.h.clock.advance(0);
+
+    assert.equal(r4.avplay.state, "READY");
+    assert.equal(playingView(r4).phase, "paused");
+    assert.equal(playingView(r4).sleepTimer.active, false);
+    r4.controller.destroy();
 });
 
 test("intra-part seek settlement and explicit play() reconcile delayed sleep timer deadlines", async () => {
@@ -1587,5 +1611,134 @@ test("on-time sleep expiry during suspend or thrown suspend() pauses AVPlay and 
     assert.equal(playingView(r2).phase, "paused");
     assert.equal(progressRequests(r2).length, progressBefore2 + 1);
     assert.equal(progressRequests(r2).at(-1)?.body?.is_paused, true);
+    r2.controller.destroy();
+});
+
+test("410 server termination drains in-flight whole-book sync before replacement Start Over", async () => {
+    const r = await setup();
+    void r.controller.start({ contentId: "audiobook:tide" });
+    await settlePlay(r);
+    const sessionId = [...r.playback.sessions.keys()][0];
+    assert.ok(sessionId !== undefined);
+
+    const heldSync = r.h.fake.hold("/sync/progress");
+    await r.h.clock.advance(10_000);
+    r.playback.endByAdmin(sessionId);
+    await r.h.clock.advance(10_000);
+    assert.equal(r.views.at(-1)?.phase, "idle");
+    assert.equal(r.h.fake.heldReplies, 1);
+
+    const startsBefore = startRequests(r).length;
+    void r.controller.start({ contentId: "audiobook:tide", restart: true });
+    await r.h.clock.advance(0);
+    assert.equal(startRequests(r).length, startsBefore, "Start Over waits for 410-retired attempt's in-flight sync");
+
+    heldSync.release();
+    await settlePlay(r);
+    r.controller.pause();
+    await r.h.clock.advance(0);
+    assert.equal(startRequests(r).at(-1)?.body?.start_position, 0);
+    assert.equal(r.catalog.progress.get("audiobook:tide"), 0);
+    r.controller.destroy();
+});
+
+test("delayed native seekTo callback settling after timeout and stop() closes AVPlay cleanly", async () => {
+    const r = await setup();
+    void r.controller.start({ contentId: "audiobook:dune" });
+    await settlePlay(r);
+
+    r.controller.seekTo(120);
+    await r.h.clock.advance(15_000);
+    assert.equal(playingView(r).seeking, false);
+
+    await r.controller.stop();
+    assert.equal(r.views.at(-1)?.phase, "idle");
+
+    r.avplay.finishSeek();
+    await r.h.clock.advance(0);
+    assert.equal(r.avplay.state, "NONE");
+
+    void r.controller.start({ contentId: "audiobook:tide" });
+    await settlePlay(r);
+    assert.equal(playingView(r).contentId, "audiobook:tide");
+    assert.equal(r.avplay.state, "PLAYING");
+    r.controller.destroy();
+});
+
+test("delayed native restoreAsync closes idle AVPlay when orphaned and never closes a replacement video stream", async () => {
+    // Subcase A: late restoreAsync callback after timeout + stop() closes AVPlay when still orphaned.
+    const r = await setup();
+    void r.controller.start({ contentId: "audiobook:dune" });
+    await settlePlay(r);
+    const firstSession = [...r.playback.sessions.keys()][0];
+    assert.ok(firstSession !== undefined);
+
+    r.controller.suspend();
+    void r.controller.restore();
+    await r.h.clock.advance(0);
+
+    const heldStop = r.h.fake.hold(`/playback/${firstSession}`);
+    await r.h.clock.advance(15_000);
+    const origClose = r.avplay.close.bind(r.avplay);
+    Object.assign(r.avplay, {
+        close: () => {
+            Object.assign(r.avplay, { close: origClose });
+            throw new Error("restore still unwinding");
+        },
+    });
+    const stopping = r.controller.stop();
+    await r.h.clock.advance(0);
+    heldStop.release();
+    await stopping;
+    assert.notEqual(r.avplay.state, "NONE");
+
+    r.avplay.finishRestore();
+    await r.h.clock.advance(0);
+    assert.equal(r.avplay.state, "NONE");
+    r.controller.destroy();
+
+    // Subcase B: if PlaybackController opens a replacement video stream first, the late restoreAsync must not close it.
+    const r2 = await setup();
+    void r2.controller.start({ contentId: "audiobook:dune" });
+    await settlePlay(r2);
+    const s2 = [...r2.playback.sessions.keys()][0];
+    assert.ok(s2 !== undefined);
+
+    r2.controller.suspend();
+    void r2.controller.restore();
+    await r2.h.clock.advance(0);
+
+    const heldStop2 = r2.h.fake.hold(`/playback/${s2}`);
+    await r2.h.clock.advance(15_000);
+    const origClose2 = r2.avplay.close.bind(r2.avplay);
+    Object.assign(r2.avplay, {
+        close: () => {
+            Object.assign(r2.avplay, { close: origClose2 });
+            throw new Error("restore still unwinding");
+        },
+    });
+    const stopping2 = r2.controller.stop();
+    await r2.h.clock.advance(0);
+    heldStop2.release();
+    await stopping2;
+
+    const video = new PlaybackController({
+        session: r2.h.core.session,
+        avplay: r2.avplay,
+        clock: r2.h.clock,
+        randomBytes: bytes => bytes.fill(9),
+        device: { model: "QN55Q60AAFXZA", appVersion: "0.1.0" },
+        exits: { onBack: () => undefined, onEnd: () => undefined, onError: () => undefined },
+    });
+    video.play({ contentId: "movie-1", fileId: "42", title: "Movie", startSeconds: undefined });
+    await r2.h.clock.advance(0);
+    r2.avplay.finishPrepare();
+    await r2.h.clock.advance(0);
+    assert.equal(r2.avplay.state, "PLAYING");
+
+    r2.avplay.finishRestore();
+    await r2.h.clock.advance(0);
+    assert.equal(r2.avplay.state, "PLAYING", "late audiobook restore callback must not close active video stream");
+    video.destroy();
     r2.controller.destroy();
 });
