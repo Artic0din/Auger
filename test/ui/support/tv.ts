@@ -24,7 +24,7 @@ const css = (names: readonly string[]): string => names.map((name) => readFileSy
 const CSS: Record<TvApp, string> = {
     signIn: css(["ui/signIn.css", "ui/confirmationDialog.css"]),
     browse: css(["ui/signIn.css", "ui/browse.css", "ui/confirmationDialog.css"]),
-    application: css(["ui/signIn.css", "ui/browse.css", "ui/confirmationDialog.css", "ui/accounts.css", "player/player.css", "app.css"]),
+    application: css(["ui/signIn.css", "ui/browse.css", "ui/confirmationDialog.css", "ui/accounts.css", "player/player.css", "player/audiobookPlayer.css", "app.css"]),
 };
 const HTML = `<!DOCTYPE html>
 <html lang="en">

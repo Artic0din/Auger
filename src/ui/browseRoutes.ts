@@ -3,6 +3,7 @@
 
 import type { RequestPage } from "./requestsModule.ts";
 import type { Audiobook } from "../contracts/v2/audiobooks.ts";
+import type { AudiobookPlayRequest } from "../player/audiobookController.ts";
 import { audiobookView } from "./audiobookView.ts";
 import type { CatalogPage, Episode, HomeSection, ItemDetail, Season, SectionCollectionCard, UserLibrary } from "../contracts/v2/catalog.ts";
 import type { PersonModule } from "./person.ts";
@@ -131,6 +132,7 @@ export interface RouteHandlers {
     readonly openCollection: (card: SectionCollectionCard, library: UserLibrary | undefined) => void;
     readonly pop: () => void;
     readonly play: (request: PlayRequest) => void;
+    readonly playAudiobook?: ((request: AudiobookPlayRequest) => void) | undefined;
     readonly chooseProfile: () => void;
     readonly manageServers?: (() => void) | undefined;
     readonly retry: (route: Route) => void;
@@ -210,6 +212,7 @@ export function routeView(current: Route, handlers: RouteHandlers): View {
                     setPicker: open => handlers.audiobookPicker(current, open),
                     descriptionOpen: current.description === true,
                     setDescription: open => handlers.audiobookDescription(current, open),
+                    play: handlers.playAudiobook,
                     back: pop,
                 }), current.failure), current.data.details);
             }

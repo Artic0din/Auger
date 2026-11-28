@@ -3,8 +3,9 @@ import { test } from "node:test";
 import { audiobookOperations as api } from "../../src/api/audiobookOperations.ts";
 import { operations } from "../../src/api/operations.ts";
 import {
-    audiobookLibraries, AUDIOBOOK_SEEK_KEYS, bookPosition, currentChapterIndex, decodeAudiobook, decodeAudiobookGroups,
-    decodeProgressSync, isFinished, resumePosition, SHOW_AUDIOBOOKS_DEFAULT, SHOW_AUDIOBOOKS_KEY,
+    audiobookLibraries, AUDIOBOOK_SEEK_KEYS, bookPosition, chapterAt, currentChapterIndex, decodeAudiobook,
+    decodeAudiobookGroups, decodeProgressSync, isFinished, playerStartPosition, relativeSeekTarget,
+    resumePosition, SHOW_AUDIOBOOKS_DEFAULT, SHOW_AUDIOBOOKS_KEY,
 } from "../../src/contracts/v2/audiobooks.ts";
 import { decodeUserLibraries } from "../../src/contracts/v2/catalog.ts";
 import { decodeCatalogQueryPage } from "../../src/contracts/v2/discovery.ts";
@@ -324,4 +325,36 @@ test("syncProgress treats any answer that does not match the batch as a contract
     ]) assert.throws(() => decodeProgressSync({ summary: { total: 2, succeeded: 2, failed: 0 }, ...invalid }, ["a", "b"]), WireError);
     assert.throws(() => decodeProgressSync({ items: [ok(0, "a"), ok(1, "b")] }, ["a", "b"]), WireError);
     assert.throws(() => decodeProgressSync({ items: [ok(0, "a"), ok(1, "b")], summary: { total: 2, succeeded: 2 } }, ["a", "b"]), WireError);
+});
+
+test("playerStartPosition respects the 30 s grace, 5 s end margin, finished flag, and restart", () => {
+    assert.equal(playerStartPosition(false, 25, 1000), 0);
+    assert.equal(playerStartPosition(false, 30, 1000), 0);
+    assert.equal(playerStartPosition(false, 31, 1000), 31);
+    assert.equal(playerStartPosition(false, 995, 1000), 0);
+    assert.equal(playerStartPosition(false, 994, 1000), 994);
+    assert.equal(playerStartPosition(true, 400, 1000), 0);
+    assert.equal(playerStartPosition(false, 400, 1000, true), 0);
+});
+
+test("chapterAt resolves active chapter bounds from chapter ends, next chapter start, or book duration", () => {
+    const chapters = [
+        { title: "One", start: 10, end: 50, partIndex: 0 },
+        { title: "Two", start: 50, end: undefined, partIndex: 0 },
+        { title: "Three", start: 120, end: undefined, partIndex: 1 },
+    ];
+    assert.equal(chapterAt([], 15, 200), undefined);
+    assert.deepEqual(chapterAt(chapters, 0, 200), { index: 0, chapter: chapters[0], start: 10, end: 50 });
+    assert.deepEqual(chapterAt(chapters, 49.9, 200), { index: 0, chapter: chapters[0], start: 10, end: 50 });
+    assert.deepEqual(chapterAt(chapters, 50, 200), { index: 1, chapter: chapters[1], start: 50, end: 120 });
+    assert.deepEqual(chapterAt(chapters, 140, 200), { index: 2, chapter: chapters[2], start: 120, end: 200 });
+    assert.deepEqual(chapterAt(chapters, 140, 0), { index: 2, chapter: chapters[2], start: 120, end: 120 });
+});
+
+test("relativeSeekTarget clamps deltas cleanly to [0, duration]", () => {
+    assert.equal(relativeSeekTarget(5, -10, 300), 0);
+    assert.equal(relativeSeekTarget(40, 30, 300), 70);
+    assert.equal(relativeSeekTarget(285, 30, 300), 300);
+    assert.equal(relativeSeekTarget(285, 30, 0), 315);
+    assert.equal(relativeSeekTarget(Number.NaN, -10, 300), 0);
 });

@@ -32,6 +32,7 @@ import type { FileVersionTracks, PlaybackCapabilities, PlaybackDecision, Playbac
 import type { PublicStorage, RandomBytes } from "../session/deviceIdentity.ts";
 import type { NativeSession } from "../session/session.ts";
 import type { AVPlay, AVPlayListener } from "./avplay.ts";
+import { type PendingTransport, transportLock } from "./avplayTransport.ts";
 import { bandwidthReadings, FALLBACK_MAX_AGE_SECONDS, readingsKey } from "./bandwidthReadings.ts";
 import { BUFFERING_QUALITY_FEATURE, clientCapabilities, clientFeatures, HLS_SUBTITLE_RENDITIONS_ALL_FEATURE, hdrPanelFor, playbackContext, probeHdr, probeUhd, resolutionFor, type HdrPanel, type HdrProbe, type PanelResolution } from "./capabilities.ts";
 import { BufferingBridge, type BufferingNoticeView, type BufferingPillView } from "./bufferingBridge.ts";
@@ -497,15 +498,6 @@ interface Attempt {
     progressRefusal: unknown;
 }
 
-interface PendingTransport {
-    seek: Promise<void> | undefined;
-    closing: Promise<void> | undefined;
-}
-
-// AVPlay is a platform singleton. A replacement controller must also wait for an
-// uncancellable seek owned by the screen it replaced.
-const pendingTransports = new WeakMap<AVPlay, PendingTransport>();
-
 export class PlaybackController implements PlayerControls {
     private readonly deps: PlaybackDeps;
     private readonly flusher: PlayerSettingsFlusher;
@@ -557,9 +549,7 @@ export class PlaybackController implements PlayerControls {
         this.stopFlusherCommit = this.flusher.onCommit(key => {
             if (key === AUTO_NEXT_KEY && this.attempt !== undefined) this.attempt.settingsEpoch += 1;
         });
-        const pending = pendingTransports.get(deps.avplay) ?? { seek: undefined, closing: undefined };
-        pendingTransports.set(deps.avplay, pending);
-        this.pending = pending;
+        this.pending = transportLock(deps.avplay);
         globalThis.addEventListener?.("online", this.onConnectivity);
         globalThis.addEventListener?.("offline", this.onConnectivity);
         this.stopAuthority = deps.session.onAuthorityChange(() => {
@@ -2271,7 +2261,9 @@ export class PlaybackController implements PlayerControls {
     private async open(attempt: Attempt, plan: PlaybackPlan): Promise<void> {
         this.closeTransport();
         const transport = this.transport;
-        await this.pending.closing;
+        while (this.pending.closing !== undefined || this.pending.seek !== undefined || this.pending.restore !== undefined) {
+            await (this.pending.closing ?? this.pending.seek ?? this.pending.restore);
+        }
         if (transport !== this.transport || !attempt.live) {
             return;
         }
@@ -2333,6 +2325,8 @@ export class PlaybackController implements PlayerControls {
         try {
             enterStage(attempt.trace, "avplay_open");
             avplay.open(url);
+            this.pending.streamGen += 1;
+            this.pending.deferredCloseGen = undefined;
             attempt.trace.opened = true;
             reachedStage(attempt.trace, "avplay_open");
             enterStage(attempt.trace, "avplay_prepare");
@@ -2570,9 +2564,9 @@ export class PlaybackController implements PlayerControls {
         this.startupDue = undefined;
         this.cancelStartup?.();
         this.cancelStartup = undefined;
-        const seek = this.pending.seek;
-        if (seek !== undefined) {
-            const closing = seek.then(() => this.closeAVPlay());
+        const pending = [this.pending.seek, this.pending.restore].filter((op): op is Promise<void> => op !== undefined);
+        if (pending.length > 0) {
+            const closing = Promise.all(pending).then(() => this.closeAVPlay());
             this.pending.closing = closing;
             void closing.then(() => {
                 if (this.pending.closing === closing) {
@@ -2587,6 +2581,7 @@ export class PlaybackController implements PlayerControls {
     private closeAVPlay(): void {
         try {
             this.deps.avplay.close();
+            this.pending.deferredCloseGen = undefined;
         } catch {
             // The pending seek has settled; a platform failure cannot be repaired here.
         }

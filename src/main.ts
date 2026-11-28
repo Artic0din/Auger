@@ -6,6 +6,7 @@ import "./ui/browse.css";
 import "./ui/confirmationDialog.css";
 import "./ui/accounts.css";
 import "./player/player.css";
+import "./player/audiobookPlayer.css";
 
 const root = document.getElementById("screen");
 if (root === null) {

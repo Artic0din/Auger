@@ -496,6 +496,15 @@ Audio tracks: `original_http` carries the validated claim `client_selected_audio
 After `play()`, the controller plays `selected_tracks.audio.index` as that ordinal's AUDIO row of `getTotalTrackInfo` through `setSelectTrack`, which AVPlay allows only in PLAYING, and skips the call when `getCurrentStreamInfo` already shows that row.
 A selection without its `index`, a stream with no matching AUDIO row, or a refused switch is a `failure_recovery` replan with classification `audioTrackSwitchFailed`, Apple's token for the same failure.
 
+### Audiobook playback and progress sync
+
+`AudiobookController` (`src/player/audiobookController.ts`) runs `/api/v2` playback sessions per part over AVPlay (`src/player/capabilities.ts`) using `AUDIOBOOK_CLIENT_FEATURES` (`["playback_plan_v3"]`), audio-only `AUDIOBOOK_CAPABILITIES`, `allow_alternate_versions: false`, and `progress_persistence: "client"`.
+AVPlay's `transportLock` (`src/player/avplayTransport.ts`) serializes `seekTo` and teardown `close` across video and audiobook controllers.
+
+Whole-book resume state is written to `POST /sync/progress` (`audiobookOperations.syncProgress`, `retry: "never"`, `replayAfterRefresh: false`) in whole milliseconds with `force_overwrite: true` on a 10 s periodic cadence (playing and paused), on pause, after completed seeks and chapter changes, at part boundaries, on natural completion, and on stop.
+Failed `syncProgress` writes are never retried automatically, and no playback or sync write runs once active Profile Authority aborts.
+AVPlay documents whole-integer `setSpeed` rates only on progressive HTTP streams, so audiobook speeds are restricted to `[1, 2]` on `http_progressive` when `setSpeed` is present and `[1]` otherwise.
+
 ### Markers
 
 `GET /markers/files/{fileId}` (`src/api/markerOperations.ts`).

@@ -6,6 +6,41 @@ All notable changes to this project are documented in this file.
 
 <!-- changelog:releases -->
 
+## [0.19.0] - 2026-11-28
+
+### Features
+
+- **Audiobooks**: Keep audio playing after Back with clean handoffs ([#983](https://github.com/Artic0din/Auger-Tizen/pull/983), [`26be2e7b`](https://github.com/Artic0din/Auger-Tizen/commit/26be2e7b))
+
+## [0.18.0] - 2026-11-28
+
+### Features
+
+- **Audiobooks**: Add full-screen audio player and detail playback controls ([#982](https://github.com/Artic0din/Auger-Tizen/pull/982), [`cdee41f1`](https://github.com/Artic0din/Auger-Tizen/commit/cdee41f1))
+
+## [0.17.0] - 2026-11-28
+
+### Features
+
+- **Audiobooks**: Add audiobook playback engine and progress sync ([#981](https://github.com/Artic0din/Auger-Tizen/pull/981), [`5fd0dae8`](https://github.com/Artic0din/Auger-Tizen/commit/5fd0dae8))
+
+### Refactors & Maintenance
+
+- **Repo**: Stop AI attribution in issues and pull requests ([#986](https://github.com/Artic0din/Auger-Tizen/pull/986), [`4ee51698`](https://github.com/Artic0din/Auger-Tizen/commit/4ee51698))
+
+### Tests
+
+- **Interface**: Settle launch nav, watch-party staging, and Arabic load under jitter ([#974](https://github.com/Artic0din/Auger-Tizen/pull/974), [`dda6b633`](https://github.com/Artic0din/Auger-Tizen/commit/dda6b633))
+- **Interface**: Settle search rails before spatial scroll check under jitter ([#975](https://github.com/Artic0din/Auger-Tizen/pull/975), [`495a60e6`](https://github.com/Artic0din/Auger-Tizen/commit/495a60e6))
+- **Interface**: Settle Details personal/title-art startup and person filmography under jitter ([#976](https://github.com/Artic0din/Auger-Tizen/pull/976), [`82e9d362`](https://github.com/Artic0din/Auger-Tizen/commit/82e9d362))
+- **Interface**: Settle pending replies before pressed-look transition checks ([#977](https://github.com/Artic0din/Auger-Tizen/pull/977), [`7e04d619`](https://github.com/Artic0din/Auger-Tizen/commit/7e04d619))
+- **Interface**: Settle top-bar startup reads and profile requests row under jitter ([#980](https://github.com/Artic0din/Auger-Tizen/pull/980), [`e2954f6b`](https://github.com/Artic0din/Auger-Tizen/commit/e2954f6b))
+- **Interface**: Reset Person scroll before mid-scroll poll assertion ([#984](https://github.com/Artic0din/Auger-Tizen/pull/984), [`9a2fb6ba`](https://github.com/Artic0din/Auger-Tizen/commit/9a2fb6ba))
+
+### CI
+
+- **Releases**: Align check-pr with squash commits and fix v0.11.0 sideload note ([#969](https://github.com/Artic0din/Auger-Tizen/pull/969), [`433aa889`](https://github.com/Artic0din/Auger-Tizen/commit/433aa889))
+
 ## [0.16.4] - 2026-11-27
 
 ### Fixes

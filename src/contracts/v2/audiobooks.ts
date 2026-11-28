@@ -305,6 +305,37 @@ export function bookPosition(book: Audiobook, wholeBookSeconds: number): { reado
     return { part, partIndex, localSeconds: part.duration > 0 ? Math.min(local, part.duration) : local };
 }
 
+/** Initial whole-book playback position from `user_data` (returns 0 inside 30 s grace, last 5 s end margin, finished, or restart). */
+export function playerStartPosition(played: boolean, position: number, duration: number, restart = false): number {
+    if (restart || played) return 0;
+    return resumePosition(position, duration) ?? 0;
+}
+
+/** Active chapter slice (`start` and bounded `end`) containing `wholeBookSeconds`. */
+export function chapterAt(
+    chapters: readonly AudiobookChapter[],
+    wholeBookSeconds: number,
+    duration: number,
+): { readonly index: number; readonly chapter: AudiobookChapter; readonly start: number; readonly end: number } | undefined {
+    const index = currentChapterIndex(chapters, wholeBookSeconds);
+    if (index === undefined) return undefined;
+    const chapter = chapters[index];
+    if (chapter === undefined) return undefined;
+    const nextStart = chapters[index + 1]?.start;
+    const fallbackEnd = nextStart ?? (duration > chapter.start ? duration : chapter.start);
+    const rawEnd = chapter.end !== undefined && chapter.end > chapter.start ? chapter.end : fallbackEnd;
+    const boundedEnd = duration > 0 ? Math.min(duration, rawEnd) : rawEnd;
+    return { index, chapter, start: chapter.start, end: Math.max(chapter.start, boundedEnd) };
+}
+
+/** Whole-book target after applying `deltaSeconds`, clamped to `[0, duration]` when known. */
+export function relativeSeekTarget(currentSeconds: number, deltaSeconds: number, durationSeconds: number): number {
+    const base = Number.isFinite(currentSeconds) ? currentSeconds : 0;
+    const delta = Number.isFinite(deltaSeconds) ? deltaSeconds : 0;
+    const moved = Math.max(0, base + delta);
+    return Number.isFinite(durationSeconds) && durationSeconds > 0 ? Math.min(moved, durationSeconds) : moved;
+}
+
 // --- listAudiobookGroups ---
 
 export interface AudiobookGroup {
