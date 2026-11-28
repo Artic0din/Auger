@@ -19,6 +19,7 @@ export interface AudiobookHostDeps {
     readonly onMinimize?: () => void;
     readonly onExit?: () => void;
     readonly onFinished?: () => void;
+    readonly onBackgroundEnd?: () => void;
 }
 
 /**
@@ -33,6 +34,7 @@ export class AudiobookHost {
     private readonly onMinimize: (() => void) | undefined;
     private readonly onExit: (() => void) | undefined;
     private readonly onFinished: (() => void) | undefined;
+    private readonly onBackgroundEnd: (() => void) | undefined;
     private surface: HTMLDivElement | undefined;
     private surfaceGen = 0;
     private exitGen = 0;
@@ -57,6 +59,7 @@ export class AudiobookHost {
         this.onMinimize = deps.onMinimize;
         this.onExit = deps.onExit;
         this.onFinished = deps.onFinished;
+        this.onBackgroundEnd = deps.onBackgroundEnd;
 
         this.controller = new AudiobookController({
             session: deps.server.session,
@@ -146,6 +149,8 @@ export class AudiobookHost {
             if (hadScreen || shouldRestore) {
                 if (kind === "finished") this.onFinished?.();
                 else this.onExit?.();
+            } else {
+                this.onBackgroundEnd?.();
             }
         };
         if (!this.controller.transportBusy) {

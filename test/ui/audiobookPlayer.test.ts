@@ -738,6 +738,9 @@ playerTest("minimized hardware media keys toggle play/pause keeping bar focus, s
         "pause, resume, and seek sync writes",
     );
 
+    const homeGets = (): number =>
+        tv.fake.requests.filter(req => req.method === "GET" && req.path.startsWith("/home/sections")).length;
+    const homeGetsBefore = homeGets();
     const stopsBefore = tv.fake.requests.filter(req => req.method === "DELETE" && req.path.startsWith("/playback/")).length;
     const writesBefore = catalog.progressWrites.length;
     await tv.remote(STOP);
@@ -745,9 +748,13 @@ playerTest("minimized hardware media keys toggle play/pause keeping bar focus, s
     assert.equal(await tv.focused(), "profiles", "disappearing focused pill moves focus to profiles");
     await tv.eventually(
         async () => tv.fake.requests.filter(req => req.method === "DELETE" && req.path.startsWith("/playback/")).length === stopsBefore + 1
-            && catalog.progressWrites.length === writesBefore + 1,
-        "stop DELETE and final syncProgress landed",
+            && catalog.progressWrites.length === writesBefore + 1
+            && homeGets() > homeGetsBefore
+            && await tv.page.locator('.audio-avplay-surface, object[type="application/avplayer"]').count() === 0
+            && tv.pendingReplies === 0,
+        "stop DELETE, final syncProgress, and background Home refresh settled",
     );
+    assert.equal(await tv.focused(), "profiles", "background refresh after stop preserves bar focus");
 });
 
 // Profile-aware Browse + Player integration for minimize, Settings/failure handoffs, theme suppression, video handoff, and profile teardown.
@@ -765,6 +772,14 @@ playerTest("minimized book completing while Settings is open leaves Settings int
     await tv.page.getByRole("menuitem", { name: "Settings", exact: true }).click();
     await tv.page.locator('[data-focus="title-art"]').waitFor();
     assert.equal(await tv.page.locator('.browse[data-view="home"]').isHidden(), true);
+    await tv.eventually(async () => tv.pendingReplies === 0, "prior replies settled before Settings completion");
+
+    const homeGets = (): number =>
+        tv.fake.requests.filter(req => req.method === "GET" && req.path.startsWith("/home/sections")).length;
+    const detailGets = (): number =>
+        tv.fake.requests.filter(req => req.method === "GET" && req.path.startsWith("/catalog/items/audiobook%3Atide")).length;
+    const homeGetsBefore = homeGets();
+    const detailGetsBefore = detailGets();
 
     await tv.page.evaluate(() => window.appHarness.avplay.listener?.onstreamcompleted());
     await tv.eventually(() => tv.page.evaluate(() => window.appHarness.avplay.calls.includes("close")), "audio closed on finish");
@@ -772,6 +787,53 @@ playerTest("minimized book completing while Settings is open leaves Settings int
     assert.equal(await tv.page.locator('[data-focus="title-art"]').isVisible(), true);
     assert.equal(await tv.page.locator('.browse[data-view="home"]').isHidden(), true);
     assert.equal(await tv.page.locator(".skyline-now-playing").count(), 0);
+    await tv.jump(50);
+    assert.equal(homeGets(), homeGetsBefore);
+    assert.equal(detailGets(), detailGetsBefore);
+
+    await tv.remote(BACK);
+    await tv.page.locator('[data-view="home"]').waitFor();
+    await tv.eventually(async () => homeGets() > homeGetsBefore && tv.pendingReplies === 0, "stale Home reloaded after exiting Settings");
+    await tv.page.locator('[data-section="shelf"] [data-focus="audiobook:tide"]').click();
+    await tv.page.locator('[data-view="audiobook:audiobook:tide"] .audiobook-state[data-state="finished"]').waitFor();
+    assert.equal(await tv.page.locator('[data-view="audiobook:audiobook:tide"] [data-focus="finished"]').getAttribute("aria-pressed"), "true");
+});
+
+playerTest("minimized book completing refreshes painted audiobook detail in place and reloads Home on Back", async ({ tv }) => {
+    await tv.page.locator('[data-section="shelf"] [data-focus="audiobook:tide"]').click();
+    await tv.page.locator('[data-view="audiobook:audiobook:tide"] .audiobook-state[data-state="inProgress"]').waitFor();
+    assert.equal(await tv.page.locator('[data-view="audiobook:audiobook:tide"] [data-focus="finished"]').getAttribute("aria-pressed"), "false");
+
+    await tv.page.locator('[data-view="audiobook:audiobook:tide"] [data-focus="play"]').focus();
+    await tv.page.keyboard.press("Enter");
+    await prepareAudio(tv, true);
+    await tv.remote(BACK);
+    await tv.page.locator('[data-view="audiobook:audiobook:tide"] [data-focus="play"]').waitFor();
+    await tv.eventually(async () => tv.pendingReplies === 0, "detail settled after minimize");
+    await tv.page.locator('[data-view="audiobook:audiobook:tide"] [data-focus="chapters"]').focus();
+    assert.equal(await tv.focused(), "chapters");
+
+    const detailGets = (): number =>
+        tv.fake.requests.filter(req => req.method === "GET" && req.path.startsWith("/catalog/items/audiobook%3Atide")).length;
+    const homeGets = (): number =>
+        tv.fake.requests.filter(req => req.method === "GET" && req.path.startsWith("/home/sections")).length;
+    const detailGetsBefore = detailGets();
+    const homeGetsBefore = homeGets();
+
+    await tv.page.evaluate(() => window.appHarness.avplay.listener?.onstreamcompleted());
+    await tv.eventually(
+        async () => detailGets() >= detailGetsBefore + 1
+            && await tv.page.locator('.audio-avplay-surface, object[type="application/avplayer"]').count() === 0
+            && tv.pendingReplies === 0,
+        "detail refreshed after background completion",
+    );
+    await tv.page.locator('[data-view="audiobook:audiobook:tide"] .audiobook-state[data-state="finished"]').waitFor();
+    assert.equal(await tv.page.locator('[data-view="audiobook:audiobook:tide"] [data-focus="finished"]').getAttribute("aria-pressed"), "true");
+    assert.equal(await tv.focused(), "chapters");
+
+    await tv.remote(BACK);
+    await tv.page.locator('[data-view="home"]').waitFor();
+    await tv.eventually(async () => homeGets() > homeGetsBefore && tv.pendingReplies === 0, "stale Home reloaded on Back");
 });
 
 {
@@ -1001,4 +1063,108 @@ playerTest("video playback waits for unsettled audiobook seek close even after m
     await tv.page.locator('[data-screen="player"]').waitFor();
     assert.equal(await tv.page.locator('.audio-avplay-surface').count(), 0);
     assert.equal(await tv.page.evaluate(() => document.querySelectorAll('object[type="application/avplayer"]').length), 1);
+});
+
+playerTest("Back during pending audiobook teardown cancels video launch and restores Browse without opening exit dialog", async ({ tv }) => {
+    await tv.page.locator('[data-section="shelf"] [data-focus="audiobook:tide"]').click();
+    await tv.page.locator('[data-view="audiobook:audiobook:tide"] [data-focus="play"]').waitFor();
+    await tv.page.keyboard.press("Enter");
+    await prepareAudio(tv, true);
+
+    await tv.remote(BACK);
+    await tv.page.locator('[data-view="audiobook:audiobook:tide"]').waitFor();
+    await tv.remote(BACK);
+    await tv.page.locator('[data-view="home"] [data-section="recently_added"] [data-focus="movie:m0001"]').waitFor();
+    await tv.page.locator('[data-section="recently_added"] [data-focus="movie:m0001"]').first().click();
+    await tv.page.locator('[data-view="item:movie:m0001"] [data-focus="play"]').waitFor();
+
+    await tv.remote(FAST_FORWARD);
+    const startsBeforeVideo = tv.fake.requests.filter(req => req.method === "POST" && req.path === "/playback/start").length;
+    await tv.page.locator('[data-view="item:movie:m0001"] [data-focus="play"]').click();
+    await tv.eventually(async () => await tv.page.locator(".browse").isHidden(), "Browse hidden while awaiting audiobook teardown");
+    assert.equal(tv.fake.requests.filter(req => req.method === "POST" && req.path === "/playback/start").length, startsBeforeVideo);
+    assert.equal(await tv.page.locator('[data-screen="player"]').count(), 0);
+    assert.equal(await tv.page.locator('.app-exit[role="dialog"]').count(), 0);
+
+    await tv.remote(BACK);
+    await tv.page.locator('[data-view="item:movie:m0001"] [data-focus="play"]').waitFor();
+    assert.equal(await tv.page.locator(".browse").isHidden(), false);
+    assert.equal(await tv.page.locator('.app-exit[role="dialog"]').count(), 0);
+    assert.equal(await tv.page.evaluate(() => window.appHarness.exits), 0);
+    assert.equal(await tv.focused(), "play");
+
+    await tv.page.evaluate(() => window.appHarness.avplay.finishSeek());
+    await tv.eventually(
+        async () => await tv.page.locator('.audio-avplay-surface, object[type="application/avplayer"]').count() === 0
+            && tv.pendingReplies === 0,
+        "audiobook surface cleaned up after pending video Back cancel",
+    );
+    await tv.jump(50);
+    assert.equal(tv.fake.requests.filter(req => req.method === "POST" && req.path === "/playback/start").length, startsBeforeVideo);
+    assert.equal(await tv.page.locator('[data-screen="player"]').count(), 0);
+});
+
+playerTest("profile expiry and switch during pending audiobook drain cancels video start", async ({ tv }) => {
+    await tv.page.locator('[data-section="shelf"] [data-focus="audiobook:tide"]').click();
+    await tv.page.locator('[data-view="audiobook:audiobook:tide"] [data-focus="play"]').waitFor();
+    await tv.page.keyboard.press("Enter");
+    await prepareAudio(tv, true);
+
+    await tv.remote(BACK);
+    await tv.page.locator('[data-view="audiobook:audiobook:tide"]').waitFor();
+    await tv.remote(BACK);
+    await tv.page.locator('[data-view="home"] [data-section="recently_added"] [data-focus="movie:m0001"]').waitFor();
+    await tv.page.locator('[data-section="recently_added"] [data-focus="movie:m0001"]').first().click();
+    await tv.page.locator('[data-view="item:movie:m0001"] [data-focus="play"]').waitFor();
+
+    await tv.remote(FAST_FORWARD);
+    const startsBeforeVideo = tv.fake.requests.filter(req => req.method === "POST" && req.path === "/playback/start").length;
+    await tv.page.locator('[data-view="item:movie:m0001"] [data-focus="play"]').click();
+    await tv.eventually(async () => await tv.page.locator(".browse").isHidden(), "Browse hidden while awaiting audiobook teardown");
+
+    await tv.page.evaluate(() => {
+        Object.defineProperty(document, "hidden", { configurable: true, value: true });
+        document.dispatchEvent(new Event("visibilitychange"));
+        Object.defineProperty(document, "hidden", { configurable: true, value: false });
+        document.dispatchEvent(new Event("visibilitychange"));
+    });
+    await tv.page.locator('[data-screen="profiles"]').waitFor();
+    await tv.page.locator('[data-focus="profile:p-kid"]').click();
+    await pressPin(tv.page, "2468");
+    await tv.page.locator('[data-view="home"]').waitFor();
+
+    await tv.page.evaluate(() => window.appHarness.avplay.finishSeek());
+    await tv.eventually(async () => tv.pendingReplies === 0, "kid Home and pending stop replies settled");
+    await tv.page.evaluate(() => Promise.resolve().then(() => Promise.resolve()));
+    await tv.jump(50);
+    assert.equal(tv.fake.requests.filter(req => req.method === "POST" && req.path === "/playback/start").length, startsBeforeVideo);
+    assert.equal(await tv.page.locator('[data-screen="player"]').count(), 0);
+    assert.equal(await tv.page.locator('[data-view="home"]').isVisible(), true);
+});
+
+playerTest("app teardown during pending audiobook drain cancels video start", async ({ tv }) => {
+    await tv.page.locator('[data-section="shelf"] [data-focus="audiobook:tide"]').click();
+    await tv.page.locator('[data-view="audiobook:audiobook:tide"] [data-focus="play"]').waitFor();
+    await tv.page.keyboard.press("Enter");
+    await prepareAudio(tv, true);
+
+    await tv.remote(BACK);
+    await tv.page.locator('[data-view="audiobook:audiobook:tide"]').waitFor();
+    await tv.remote(BACK);
+    await tv.page.locator('[data-view="home"] [data-section="recently_added"] [data-focus="movie:m0001"]').waitFor();
+    await tv.page.locator('[data-section="recently_added"] [data-focus="movie:m0001"]').first().click();
+    await tv.page.locator('[data-view="item:movie:m0001"] [data-focus="play"]').waitFor();
+
+    await tv.remote(FAST_FORWARD);
+    const startsBeforeVideo = tv.fake.requests.filter(req => req.method === "POST" && req.path === "/playback/start").length;
+    await tv.page.locator('[data-view="item:movie:m0001"] [data-focus="play"]').click();
+    await tv.eventually(async () => await tv.page.locator(".browse").isHidden(), "Browse hidden while awaiting audiobook teardown");
+
+    await tv.page.evaluate(() => window.appHarness.destroy());
+    await tv.page.evaluate(() => window.appHarness.avplay.finishSeek());
+    await tv.eventually(async () => tv.pendingReplies === 0, "requests drained after destroy");
+    await tv.page.evaluate(() => Promise.resolve().then(() => Promise.resolve()));
+    await tv.jump(50);
+    assert.equal(tv.fake.requests.filter(req => req.method === "POST" && req.path === "/playback/start").length, startsBeforeVideo);
+    assert.equal(await tv.page.locator('[data-screen="player"]').count(), 0);
 });

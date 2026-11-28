@@ -122,6 +122,8 @@ export interface BrowseOptions {
 export interface Browse {
     /** Shows browse again where it was, after the player closes, and refreshes what it shows. */
     resumeAfterPlayback(): void;
+    /** Invalidates catalog cache and refreshes visible routes after background audio ends without unhiding over Settings or playback. */
+    refreshAfterBackgroundPlayback(): void;
     /** Updates the top-bar profile chrome without remounting painted content. */
     updateProfile(profile: Pick<ProfileSummary, "name" | "avatarUrl" | "avatar">): void;
     /** Opens an in-browse destination (for tests). */
@@ -2630,6 +2632,16 @@ export function mountBrowse(root: HTMLElement, options: BrowseOptions): Browse {
             const current = top();
             if (current !== undefined) {
                 showRoute(current, current.focus);
+            }
+        },
+        refreshAfterBackgroundPlayback() {
+            if (torn) return;
+            cache.invalidate();
+            browseStack.publish({ kind: "catalog.changed" });
+            if (playing || settingsScreen !== undefined || cardActions.active || requestMenu.active) return;
+            const current = top();
+            if (current !== undefined) {
+                showRoute(current, host.focused());
             }
         },
         setAudiobookActive(active) {

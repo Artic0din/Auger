@@ -101,6 +101,12 @@ export function mountApp(root: HTMLElement, options: AppOptions): SiloApp {
     } };
 
     let videoStartGen = 0;
+    let cancelPendingVideoBack: (() => void) | undefined;
+    const cancelPendingVideoStart = (): void => {
+        videoStartGen++;
+        cancelPendingVideoBack?.();
+        cancelPendingVideoBack = undefined;
+    };
 
     const closeExit = (): void => {
         exitDialog?.destroy();
@@ -108,7 +114,7 @@ export function mountApp(root: HTMLElement, options: AppOptions): SiloApp {
     };
 
     const stopContent = (): void => {
-        videoStartGen++;
+        cancelPendingVideoStart();
         accounts?.destroy(); accounts = undefined;
         profile?.signal.removeEventListener("abort", stopContent);
         profile = undefined;
@@ -319,6 +325,9 @@ export function mountApp(root: HTMLElement, options: AppOptions): SiloApp {
                 onFinished: () => {
                     if (!destroyed && !active.signal.aborted && browse === content && player === undefined) content.resumeAfterPlayback();
                 },
+                onBackgroundEnd: () => {
+                    if (!destroyed && !active.signal.aborted && browse === content && player === undefined) content.refreshAfterBackgroundPlayback();
+                },
             });
         audiobookHost = host;
         if (host !== undefined) {
@@ -337,7 +346,7 @@ export function mountApp(root: HTMLElement, options: AppOptions): SiloApp {
     };
 
     const playAudiobook = (active: ProfileHandoff, content: Browse, request: AudiobookPlayRequest): void => {
-        videoStartGen++;
+        cancelPendingVideoStart();
         const resume = (): void => {
             player = undefined;
             if (!destroyed && !active.signal.aborted && browse === content) {
@@ -357,7 +366,8 @@ export function mountApp(root: HTMLElement, options: AppOptions): SiloApp {
     };
 
     const play = async (server: ConnectedServer, active: ProfileHandoff, content: Browse, request: PlayRequest): Promise<void> => {
-        const gen = ++videoStartGen;
+        cancelPendingVideoStart();
+        const gen = videoStartGen;
         const resume = (): void => {
             player = undefined;
             if (!destroyed && !active.signal.aborted && browse === content) {
@@ -365,12 +375,31 @@ export function mountApp(root: HTMLElement, options: AppOptions): SiloApp {
             }
         };
         if (audiobookHost?.isActive) {
+            const isPending = (): boolean =>
+                !destroyed && !active.signal.aborted && browse === content && gen === videoStartGen;
+            const releaseBack = (): void => {
+                window.removeEventListener("keydown", onPendingBack, true);
+                active.signal.removeEventListener("abort", releaseBack);
+                if (cancelPendingVideoBack === releaseBack) cancelPendingVideoBack = undefined;
+            };
+            const onPendingBack = (event: KeyboardEvent): void => {
+                if (!isPending() || event.defaultPrevented || exitDialog !== undefined || remoteKey(event) !== "back") return;
+                event.preventDefault();
+                event.stopImmediatePropagation();
+                cancelPendingVideoStart();
+                resume();
+            };
+            cancelPendingVideoBack = releaseBack;
+            window.addEventListener("keydown", onPendingBack, true);
+            active.signal.addEventListener("abort", releaseBack, { once: true });
             try {
                 await audiobookHost.stop();
             } catch {
                 // Best-effort audiobook teardown must not block video playback.
+            } finally {
+                releaseBack();
             }
-            if (destroyed || active.signal.aborted || browse !== content || gen !== videoStartGen) return;
+            if (!isPending()) return;
         }
         player = options.player === undefined
             ? unavailablePlayer(root, resume)
